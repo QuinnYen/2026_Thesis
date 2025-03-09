@@ -25,7 +25,7 @@ except LookupError:
 class DataPreprocessingApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("跨領域情感分析資料前處理工具 v1.5")
+        self.root.title("Part-01_跨領域情感分析資料前處理工具 v1.5")
         self.root.geometry("1200x800")
         
         # 最大化應用程序窗口 Windows適用
