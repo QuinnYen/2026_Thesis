@@ -25,9 +25,12 @@ except LookupError:
 class DataPreprocessingApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("跨領域情感分析資料前處理工具")
+        self.root.title("跨領域情感分析資料前處理工具 v1.5")
         self.root.geometry("1200x800")
         
+        # 最大化應用程序窗口 Windows適用
+        self.root.state('zoomed')
+
         # 設置資料存儲變數
         self.amazon_data = None
         self.yelp_data = None
@@ -315,10 +318,9 @@ class DataPreprocessingApp:
     
     def load_amazon_data(self):
         # 實際應用中，應從文件加載數據
-        # 這裡用模擬數據示範
         self.status_var.set("正在載入Amazon數據...")
         try:
-            # 實際應用中替換為真實數據加載代碼
+            # 選擇檔案
             file_path = filedialog.askopenfilename(
                 title="選擇Amazon數據檔案",
                 filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")]
@@ -328,6 +330,10 @@ class DataPreprocessingApp:
                 self.status_var.set("未選擇檔案")
                 return
             
+            # 儲存檔案路徑以供批次處理使用
+            self.amazon_file_path = file_path
+            
+            # 載入數據
             self.amazon_data = pd.read_csv(file_path)
             
             # 清空現有樹內容
@@ -344,7 +350,7 @@ class DataPreprocessingApp:
                     
                     self.amazon_tree.insert('', 'end', values=(idx, review[:100] + "...", rating, category))
                 except Exception as e:
-                    print(f"插入行時出錯 {idx}: {e}")
+                    print(f"Error inserting row {idx}: {e}")
             
             # 更新統計信息
             stats_text = f"共載入 {len(self.amazon_data)} 條Amazon評論\n"
@@ -371,6 +377,9 @@ class DataPreprocessingApp:
                 self.status_var.set("未選擇檔案")
                 return
             
+            # 儲存檔案路徑以供批次處理使用
+            self.yelp_file_path = file_path
+            
             # 根據檔案類型載入
             if file_path.endswith('.json'):
                 self.yelp_data = pd.read_json(file_path, lines=True)
@@ -390,7 +399,7 @@ class DataPreprocessingApp:
                     
                     self.yelp_tree.insert('', 'end', values=(idx, review[:100] + "...", rating, business_id))
                 except Exception as e:
-                    print(f"插入行時出錯 {idx}: {e}")
+                    print(f"Error inserting row {idx}: {e}")
             
             # 更新統計信息
             stats_text = f"共載入 {len(self.yelp_data)} 條Yelp評論\n"
@@ -417,6 +426,9 @@ class DataPreprocessingApp:
                 self.status_var.set("未選擇檔案")
                 return
             
+            # 儲存檔案路徑以供批次處理使用
+            self.imdb_file_path = file_path
+            
             self.imdb_data = pd.read_csv(file_path)
             
             # 清空現有樹內容
@@ -431,7 +443,7 @@ class DataPreprocessingApp:
                     
                     self.imdb_tree.insert('', 'end', values=(idx, review[:100] + "...", sentiment))
                 except Exception as e:
-                    print(f"插入行時出錯 {idx}: {e}")
+                    print(f"Error inserting row {idx}: {e}")
             
             # 更新統計信息
             sentiment_col = 'sentiment' if 'sentiment' in self.imdb_data.columns else 'label'
@@ -840,13 +852,29 @@ class DataPreprocessingApp:
     def run_batch_preprocessing(self):
         """執行批次處理腳本進行全量資料預處理"""
         try:
+            # 檢查是否有至少一個資料集已載入
+            has_data = False
+            
+            if hasattr(self, 'amazon_file_path') and self.amazon_file_path:
+                has_data = True
+            
+            if hasattr(self, 'yelp_file_path') and self.yelp_file_path:
+                has_data = True
+            
+            if hasattr(self, 'imdb_file_path') and self.imdb_file_path:
+                has_data = True
+            
+            if not has_data:
+                messagebox.showerror("錯誤", "請先載入至少一個資料集")
+                return
+            
             # 定義批次檔案的路徑
             batch_file_path = "preprocess_full_data.bat"
             
             # 檢查是否需要產生批次檔
             self._generate_batch_file(batch_file_path)
 
-            # 驗證檔案是否存在(與批次檔中相同的路徑)
+            # 驗證檔案是否存在
             python_script_path = "preprocess_full_data.py"  
             if not os.path.exists(python_script_path):
                 messagebox.showerror("錯誤", f"Python腳本檔案不存在: {python_script_path}")
@@ -881,6 +909,16 @@ class DataPreprocessingApp:
         stemming = self.stemming_var.get()
         lemmatization = self.lemmatization_var.get()
         
+        # 獲取已載入的檔案路徑
+        amazon_path = getattr(self, 'amazon_file_path', None)
+        yelp_path = getattr(self, 'yelp_file_path', None)
+        imdb_path = getattr(self, 'imdb_file_path', None)
+        
+        # 獲取當前工作目錄並組合路徑
+        current_dir = os.getcwd()
+        output_dir = os.path.join(current_dir, "ReviewsDataBase", "preprocessedFile")
+        output_dir_escaped = output_dir.replace('\\', '\\\\')
+
         # 使用 textwrap.dedent 自動移除多行字串中的共同縮排
         from textwrap import dedent
         
@@ -895,6 +933,17 @@ class DataPreprocessingApp:
         import datetime
 
         print("Starting full data preprocessing...")
+        
+        # 設置輸出目錄
+        output_dir = r"{6}"
+        print("Output directory: " + output_dir)
+        
+        # 確保輸出目錄存在
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir, exist_ok=True)
+            print("Created output directory: " + output_dir)
+        else:
+            print("Output directory exists: " + output_dir)
 
         # 確保必要的NLTK資源已下載
         try:
@@ -947,81 +996,125 @@ class DataPreprocessingApp:
             
             # 重新組合文本
             return ' '.join(tokens)
-
-        # 處理Amazon資料
-        try:
-            amazon_file = "amazon_reviews.csv"  # 根據實際路徑調整
-            if os.path.exists(amazon_file):
-                print(f"Processing Amazon data: {amazon_file}")
-                amazon_data = pd.read_csv(amazon_file)
-                
-                review_col = 'reviewText' if 'reviewText' in amazon_data.columns else 'review'
-                if review_col in amazon_data.columns:
-                    print(f"Found review column: {review_col}, total {len(amazon_data)} records")
+        ''').format(clean_html, remove_punctuation, lowercase, remove_stopwords, stemming, lemmatization, output_dir_escaped)
+        
+        # 添加各數據集的處理邏輯，使用條件判斷確保檔案路徑存在
+        # [ Amazon資料集 ]
+        if amazon_path:
+            amazon_path_escaped = amazon_path.replace('\\', '\\\\')
+            amazon_script = '''
+            # 處理Amazon資料
+            try:
+                amazon_path = r"{amazon_path}"
+                if os.path.exists(amazon_path):
+                    print("Processing Amazon data: " + amazon_path)
+                    amazon_data = pd.read_csv(amazon_path)
                     
-                    # 處理評論文本
-                    amazon_data['preprocessed_review'] = amazon_data[review_col].astype(str).apply(preprocess_text)
-                    
-                    # 儲存處理結果
-                    output_file = f"amazon_preprocessed_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                    amazon_data.to_csv(output_file, index=False)
-                    print(f"Amazon data processing completed, saved to: {output_file}")
-        except Exception as e:
-            print(f"Error processing Amazon data: {str(e)}")
-
-        # 處理Yelp資料
-        try:
-            yelp_file = "yelp_academic_dataset_review.json"  # 根據實際路徑調整
-            if os.path.exists(yelp_file):
-                print(f"Processing Yelp data: {yelp_file}")
-                # 讀取JSON檔案（可能很大，使用分批讀取）
-                chunk_size = 100000
-                chunk_num = 0
-                all_preprocessed = []
-                
-                for chunk in pd.read_json(yelp_file, lines=True, chunksize=chunk_size):
-                    chunk_num += 1
-                    print(f"Processing Yelp data chunk {chunk_num}, {len(chunk)} records")
-                    
-                    review_col = 'text' if 'text' in chunk.columns else 'review'
-                    if review_col in chunk.columns:
+                    review_col = 'reviewText' if 'reviewText' in amazon_data.columns else 'review'
+                    if review_col in amazon_data.columns:
+                        print("Found review column: " + review_col + ", total " + str(len(amazon_data)) + " records")
+                        
                         # 處理評論文本
-                        chunk['preprocessed_review'] = chunk[review_col].astype(str).apply(preprocess_text)
-                        all_preprocessed.append(chunk)
+                        amazon_data['preprocessed_review'] = amazon_data[review_col].astype(str).apply(preprocess_text)
+                        
+                        # 儲存處理結果
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        output_file = os.path.join(output_dir, "amazon_preprocessed_" + timestamp + ".csv")
+                        amazon_data.to_csv(output_file, index=False)
+                        print("Amazon data processing completed, saved to: " + output_file)
+                else:
+                    print("Amazon data file not found: " + amazon_path)
+            except Exception as e:
+                print("Error processing Amazon data: " + str(e))
+            '''
+            # 使用 format 方法進行替換，避免 f-string 問題
+            amazon_script = amazon_script.format(amazon_path=amazon_path_escaped)
+            python_script += dedent(amazon_script)
+        
+        # Yelp資料集
+        if yelp_path:
+            yelp_path_escaped = yelp_path.replace('\\', '\\\\')
+            yelp_script = '''
+            # 處理Yelp資料
+            try:
+                yelp_path = r"{yelp_path}"
+                if os.path.exists(yelp_path):
+                    print("Processing Yelp data: " + yelp_path)
+                    # 讀取檔案（可能很大，使用分批讀取）
+                    chunk_size = 100000
+                    chunk_num = 0
                     
-                # 合併所有處理過的區塊
-                if all_preprocessed:
-                    yelp_processed = pd.concat(all_preprocessed)
-                    output_file = f"yelp_preprocessed_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                    yelp_processed.to_csv(output_file, index=False)
-                    print(f"Yelp data processing completed, saved to: {output_file}")
-        except Exception as e:
-            print(f"Error processing Yelp data: {str(e)}")
+                    # 判斷檔案類型並使用適當的讀取方法
+                    if yelp_path.endswith('.json'):
+                        for chunk in pd.read_json(yelp_path, lines=True, chunksize=chunk_size):
+                            chunk_num += 1
+                            print("Processing Yelp data chunk " + str(chunk_num) + ", " + str(len(chunk)) + " records")
+                            
+                            review_col = 'text' if 'text' in chunk.columns else 'review'
+                            if review_col in chunk.columns:
+                                # 處理評論文本
+                                chunk['preprocessed_review'] = chunk[review_col].astype(str).apply(preprocess_text)
+                                
+                                # 儲存此批次結果
+                                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                                output_file = os.path.join(output_dir, "yelp_preprocessed_chunk" + str(chunk_num) + "_" + timestamp + ".csv")
+                                chunk.to_csv(output_file, index=False)
+                                print("Yelp data chunk " + str(chunk_num) + " processing completed, saved to: " + output_file)
+                    else:
+                        for chunk in pd.read_csv(yelp_path, chunksize=chunk_size):
+                            chunk_num += 1
+                            print("Processing Yelp data chunk " + str(chunk_num) + ", " + str(len(chunk)) + " records")
+                            
+                            review_col = 'text' if 'text' in chunk.columns else 'review'
+                            if review_col in chunk.columns:
+                                # 處理評論文本
+                                chunk['preprocessed_review'] = chunk[review_col].astype(str).apply(preprocess_text)
+                                
+                                # 儲存此批次結果
+                                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                                output_file = os.path.join(output_dir, "yelp_preprocessed_chunk" + str(chunk_num) + "_" + timestamp + ".csv")
+                                chunk.to_csv(output_file, index=False)
+                                print("Yelp data chunk " + str(chunk_num) + " processing completed, saved to: " + output_file)
+                else:
+                    print("Yelp data file not found: " + yelp_path)
+            except Exception as e:
+                print("Error processing Yelp data: " + str(e))
+            '''
+            # 使用 format 方法進行替換，避免 f-string 問題
+            yelp_script = yelp_script.format(yelp_path=yelp_path_escaped)
+            python_script += dedent(yelp_script)
 
-        # 處理IMDB資料
-        try:
-            imdb_file = "imdb_reviews.csv"  # 根據實際路徑調整
-            if os.path.exists(imdb_file):
-                print(f"Processing IMDB data: {imdb_file}")
-                imdb_data = pd.read_csv(imdb_file)
-                
-                review_col = 'review' if 'review' in imdb_data.columns else 'text'
-                if review_col in imdb_data.columns:
-                    print(f"Found review column: {review_col}, total {len(imdb_data)} records")
+        # IMDB 資料集
+        if imdb_path:
+            imdb_path_escaped = imdb_path.replace('\\', '\\\\')
+            imdb_script = '''
+            # 處理IMDB資料
+            try:
+                imdb_path = r"{imdb_path}"
+                if os.path.exists(imdb_path):
+                    print("Processing IMDB data: " + imdb_path)
+                    imdb_data = pd.read_csv(imdb_path)
                     
-                    # 處理評論文本
-                    imdb_data['preprocessed_review'] = imdb_data[review_col].astype(str).apply(preprocess_text)
-                    
-                    # 儲存處理結果
-                    output_file = f"imdb_preprocessed_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
-                    imdb_data.to_csv(output_file, index=False)
-                    print(f"IMDB data processing completed, saved to: {output_file}")
-        except Exception as e:
-            print(f"Error processing IMDB data: {str(e)}")
-
-        print("Full data preprocessing completed")
-        input("Press any key to exit...")
-        ''').format(clean_html, remove_punctuation, lowercase, remove_stopwords, stemming, lemmatization)
+                    review_col = 'review' if 'review' in imdb_data.columns else 'text'
+                    if review_col in imdb_data.columns:
+                        print("Found review column: " + review_col + ", total " + str(len(imdb_data)) + " records")
+                        
+                        # 處理評論文本
+                        imdb_data['preprocessed_review'] = imdb_data[review_col].astype(str).apply(preprocess_text)
+                        
+                        # 儲存處理結果
+                        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                        output_file = os.path.join(output_dir, "imdb_preprocessed_" + timestamp + ".csv")
+                        imdb_data.to_csv(output_file, index=False)
+                        print("IMDB data processing completed, saved to: " + output_file)
+                else:
+                    print("IMDB data file not found: " + imdb_path)
+            except Exception as e:
+                print("Error processing IMDB data: " + str(e))
+            '''
+            # 使用 format 方法進行替換，避免 f-string 問題
+            imdb_script = imdb_script.format(imdb_path=imdb_path_escaped)
+            python_script += dedent(imdb_script)
         
         # 將批次檔案與Python腳本放在相同目錄
         python_script_path = "preprocess_full_data.py"
@@ -1033,11 +1126,11 @@ class DataPreprocessingApp:
         # 生成批次檔
         with open(batch_file_path, "w", encoding="utf-8") as f:
             f.write('@echo off\n')
-            f.write('echo 開始全量資料預處理\n')
+            f.write('echo Starting full data preprocessing\n')
             f.write(f'python "{python_script_path}"\n')
-            f.write('echo 處理完成\n')
-        
-        print(f"已生成批次檔案: {batch_file_path}")
+            f.write('echo Processing completed\n')
+
+        print(f"Batch file generated: {batch_file_path}")
     # ==================================================================
 
     def run_preprocessing(self):
