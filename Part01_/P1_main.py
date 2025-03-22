@@ -5,6 +5,7 @@ import numpy as np
 import os
 import re
 import jieba
+import aspect_extraction as ae
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from nltk.corpus import stopwords
@@ -46,12 +47,14 @@ class DataPreprocessingApp:
         self.imdb_frame = ttk.Frame(self.notebook)
         self.stats_frame = ttk.Frame(self.notebook)
         self.preprocess_frame = ttk.Frame(self.notebook)
+        self.aspect_frame = ttk.Frame(self.notebook)
         
         self.notebook.add(self.amazon_frame, text="Amazon數據")
         self.notebook.add(self.yelp_frame, text="Yelp數據")
         self.notebook.add(self.imdb_frame, text="IMDB數據")
         self.notebook.add(self.stats_frame, text="數據統計")
         self.notebook.add(self.preprocess_frame, text="數據預處理")
+        self.notebook.add(self.aspect_frame, text="面相切割")
         
         # 設置各頁籤的內容
         self._setup_amazon_tab()
@@ -59,6 +62,7 @@ class DataPreprocessingApp:
         self._setup_imdb_tab()
         self._setup_stats_tab()
         self._setup_preprocess_tab()
+        self._setup_aspect_tab()
         
         # 顯示狀態欄
         self.status_var = tk.StringVar()
@@ -1294,6 +1298,415 @@ class DataPreprocessingApp:
             self.status_var.set(f"儲存預處理數據時出錯: {str(e)}")
             messagebox.showerror("錯誤", f"儲存預處理數據時出錯: {str(e)}")
 
+    def _setup_aspect_tab(self):
+        """設置面相切割標籤頁"""
+        # 控制框架
+        controls_frame = ttk.Frame(self.aspect_frame)
+        controls_frame.pack(fill='x', padx=10, pady=10)
+        
+        # 選擇數據源
+        ttk.Label(controls_frame, text="選擇數據源:").pack(side=tk.LEFT, padx=5)
+        self.aspect_data_source = ttk.Combobox(controls_frame, values=["Amazon", "Yelp", "IMDB", "預處理結果"])
+        self.aspect_data_source.pack(side=tk.LEFT, padx=5)
+        self.aspect_data_source.current(3)
+        
+        # 選擇領域
+        ttk.Label(controls_frame, text="選擇領域:").pack(side=tk.LEFT, padx=5)
+        self.aspect_domain = ttk.Combobox(controls_frame, values=["general", "restaurant", "electronics", "movies"])
+        self.aspect_domain.pack(side=tk.LEFT, padx=5)
+        self.aspect_domain.current(0)
+        
+        # 面相提取方法
+        self.aspect_method_frame = ttk.LabelFrame(self.aspect_frame, text="面相提取方法")
+        self.aspect_method_frame.pack(fill='x', padx=10, pady=5)
+        
+        # 創建變數
+        self.use_rule_method = tk.BooleanVar(value=True)
+        self.use_dictionary_method = tk.BooleanVar(value=True)
+        self.use_spacy_method = tk.BooleanVar(value=False)
+        self.use_topic_modeling = tk.BooleanVar(value=True)
+        
+        # 添加選項
+        ttk.Checkbutton(self.aspect_method_frame, text="規則基礎方法", variable=self.use_rule_method).grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Checkbutton(self.aspect_method_frame, text="詞典匹配方法", variable=self.use_dictionary_method).grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        ttk.Checkbutton(self.aspect_method_frame, text="spaCy依存分析(需安裝)", variable=self.use_spacy_method).grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        ttk.Checkbutton(self.aspect_method_frame, text="主題模型(大量數據)", variable=self.use_topic_modeling).grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # 執行面相切割和保存結果的按鈕
+        button_frame = ttk.Frame(self.aspect_frame)
+        button_frame.pack(fill='x', padx=10, pady=10)
+        
+        ttk.Button(button_frame, text="執行面相切割", command=self.run_aspect_extraction).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="儲存面相切割結果", command=self.save_aspect_results).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="生成面相特定數據集", command=self.create_aspect_specific_dataset).pack(side=tk.LEFT, padx=5)
+        
+        # 結果顯示區域
+        result_pane = ttk.PanedWindow(self.aspect_frame, orient=tk.VERTICAL)
+        result_pane.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # 面相切割結果預覽
+        preview_frame = ttk.LabelFrame(result_pane, text="面相切割結果預覽")
+        result_pane.add(preview_frame, weight=3)
+        
+        columns = ('review_id', 'original_review', 'aspects_found', 'aspect_terms', 'aspect_categories', 'aspects_count')
+        self.aspect_tree = ttk.Treeview(preview_frame, columns=columns, show='headings')
+        
+        # 設置列標題
+        column_widths = {
+            'review_id': 50,
+            'original_review': 300,
+            'aspects_found': 80,
+            'aspect_terms': 200,
+            'aspect_categories': 150,
+            'aspects_count': 80
+        }
+        
+        for col in columns:
+            self.aspect_tree.heading(col, text=col.replace('_', ' ').title())
+            self.aspect_tree.column(col, width=column_widths.get(col, 100))
+        
+        # 添加滾動條
+        scrollbar_y = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.aspect_tree.yview)
+        scrollbar_x = ttk.Scrollbar(preview_frame, orient=tk.HORIZONTAL, command=self.aspect_tree.xview)
+        self.aspect_tree.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+        
+        scrollbar_y.pack(side=tk.RIGHT, fill=tk.Y)
+        scrollbar_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.aspect_tree.pack(fill='both', expand=True)
+        
+        # 面相統計信息
+        stats_frame = ttk.LabelFrame(result_pane, text="面相統計信息")
+        result_pane.add(stats_frame, weight=1)
+        
+        # 左側面相統計
+        stats_left_frame = ttk.Frame(stats_frame)
+        stats_left_frame.pack(side=tk.LEFT, fill='both', expand=True, padx=5, pady=5)
+        
+        self.aspect_stats_text = tk.Text(stats_left_frame, height=10, width=40)
+        self.aspect_stats_text.pack(fill='both', expand=True)
+        stats_scrollbar = ttk.Scrollbar(stats_left_frame, orient=tk.VERTICAL, command=self.aspect_stats_text.yview)
+        stats_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.aspect_stats_text.configure(yscrollcommand=stats_scrollbar.set)
+        
+        # 右側面相圖表框架
+        stats_right_frame = ttk.Frame(stats_frame)
+        stats_right_frame.pack(side=tk.RIGHT, fill='both', expand=True, padx=5, pady=5)
+        
+        # 圖表容器
+        self.aspect_chart_container = ttk.Frame(stats_right_frame)
+        self.aspect_chart_container.pack(fill='both', expand=True)
+        
+        # 狀態顯示
+        self.aspect_status_var = tk.StringVar()
+        self.aspect_status_var.set("請選擇數據源和面相提取方法，然後點擊「執行面相切割」")
+        status_label = ttk.Label(self.aspect_frame, textvariable=self.aspect_status_var)
+        status_label.pack(padx=10, pady=10)
+
+    # 4. 添加面相切割功能的實現方法
+    def run_aspect_extraction(self):
+        """執行面相切割操作"""
+        self.status_var.set("正在執行面相切割...")
+        self.aspect_status_var.set("正在處理數據...")
+        
+        try:
+            # 獲取數據源
+            source = self.aspect_data_source.get()
+            data_to_process = None
+            text_column = None
+            label_column = None
+            
+            # 獲取選定領域
+            domain = self.aspect_domain.get()
+            
+            # 獲取提取方法
+            methods = []
+            if self.use_rule_method.get():
+                methods.append('rule')
+            if self.use_dictionary_method.get():
+                methods.append('dictionary')
+            if self.use_spacy_method.get():
+                methods.append('spacy')
+            
+            if not methods:
+                messagebox.showwarning("警告", "請至少選擇一種面相提取方法")
+                return
+            
+            # 準備數據
+            if source == "Amazon" and self.amazon_data is not None:
+                data_to_process = self.amazon_data
+                text_column = 'reviewText' if 'reviewText' in data_to_process.columns else 'review'
+                label_column = 'overall' if 'overall' in data_to_process.columns else 'rating'
+            
+            elif source == "Yelp" and self.yelp_data is not None:
+                data_to_process = self.yelp_data
+                text_column = 'text' if 'text' in data_to_process.columns else 'review'
+                label_column = 'stars' if 'stars' in data_to_process.columns else 'rating'
+            
+            elif source == "IMDB" and self.imdb_data is not None:
+                data_to_process = self.imdb_data
+                text_column = 'review' if 'review' in data_to_process.columns else 'text'
+                label_column = 'sentiment' if 'sentiment' in data_to_process.columns else 'label'
+            
+            elif source == "預處理結果" and hasattr(self, 'preprocessed_data') and self.preprocessed_data:
+                # 將預處理結果轉換為DataFrame
+                data_to_process = pd.DataFrame(self.preprocessed_data)
+                text_column = 'preprocessed'  # 使用預處理後的文本
+                label_column = 'label'
+            
+            if data_to_process is None or text_column not in data_to_process.columns:
+                self.aspect_status_var.set("無法處理所選數據源，請確保數據已正確載入")
+                messagebox.showerror("錯誤", "無法處理所選數據源，請確保數據已正確載入")
+                return
+            
+            # 限制處理的數據量，以提高性能
+            if len(data_to_process) > 1000:
+                self.aspect_status_var.set(f"數據量較大 ({len(data_to_process)} 條)，只處理前 1000 條...")
+                processing_data = data_to_process.head(1000).copy()
+            else:
+                processing_data = data_to_process.copy()
+            
+            # 執行面相切割
+            self.aspect_status_var.set(f"正在對 {len(processing_data)} 條評論進行面相切割...")
+            
+            # 使用面相切割模組處理數據
+            segmented_df, aspect_stats, topic_results = ae.segment_reviews_by_aspects(
+                processing_data, 
+                domain=domain, 
+                text_column=text_column, 
+                label_column=label_column, 
+                methods=methods
+            )
+            
+            # 保存結果
+            self.aspect_segmented_df = segmented_df
+            self.aspect_stats_results = aspect_stats
+            self.aspect_topic_results = topic_results
+            
+            # 清空現有樹視圖
+            for item in self.aspect_tree.get_children():
+                self.aspect_tree.delete(item)
+            
+            # 填充樹視圖
+            for idx, row in segmented_df.iterrows():
+                try:
+                    self.aspect_tree.insert('', 'end', values=(
+                        row['review_id'],
+                        row['original_review'][:50] + "..." if len(row['original_review']) > 50 else row['original_review'],
+                        "是" if row['aspects_found'] else "否",
+                        row['aspect_terms'][:50] + "..." if len(row['aspect_terms']) > 50 else row['aspect_terms'],
+                        row['aspect_categories'],
+                        row['aspects_count']
+                    ))
+                except Exception as e:
+                    print(f"Error inserting row {idx}: {e}")
+            
+            # 更新統計信息
+            self._update_aspect_stats_display(aspect_stats, topic_results)
+            
+            # 更新狀態
+            self.aspect_status_var.set(f"面相切割完成，找到 {sum(segmented_df['aspects_found'])} 條含面相的評論")
+            self.status_var.set("面相切割完成")
+            
+        except Exception as e:
+            self.aspect_status_var.set(f"面相切割時出錯: {str(e)}")
+            self.status_var.set(f"面相切割失敗: {str(e)}")
+            messagebox.showerror("錯誤", f"面相切割時出錯: {str(e)}")
+
+    def _update_aspect_stats_display(self, aspect_stats, topic_results):
+        """更新面相統計顯示"""
+        # 更新文字統計信息
+        self.aspect_stats_text.delete(1.0, tk.END)
+        
+        stats_text = "面相統計信息:\n\n"
+        for category, stats in aspect_stats.items():
+            stats_text += f"類別: {category}\n"
+            stats_text += f"  出現次數: {stats['count']}\n"
+            stats_text += f"  佔比: {stats['percentage']:.2f}%\n"
+            
+            if 'avg_sentiment' in stats:
+                sentiment_text = "正面" if stats['avg_sentiment'] > 0 else ("負面" if stats['avg_sentiment'] < 0 else "中性")
+                stats_text += f"  平均情感: {stats['avg_sentiment']:.2f} ({sentiment_text})\n"
+                stats_text += f"  正面評論: {stats.get('positive_count', 0)}\n"
+                stats_text += f"  負面評論: {stats.get('negative_count', 0)}\n"
+                stats_text += f"  中性評論: {stats.get('neutral_count', 0)}\n"
+            
+            stats_text += "\n"
+        
+        if topic_results:
+            stats_text += "\n主題模型發現的潛在面相主題:\n\n"
+            for i, topic in enumerate(topic_results):
+                stats_text += f"主題 {i+1}: {', '.join(topic[:5])}...\n"
+        
+        self.aspect_stats_text.insert(tk.END, stats_text)
+        
+        # 清除現有圖表
+        for widget in self.aspect_chart_container.winfo_children():
+            widget.destroy()
+        
+        # 如果有足夠數據，繪製面相分布圖表
+        if aspect_stats:
+            # 創建圖表
+            fig, ax = plt.subplots(figsize=(6, 4))
+            
+            # 準備數據
+            categories = list(aspect_stats.keys())
+            counts = [stats['count'] for stats in aspect_stats.values()]
+            
+            # 繪製柱狀圖
+            bars = ax.bar(categories, counts)
+            
+            # 添加標籤
+            ax.set_title('面相類別分布')
+            ax.set_xlabel('面相類別')
+            ax.set_ylabel('出現次數')
+            ax.set_xticks(range(len(categories)))
+            ax.set_xticklabels(categories, rotation=45, ha='right')
+            
+            # 為每個柱子添加計數標籤
+            for bar in bars:
+                height = bar.get_height()
+                ax.text(bar.get_x() + bar.get_width()/2., height + 0.1,
+                        f'{height}',
+                        ha='center', va='bottom')
+            
+            # 調整佈局
+            plt.tight_layout()
+            
+            # 將圖表添加到GUI
+            canvas = FigureCanvasTkAgg(fig, master=self.aspect_chart_container)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+    def save_aspect_results(self):
+        """保存面相切割結果"""
+        if not hasattr(self, 'aspect_segmented_df') or self.aspect_segmented_df is None:
+            messagebox.showwarning("警告", "沒有可保存的面相切割結果，請先執行面相切割")
+            return
+        
+        try:
+            # 選擇保存路徑
+            file_path = filedialog.asksaveasfilename(
+                title="保存面相切割結果",
+                filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+                defaultextension=".csv"
+            )
+            
+            if not file_path:
+                return  # 用戶取消
+            
+            # 保存到CSV
+            self.aspect_segmented_df.to_csv(file_path, index=False)
+            
+            self.status_var.set(f"已成功保存面相切割結果到 {file_path}")
+            self.aspect_status_var.set(f"已成功保存 {len(self.aspect_segmented_df)} 條面相切割結果")
+            messagebox.showinfo("成功", f"已成功保存面相切割結果")
+            
+        except Exception as e:
+            self.status_var.set(f"保存面相切割結果時出錯: {str(e)}")
+            self.aspect_status_var.set(f"保存面相切割結果時出錯: {str(e)}")
+            messagebox.showerror("錯誤", f"保存面相切割結果時出錯: {str(e)}")
+
+    def create_aspect_specific_dataset(self):
+        """生成面相特定數據集"""
+        if not hasattr(self, 'aspect_segmented_df') or self.aspect_segmented_df is None:
+            messagebox.showwarning("警告", "沒有可用的面相切割結果，請先執行面相切割")
+            return
+        
+        try:
+            # 獲取所有可用的面相類別
+            all_categories = set()
+            for cats in self.aspect_segmented_df['aspect_categories']:
+                if cats:
+                    all_categories.update(cats.split('|'))
+            
+            if not all_categories:
+                messagebox.showwarning("警告", "未找到任何面相類別")
+                return
+            
+            # 創建選擇對話框
+            aspect_dialog = tk.Toplevel(self.root)
+            aspect_dialog.title("選擇要包含的面相類別")
+            aspect_dialog.geometry("400x300")
+            aspect_dialog.transient(self.root)
+            aspect_dialog.grab_set()
+            
+            # 添加說明
+            ttk.Label(aspect_dialog, text="請選擇要包含在面相特定數據集中的類別:").pack(padx=10, pady=10)
+            
+            # 創建複選框
+            category_vars = {}
+            for category in sorted(all_categories):
+                var = tk.BooleanVar(value=True)
+                category_vars[category] = var
+                ttk.Checkbutton(aspect_dialog, text=category, variable=var).pack(anchor=tk.W, padx=20, pady=2)
+            
+            # 確認按鈕的回調函數
+            def on_confirm():
+                selected_categories = [cat for cat, var in category_vars.items() if var.get()]
+                
+                if not selected_categories:
+                    messagebox.showwarning("警告", "請至少選擇一個面相類別")
+                    return
+                
+                # 關閉對話框
+                aspect_dialog.destroy()
+                
+                # 獲取數據源
+                source = self.aspect_data_source.get()
+                original_df = None
+                
+                if source == "Amazon" and self.amazon_data is not None:
+                    original_df = self.amazon_data
+                elif source == "Yelp" and self.yelp_data is not None:
+                    original_df = self.yelp_data
+                elif source == "IMDB" and self.imdb_data is not None:
+                    original_df = self.imdb_data
+                elif source == "預處理結果" and hasattr(self, 'preprocessed_data'):
+                    original_df = pd.DataFrame(self.preprocessed_data)
+                
+                if original_df is None:
+                    messagebox.showerror("錯誤", "無法獲取原始數據集")
+                    return
+                
+                # 創建面相特定數據集
+                self.aspect_status_var.set("正在生成面相特定數據集...")
+                
+                # 初始化面相提取器（用於獲取詞典）
+                domain = self.aspect_domain.get()
+                extractor = ae.AspectExtractor(domain=domain)
+                
+                aspect_df = ae.create_aspect_specific_dataset(
+                    original_df, self.aspect_segmented_df, selected_categories
+                )
+                
+                # 保存結果
+                file_path = filedialog.asksaveasfilename(
+                    title="保存面相特定數據集",
+                    filetypes=[("CSV Files", "*.csv"), ("All Files", "*.*")],
+                    defaultextension=".csv"
+                )
+                
+                if not file_path:
+                    return  # 用戶取消
+                
+                # 保存到CSV
+                aspect_df.to_csv(file_path, index=False)
+                
+                self.status_var.set(f"已成功保存面相特定數據集到 {file_path}")
+                self.aspect_status_var.set(f"已成功生成 {len(aspect_df)} 條面相特定數據")
+                messagebox.showinfo("成功", f"已成功生成面相特定數據集，共 {len(aspect_df)} 條記錄")
+            
+            # 添加按鈕
+            button_frame = ttk.Frame(aspect_dialog)
+            button_frame.pack(fill='x', padx=10, pady=10)
+            
+            ttk.Button(button_frame, text="確認", command=on_confirm).pack(side=tk.RIGHT, padx=5)
+            ttk.Button(button_frame, text="取消", command=aspect_dialog.destroy).pack(side=tk.RIGHT, padx=5)
+            
+        except Exception as e:
+            self.status_var.set(f"生成面相特定數據集時出錯: {str(e)}")
+            self.aspect_status_var.set(f"生成面相特定數據集時出錯: {str(e)}")
+            messagebox.showerror("錯誤", f"生成面相特定數據集時出錯: {str(e)}")
 
 # 主程序
 if __name__ == "__main__":
