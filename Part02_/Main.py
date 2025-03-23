@@ -9,6 +9,7 @@ import nltk
 import json
 import traceback
 from src.console_output import ConsoleOutputManager
+from src.settings.visualization_config import configure_chinese_fonts, check_chinese_display
 
 class ModuleFilter(logging.Filter):
     def __init__(self, module_name):
@@ -76,6 +77,23 @@ class CrossDomainSentimentAnalysisApp:
         file_handler.setFormatter(formatter)
         self.logger.addHandler(file_handler)
         
+        # 創建變數 - 確保這些在主線程中創建
+        self.file_path = tk.StringVar()
+        self.topic_count = tk.StringVar(value="10")  # 預設LDA主題數量
+        self.progress_var = tk.DoubleVar(value=0)
+        self.status_var = tk.StringVar(value="準備就緒。")
+        
+        # 當前數據集ID
+        self.current_dataset_id = None
+        
+        # 初始化中文字體支援
+        try:
+            from src.settings.visualization_config import configure_chinese_fonts
+            font_config_result = configure_chinese_fonts()
+            self.logger.info(f"中文字體配置: {font_config_result}")
+        except Exception as e:
+            self.logger.warning(f"中文字體配置失敗: {str(e)}")
+        
         # 確保NLTK資源已下載
         try:
             self._ensure_nltk_resources()
@@ -84,15 +102,6 @@ class CrossDomainSentimentAnalysisApp:
             self.logger.error(f"NLTK資源下載失敗: {str(e)}")
             root.destroy()
             return
-        
-        # 創建變數
-        self.file_path = tk.StringVar()
-        self.topic_count = tk.StringVar(value="10")  # 預設LDA主題數量
-        self.progress_var = tk.DoubleVar(value=0)
-        self.status_var = tk.StringVar(value="準備就緒。")
-        
-        # 當前數據集ID
-        self.current_dataset_id = None
         
         # 初始化結果管理器
         from src.result_manager import ResultManager
@@ -107,7 +116,20 @@ class CrossDomainSentimentAnalysisApp:
         # 從結果管理器加載當前分析數據
         self._load_recent_results()
         
+        # 在 UI 就緒後才執行中文字體測試
+        self.root.after(1000, self._check_chinese_font_display)
+        
         self.logger.info("Application started")
+
+    def _check_chinese_font_display(self):
+        """在主線程中執行中文字體顯示測試"""
+        try:
+            from src.settings.visualization_config import check_chinese_display
+            display_result = check_chinese_display()
+            if not display_result:
+                self.logger.warning("中文顯示測試不成功，圖表中的中文可能無法正確顯示")
+        except Exception as e:
+            self.logger.warning(f"中文顯示測試失敗: {str(e)}")
         
     def _create_widgets(self):
         # 建立分頁
@@ -784,18 +806,19 @@ class CrossDomainSentimentAnalysisApp:
             
             # 定義進度回調函數
             def update_progress(message, percentage):
-                if percentage < 0:  # 錯誤情況
-                    self.root.after(0, lambda: self.status_var.set(f"錯誤: {message}"))
+                if percentage < 0:
+                    self.root.after_idle(lambda: self.status_var.set(f"錯誤: {message}"))
                     return
                     
-                # 更新進度條和狀態信息
-                progress = 20 + (percentage * 0.8 / 100)  # 將百分比轉換到20%-100%範圍
-                self.root.after(0, lambda: self.progress_var.set(progress))
-                self.root.after(0, lambda: self.status_var.set(message))
-            
-            # 註冊新的數據集
-            dataset_name = os.path.splitext(file_name)[0]
-            self.current_dataset_id = self.result_manager.register_dataset(dataset_name, file_path)
+                def update_ui():
+                    try:
+                        progress = 20 + (percentage * 0.8 / 100)
+                        self.progress_var.set(progress)
+                        self.status_var.set(message)
+                    except Exception:
+                        pass
+                
+                self.root.after_idle(update_ui)
             
             # 執行數據導入
             processed_file_path = importer.import_data(file_path, callback=update_progress)
@@ -816,19 +839,31 @@ class CrossDomainSentimentAnalysisApp:
             )
             
             # 更新UI
-            self.root.after(0, lambda: self.status_var.set(f"數據導入完成: {os.path.basename(processed_file_path)}"))
-            self.root.after(0, lambda: self.progress_var.set(25))
+            def show_completion():
+                try:
+                    self.status_var.set(f"數據導入完成: {os.path.basename(processed_file_path)}")
+                    self.progress_var.set(25)
+                    messagebox.showinfo("成功", "數據已成功導入和初步處理!")
+                except Exception:
+                    pass
             
-            # 顯示成功信息
-            self.root.after(0, lambda: messagebox.showinfo("成功", "數據已成功導入和初步處理!"))
+            self.root.after_idle(show_completion)
             
         except Exception as e:
             import traceback
+            error_msg = f"導入數據時發生錯誤: {str(e)}"
             traceback.print_exc()
-            self.root.after(0, lambda: messagebox.showerror("錯誤", f"導入數據時發生錯誤: {str(e)}"))
-            self.root.after(0, lambda: self.status_var.set("導入數據失敗"))
-            self.root.after(0, lambda: self.progress_var.set(0))
-    
+            
+            def show_error():
+                try:
+                    messagebox.showerror("錯誤", error_msg)
+                    self.status_var.set("導入數據失敗")
+                    self.progress_var.set(0)
+                except Exception:
+                    pass
+            
+            self.root.after_idle(show_error)
+
     def extract_bert_embeddings(self):
         """執行BERT語義提取"""
         if not self.processed_data_path:
@@ -873,16 +908,19 @@ class CrossDomainSentimentAnalysisApp:
             
             # 定義進度回調函數
             def update_progress(message, percentage):
-                if percentage < 0:  # 錯誤情況
-                    self.root.after(0, lambda: self.status_var.set(f"錯誤: {message}"))
+                if percentage < 0:
+                    self.root.after_idle(lambda: self.status_var.set(f"錯誤: {message}"))
                     return
                     
-                # 更新進度條和狀態信息
-                progress = 30 + (percentage * 20 / 100)  # 將百分比轉換到30%-50%範圍
-                self.root.after(0, lambda: self.progress_var.set(progress))
-                self.root.after(0, lambda: self.status_var.set(message))
+                def update_ui():
+                    try:
+                        progress = 30 + (percentage * 20 / 100)
+                        self.progress_var.set(progress)
+                        self.status_var.set(message)
+                    except Exception:
+                        pass
                 
-                # 記錄日誌
+                self.root.after_idle(update_ui)
                 logger.info(f"{message} ({percentage}%)")
             
             # 執行BERT嵌入提取
@@ -933,11 +971,18 @@ class CrossDomainSentimentAnalysisApp:
             ConsoleOutputManager.mark_process_complete(status_file)
             
             # 更新UI
-            self.root.after(0, lambda: self.status_var.set(f"BERT語義提取完成！嵌入維度: {self.embedding_dim}"))
-            self.root.after(0, lambda: self.progress_var.set(50))
+            def show_completion():
+                try:
+                    self.status_var.set(f"BERT語義提取完成！嵌入維度: {self.embedding_dim}")
+                    self.progress_var.set(50)
+                    messagebox.showinfo(
+                        "成功", 
+                        f"BERT語義提取完成！\n嵌入向量已保存至: {os.path.basename(self.bert_embeddings_path)}\n嵌入維度: {self.embedding_dim}"
+                    )
+                except Exception:
+                    pass
             
-            # 顯示成功信息
-            self.root.after(0, lambda: messagebox.showinfo("成功", f"BERT語義提取完成！\n嵌入向量已保存至: {os.path.basename(self.bert_embeddings_path)}\n嵌入維度: {self.embedding_dim}"))
+            self.root.after_idle(show_completion)
             
         except Exception as e:
             import traceback
@@ -945,10 +990,17 @@ class CrossDomainSentimentAnalysisApp:
             traceback.print_exc()
             logger.error(error_msg)
             logger.error(traceback.format_exc())
-            self.root.after(0, lambda: messagebox.showerror("錯誤", error_msg))
-            self.root.after(0, lambda: self.status_var.set("BERT語義提取失敗"))
-            self.root.after(0, lambda: self.progress_var.set(30))
-    
+            
+            def show_error():
+                try:
+                    messagebox.showerror("錯誤", error_msg)
+                    self.status_var.set("BERT語義提取失敗")
+                    self.progress_var.set(30)
+                except Exception:
+                    pass
+            
+            self.root.after_idle(show_error)
+
     def perform_lda(self):
         """執行LDA面向切割"""
         if not self.bert_metadata_path:
@@ -1021,7 +1073,7 @@ class CrossDomainSentimentAnalysisApp:
         """實際執行LDA的方法"""
         try:
             from src.lda_aspect_extractor import LDATopicExtractor
-            from src.settings.topic_labels import TOPIC_LABELS
+            from src.settings.topic_labels import TOPIC_LABELS_en, TOPIC_LABELS_zh
             
             # 獲取BERT元數據路徑
             metadata_path = self.bert_metadata_path
@@ -1032,8 +1084,8 @@ class CrossDomainSentimentAnalysisApp:
             
             # 獲取適合的主題標籤
             topic_labels = None
-            if self.data_source in TOPIC_LABELS:
-                topic_labels = TOPIC_LABELS[self.data_source]
+            if self.data_source in TOPIC_LABELS_zh:
+                topic_labels = TOPIC_LABELS_zh[self.data_source]
                 logger.info(f"已載入 {self.data_source} 的自定義主題標籤")
                 
                 # 輸出所有標籤
@@ -1061,16 +1113,19 @@ class CrossDomainSentimentAnalysisApp:
             
             # 定義進度回調函數
             def update_progress(message, percentage):
-                if percentage < 0:  # 錯誤情況
-                    self.root.after(0, lambda: self.status_var.set(f"錯誤: {message}"))
+                if percentage < 0:
+                    self.root.after_idle(lambda: self.status_var.set(f"錯誤: {message}"))
                     return
                     
-                # 更新進度條和狀態信息
-                progress = 60 + (percentage * 15 / 100)  # 將百分比轉換到60%-75%範圍
-                self.root.after(0, lambda: self.progress_var.set(progress))
-                self.root.after(0, lambda: self.status_var.set(message))
+                def update_ui():
+                    try:
+                        progress = 60 + (percentage * 15 / 100)
+                        self.progress_var.set(progress)
+                        self.status_var.set(message)
+                    except Exception:
+                        pass
                 
-                # 記錄日誌
+                self.root.after_idle(update_ui)
                 logger.info(f"{message} ({percentage}%)")
             
             # 執行LDA面向切割
@@ -1160,11 +1215,18 @@ class CrossDomainSentimentAnalysisApp:
             ConsoleOutputManager.mark_process_complete(status_file)
             
             # 更新UI
-            self.root.after(0, lambda: self.status_var.set(f"LDA面向切割完成! 識別出 {topic_count} 個主題"))
-            self.root.after(0, lambda: self.progress_var.set(75))
+            def show_completion():
+                try:
+                    self.status_var.set(f"LDA面向切割完成! 識別出 {topic_count} 個主題")
+                    self.progress_var.set(75)
+                    messagebox.showinfo(
+                        "成功", 
+                        f"LDA面向切割完成！\n已識別出 {topic_count} 個主題\nLDA模型已保存至: {os.path.basename(self.lda_model_path)}"
+                    )
+                except Exception:
+                    pass
             
-            # 顯示成功信息
-            self.root.after(0, lambda: messagebox.showinfo("成功", f"LDA面向切割完成！\n已識別出 {topic_count} 個主題\nLDA模型已保存至: {os.path.basename(self.lda_model_path)}"))
+            self.root.after_idle(show_completion)
             
         except Exception as e:
             import traceback
@@ -1172,9 +1234,16 @@ class CrossDomainSentimentAnalysisApp:
             traceback.print_exc()
             logger.error(error_msg)
             logger.error(traceback.format_exc())
-            self.root.after(0, lambda: messagebox.showerror("錯誤", error_msg))
-            self.root.after(0, lambda: self.status_var.set("LDA面向切割失敗"))
-            self.root.after(0, lambda: self.progress_var.set(60))
+            
+            def show_error():
+                try:
+                    messagebox.showerror("錯誤", error_msg)
+                    self.status_var.set("LDA面向切割失敗")
+                    self.progress_var.set(60)
+                except Exception:
+                    pass
+            
+            self.root.after_idle(show_error)
     
     def calculate_aspect_vectors(self):
         """計算面向相關句子的平均向量"""
@@ -1212,22 +1281,25 @@ class CrossDomainSentimentAnalysisApp:
             
             # 創建面向向量計算器
             calculator = AspectVectorCalculator(
-                output_dir=self.aspect_vectors_dir,  # 使用專門的面向向量目錄
+                output_dir=self.aspect_vectors_dir,
                 logger=logger
             )
             
-            # 定義進度回調函數
+            # 定義進度回調函數，使用 after 方法確保在主線程中更新 UI
             def update_progress(message, percentage):
-                if percentage < 0:  # 錯誤情況
-                    self.root.after(0, lambda: self.status_var.set(f"錯誤: {message}"))
+                if percentage < 0:
+                    self.root.after_idle(lambda: self.status_var.set(f"錯誤: {message}"))
                     return
                     
-                # 更新進度條和狀態信息
-                progress = 80 + (percentage * 20 / 100)  # 將百分比轉換到80%-100%範圍
-                self.root.after(0, lambda: self.progress_var.set(progress))
-                self.root.after(0, lambda: self.status_var.set(message))
+                def update_ui():
+                    try:
+                        # 更新進度條和狀態信息
+                        self.progress_var.set(80 + (percentage * 20 / 100))
+                        self.status_var.set(message)
+                    except Exception:
+                        pass  # 忽略可能的 Tkinter 錯誤
                 
-                # 記錄日誌
+                self.root.after_idle(update_ui)
                 logger.info(f"{message} ({percentage}%)")
             
             # 執行面向向量計算
@@ -1310,22 +1382,24 @@ class CrossDomainSentimentAnalysisApp:
             # 標記處理完成，觸發控制台自動關閉
             ConsoleOutputManager.mark_process_complete(status_file)
             
-            # 更新UI
-            self.root.after(0, lambda: self.status_var.set(f"面向向量計算完成! 共處理 {len(results['topics'])} 個面向"))
-            self.root.after(0, lambda: self.progress_var.set(100))
+            # 更新UI使用 after_idle
+            def show_completion():
+                try:
+                    self.status_var.set(f"面向向量計算完成! 共處理 {len(results['topics'])} 個面向")
+                    self.progress_var.set(100)
+                    
+                    success_msg = f"面向向量計算完成！\n已計算 {len(results['topics'])} 個面向的向量\n面向向量已保存至: {os.path.basename(self.aspect_vectors_path)}"
+                    if report_path:
+                        success_msg += f"\n\n完整處理報告已生成: {os.path.basename(report_path)}\n是否現在查看報告?"
+                        view_report = messagebox.askyesno("成功", success_msg)
+                        if view_report:
+                            self._open_file(report_path)
+                    else:
+                        messagebox.showinfo("成功", success_msg)
+                except Exception:
+                    pass  # 忽略可能的 Tkinter 錯誤
             
-            # 顯示成功信息
-            success_msg = f"面向向量計算完成！\n已計算 {len(results['topics'])} 個面向的向量\n面向向量已保存至: {os.path.basename(self.aspect_vectors_path)}"
-            if report_path:
-                success_msg += f"\n\n完整處理報告已生成: {os.path.basename(report_path)}\n是否現在查看報告?"
-                
-                # 顯示帶有報告選項的對話框
-                view_report = messagebox.askyesno("成功", success_msg)
-                if view_report:
-                    # 打開報告
-                    self._open_file(report_path)
-            else:
-                messagebox.showinfo("成功", success_msg)
+            self.root.after_idle(show_completion)
             
         except Exception as e:
             import traceback
@@ -1333,10 +1407,17 @@ class CrossDomainSentimentAnalysisApp:
             traceback.print_exc()
             logger.error(error_msg)
             logger.error(traceback.format_exc())
-            self.root.after(0, lambda: messagebox.showerror("錯誤", error_msg))
-            self.root.after(0, lambda: self.status_var.set("面向向量計算失敗"))
-            self.root.after(0, lambda: self.progress_var.set(80))
-    
+            
+            def show_error():
+                try:
+                    messagebox.showerror("錯誤", error_msg)
+                    self.status_var.set("面向向量計算失敗")
+                    self.progress_var.set(80)
+                except Exception:
+                    pass  # 忽略可能的 Tkinter 錯誤
+            
+            self.root.after_idle(show_error)
+
     def export_vectors(self):
         """匯出計算好的平均向量"""
         if not hasattr(self, 'aspect_vectors_path') or not self.aspect_vectors_path:
@@ -1392,37 +1473,43 @@ class CrossDomainSentimentAnalysisApp:
         try:
             from src.aspect_vector_calculator import AspectVectorCalculator
             
-            # 創建面向向量計算器
             calculator = AspectVectorCalculator(output_dir=os.path.dirname(output_path))
             
-            # 定義進度回調函數
             def update_progress(message, percentage):
-                if percentage < 0:  # 錯誤情況
-                    self.root.after(0, lambda: self.status_var.set(f"錯誤: {message}"))
+                if percentage < 0:
+                    self.root.after_idle(lambda: self.status_var.set(f"錯誤: {message}"))
                     return
-                    
-                # 更新狀態信息
-                self.root.after(0, lambda: self.status_var.set(message))
+                
+                self.root.after_idle(lambda: self.status_var.set(message))
             
-            # 執行導出
             result_path = calculator.export_aspect_vectors(
                 self.aspect_vectors_path,
                 output_format=output_format,
                 callback=update_progress
             )
             
-            # 更新UI
-            self.root.after(0, lambda: self.status_var.set(f"面向向量已成功匯出至 {os.path.basename(result_path)}"))
+            def show_success():
+                try:
+                    self.status_var.set(f"面向向量已成功匯出至 {os.path.basename(result_path)}")
+                    messagebox.showinfo("成功", f"面向向量已成功匯出！\n保存路徑：{result_path}")
+                except Exception:
+                    pass  # 忽略可能的 Tkinter 錯誤
             
-            # 顯示成功信息
-            self.root.after(0, lambda: messagebox.showinfo("成功", f"面向向量已成功匯出！\n保存路徑：{result_path}"))
+            self.root.after_idle(show_success)
             
         except Exception as e:
             import traceback
             error_msg = f"Error exporting aspect vectors: {str(e)}"
             traceback.print_exc()
-            self.root.after(0, lambda: messagebox.showerror("錯誤", error_msg))
-            self.root.after(0, lambda: self.status_var.set("匯出面向向量失敗"))
+            
+            def show_error():
+                try:
+                    messagebox.showerror("錯誤", error_msg)
+                    self.status_var.set("匯出面向向量失敗")
+                except Exception:
+                    pass  # 忽略可能的 Tkinter 錯誤
+            
+            self.root.after_idle(show_error)
     
     def _open_file(self, file_path):
         """打開文件（使用系統默認應用程序）"""

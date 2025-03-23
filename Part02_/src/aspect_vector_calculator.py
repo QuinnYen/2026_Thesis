@@ -13,7 +13,11 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 from sklearn.cluster import KMeans
+from src.settings.visualization_config import apply_chinese_to_plot, check_chinese_display
 import seaborn as sns
+
+import matplotlib.pyplot as plt
+plt.ioff()
 
 # 設置日誌
 logging.basicConfig(
@@ -192,28 +196,9 @@ class AspectVectorCalculator:
     def _visualize_aspect_vectors(self, embeddings, df, metadata_path):
         """
         使用t-SNE降維並可視化面向向量
-        
-        Args:
-            embeddings: BERT嵌入向量
-            df: 帶主題標籤的元數據DataFrame
-            metadata_path: 用於生成輸出文件名的元數據路徑
-            
-        Returns:
-            dict: 包含可視化結果的字典
         """
         self.log("Visualizing aspect vectors using t-SNE")
 
-        # 設置中文字體支援
-        import matplotlib.pyplot as plt
-        import matplotlib as mpl
-        
-        # 嘗試設置中文字體（Windows系統）
-        try:
-            plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'Arial Unicode MS', 'STHeiti']
-            plt.rcParams['axes.unicode_minus'] = False
-        except:
-            self.log("警告：無法設置中文字體", level=logging.WARNING)
-        
         # 如果數據太大，隨機選擇一部分進行可視化
         sample_size = min(5000, len(embeddings))
         if len(embeddings) > sample_size:
@@ -237,12 +222,12 @@ class AspectVectorCalculator:
             topic_counts = df['main_topic'].value_counts()
             plt.figure(figsize=(10, 6))
             topic_counts.plot(kind='bar')
-            plt.xlabel('Topics')
-            plt.ylabel('Document Count')
-            plt.title('Document Count by Topic')
+            plt.xlabel('主題')
+            plt.ylabel('文檔數量')
+            plt.title('各主題文檔數量統計')
             plt.tight_layout()
             plt.savefig(tsne_plot_path, dpi=300)
-            plt.close()
+            plt.close('all')  # 關閉所有圖表
             
             return {
                 'tsne_plot_path': tsne_plot_path
@@ -278,18 +263,20 @@ class AspectVectorCalculator:
             s=10
         )
         
+        # 添加標題和標籤
+        plt.title('文檔嵌入向量的t-SNE視覺化（按主題著色）')
+        plt.xlabel('t-SNE維度 1')
+        plt.ylabel('t-SNE維度 2')
+        
         # 添加圖例
         legend1 = plt.legend(
             handles=scatter.legend_elements()[0], 
             labels=topic_labels,
-            title="Topics",
+            title="主題",
             loc="upper right"
         )
         plt.gca().add_artist(legend1)
         
-        plt.title('t-SNE Visualization of Document Embeddings by Topic')
-        plt.xlabel('t-SNE Dimension 1')
-        plt.ylabel('t-SNE Dimension 2')
         plt.tight_layout()
         
         # 保存圖形
@@ -297,7 +284,7 @@ class AspectVectorCalculator:
         base_name_without_ext = os.path.splitext(base_name)[0].replace('_with_topics', '')
         tsne_plot_path = os.path.join(self.vis_dir, f"{base_name_without_ext}_tsne.png")
         plt.savefig(tsne_plot_path, dpi=300, bbox_inches='tight')
-        plt.close()
+        plt.close('all')  # 關閉所有圖表
         
         self.log(f"t-SNE visualization saved to: {tsne_plot_path}")
         

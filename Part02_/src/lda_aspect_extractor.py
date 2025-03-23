@@ -11,6 +11,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
+from src.settings.visualization_config import apply_chinese_to_plot, format_topic_labels
 import pickle
 import json
 import re
@@ -245,16 +246,19 @@ class LDATopicExtractor:
             
             # 使用自定義標籤（如果提供）
             if topic_labels is not None and topic_idx in topic_labels:
-                ax.set_title(f'Topic {topic_idx+1}: {topic_labels[topic_idx]}')
+                # 格式化主題標題，處理中文顯示
+                title = f'主題 {topic_idx+1}: {topic_labels[topic_idx]}'
             else:
-                ax.set_title(f'Topic {topic_idx+1}')
+                title = f'主題 {topic_idx+1}'
                 
+            # 應用中文標題
+            apply_chinese_to_plot(ax, title=title)
             ax.tick_params(axis='both', which='major', labelsize=8)
             ax.set_yticklabels(top_features, fontdict={'fontsize': 8})
         
         plt.tight_layout()
         plt.subplots_adjust(top=0.9)
-        plt.suptitle('Top words for each topic', fontsize=16)
+        plt.suptitle('各主題關鍵詞分佈', fontsize=16)
         
         # 保存圖形
         vis_path = os.path.join(self.vis_dir, f"{base_name}_topic_words.png")
@@ -265,6 +269,9 @@ class LDATopicExtractor:
     
     def _plot_doc_topics(self, doc_topic_dist, n_topics, base_name, topic_labels=None):
         """生成文檔-主題分布可視化（支持自定義主題標籤）"""
+        # 確保使用非互動模式
+        plt.ioff()
+        
         # 計算每個主題的文檔數量
         topic_counts = np.zeros(n_topics)
         doc_main_topics = np.argmax(doc_topic_dist, axis=1)
@@ -276,23 +283,30 @@ class LDATopicExtractor:
         plt.figure(figsize=(12, 7))
         x = np.arange(n_topics)
         plt.bar(x, topic_counts)
-        plt.xlabel('Topic')
-        plt.ylabel('Number of Documents')
-        plt.title('Document Distribution Across Topics')
         
         # 使用自定義標籤（如果提供）
         if topic_labels is not None:
-            x_labels = [f'Topic {i+1}\n{topic_labels.get(i, "")}' for i in range(n_topics)]
+            # 格式化標籤
+            formatted_labels = {}
+            for i in range(n_topics):
+                if i in topic_labels:
+                    formatted_labels[i] = f'主題 {i+1}\n{topic_labels.get(i, "")}'
+                else:
+                    formatted_labels[i] = f'主題 {i+1}'
+            x_labels = [formatted_labels[i] for i in range(n_topics)]
         else:
-            x_labels = [f'Topic {i+1}' for i in range(n_topics)]
-            
+            x_labels = [f'主題 {i+1}' for i in range(n_topics)]
+        
+        plt.xlabel('主題')
+        plt.ylabel('文檔數量')
+        plt.title('文檔在各主題中的分佈')
         plt.xticks(x, x_labels, rotation=45, ha='right')
         plt.tight_layout()
         
         # 保存圖形
         vis_path = os.path.join(self.vis_dir, f"{base_name}_doc_topics.png")
         plt.savefig(vis_path, dpi=200, bbox_inches='tight')
-        plt.close()
+        plt.close('all')  # 關閉所有圖表，避免內存洩露
         
         return vis_path
 
