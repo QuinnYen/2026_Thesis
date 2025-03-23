@@ -341,7 +341,8 @@ class CrossDomainSentimentAnalysisApp:
             logger.info(f"Metadata saved to: {self.bert_metadata_path}")
             logger.info(f"Embedding dimension: {self.embedding_dim}")
             logger.info("====================================")
-            logger.info(f"Processing is complete or in progress. To close this window, press Ctrl+C and then select Y.")
+            logger.info(f"Processing is complete or in progress.")
+            logger.info(f"To close this window, press Ctrl+C and then select Y.")
             logger.info(f"You can also click the X in the top-right corner to close the window.")
             
             # 更新UI
