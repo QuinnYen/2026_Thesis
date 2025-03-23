@@ -1,3 +1,7 @@
+"""
+LDA主題提取器
+"""
+
 import numpy as np
 import pandas as pd
 import os

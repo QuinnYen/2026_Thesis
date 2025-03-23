@@ -1,3 +1,7 @@
+"""
+面向向量計算器
+"""
+
 import numpy as np
 import pandas as pd
 import os
@@ -198,6 +202,17 @@ class AspectVectorCalculator:
             dict: 包含可視化結果的字典
         """
         self.log("Visualizing aspect vectors using t-SNE")
+
+        # 設置中文字體支援
+        import matplotlib.pyplot as plt
+        import matplotlib as mpl
+        
+        # 嘗試設置中文字體（Windows系統）
+        try:
+            plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'Arial Unicode MS', 'STHeiti']
+            plt.rcParams['axes.unicode_minus'] = False
+        except:
+            self.log("警告：無法設置中文字體", level=logging.WARNING)
         
         # 如果數據太大，隨機選擇一部分進行可視化
         sample_size = min(5000, len(embeddings))
@@ -242,7 +257,7 @@ class AspectVectorCalculator:
             n_components=2, 
             random_state=42, 
             perplexity=perplexity, 
-            max_iter=1000  # 使用max_iter代替n_iter (n_iter已經棄用)
+            max_iter=1000
         )
         tsne_results = tsne.fit_transform(sample_embeddings)
         

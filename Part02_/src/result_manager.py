@@ -1,3 +1,7 @@
+"""
+管理和組織分析結果的工具類
+"""
+
 import os
 import json
 import shutil

@@ -8,7 +8,7 @@ import logging
 import nltk
 import json
 import traceback
-from console_output import ConsoleOutputManager
+from src.console_output import ConsoleOutputManager
 
 class ModuleFilter(logging.Filter):
     def __init__(self, module_name):
@@ -95,7 +95,7 @@ class CrossDomainSentimentAnalysisApp:
         self.current_dataset_id = None
         
         # 初始化結果管理器
-        from result_manager import ResultManager
+        from src.result_manager import ResultManager
         self.result_manager = ResultManager(logger=self.logger)
         
         # 初始化輸出目錄結構
@@ -118,7 +118,7 @@ class CrossDomainSentimentAnalysisApp:
         self.tab_model_training = ttk.Frame(self.tab_control)
         self.tab_evaluation = ttk.Frame(self.tab_control)
         self.tab_visualization = ttk.Frame(self.tab_control)
-        self.tab_results = ttk.Frame(self.tab_control)  # 新增結果瀏覽分頁
+        self.tab_results = ttk.Frame(self.tab_control)
         
         # 添加分頁到控制器
         tab_font = ('Arial', 10, 'bold')
@@ -774,7 +774,7 @@ class CrossDomainSentimentAnalysisApp:
     def _run_data_import(self):
         """實際執行數據導入的方法"""
         try:
-            from data_importer import DataImporter
+            from src.data_importer import DataImporter
             
             file_path = self.file_path.get()
             file_name = os.path.basename(file_path)
@@ -856,7 +856,7 @@ class CrossDomainSentimentAnalysisApp:
     def _run_bert_extraction(self, logger, log_file, status_file):
         """實際執行BERT提取的方法"""
         try:
-            from bert_embedder import BertEmbedder
+            from src.bert_embedder import BertEmbedder
             
             # 獲取處理後的數據路徑
             data_path = self.processed_data_path
@@ -1020,8 +1020,8 @@ class CrossDomainSentimentAnalysisApp:
     def _run_lda(self, logger, log_file, status_file):
         """實際執行LDA的方法"""
         try:
-            from lda_aspect_extractor import LDATopicExtractor
-            from topic_labels import TOPIC_LABELS
+            from src.lda_aspect_extractor import LDATopicExtractor
+            from src.settings.topic_labels import TOPIC_LABELS
             
             # 獲取BERT元數據路徑
             metadata_path = self.bert_metadata_path
@@ -1200,7 +1200,7 @@ class CrossDomainSentimentAnalysisApp:
     def _run_vector_calculation(self, logger, log_file, status_file):
         """實際執行向量計算的方法"""
         try:
-            from aspect_vector_calculator import AspectVectorCalculator
+            from src.aspect_vector_calculator import AspectVectorCalculator
             
             # 獲取BERT嵌入路徑和主題元數據路徑
             embeddings_path = self.bert_embeddings_path
@@ -1390,7 +1390,7 @@ class CrossDomainSentimentAnalysisApp:
     def _run_vector_export(self, output_path, output_format):
         """實際執行向量導出的方法"""
         try:
-            from aspect_vector_calculator import AspectVectorCalculator
+            from src.aspect_vector_calculator import AspectVectorCalculator
             
             # 創建面向向量計算器
             calculator = AspectVectorCalculator(output_dir=os.path.dirname(output_path))

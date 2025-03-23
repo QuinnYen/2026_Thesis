@@ -1,3 +1,8 @@
+"""
+BERT嵌入提取器
+這個腳本用於從文本中提取BERT嵌入。
+"""
+
 import torch
 import numpy as np
 import pandas as pd
