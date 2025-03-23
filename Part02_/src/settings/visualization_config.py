@@ -77,15 +77,20 @@ def apply_chinese_to_plot(ax, title=None, xlabel=None, ylabel=None, fontsize_tit
         fontsize_title: 標題字體大小
         fontsize_label: 標籤字體大小
     """
-    if title:
-        ax.set_title(title, fontsize=fontsize_title)
-    if xlabel:
-        ax.set_xlabel(xlabel, fontsize=fontsize_label)
-    if ylabel:
-        ax.set_ylabel(ylabel, fontsize=fontsize_label)
-    
-    # 確保刻度標籤也能正確顯示中文
-    plt.tick_params(labelsize=fontsize_label-2)
+    try:
+        if title:
+            ax.set_title(title, fontsize=fontsize_title)
+        if xlabel:
+            ax.set_xlabel(xlabel, fontsize=fontsize_label)
+        if ylabel:
+            ax.set_ylabel(ylabel, fontsize=fontsize_label)
+        
+        # 確保刻度標籤也能正確顯示中文
+        plt.tick_params(labelsize=fontsize_label-2)
+    except Exception as e:
+        logger.error(f"應用中文設置失敗: {str(e)}")
+        plt.close('all')  # 確保錯誤時清理資源
+        raise
 
 def format_topic_labels(topic_dict, add_index=True):
     """
@@ -145,6 +150,7 @@ def check_chinese_display():
         if not os.path.exists(test_dir):
             os.makedirs(test_dir)
             
+        # 保存並立即關閉圖表
         test_path = os.path.join(test_dir, 'chinese_font_test.png')
         plt.savefig(test_path)
         plt.close('all')  # 確保關閉所有圖表
@@ -152,6 +158,7 @@ def check_chinese_display():
         logger.info(f"中文顯示測試圖已保存至: {test_path}")
         return True
     except Exception as e:
+        plt.close('all')  # 錯誤時也要清理
         logger.error(f"中文顯示測試失敗: {str(e)}")
         return False
 

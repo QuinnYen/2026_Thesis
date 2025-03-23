@@ -367,6 +367,10 @@ class AspectVectorCalculator:
                 callback(f"Error: {str(e)}", -1)
             raise
 
+    def __del__(self):
+        """確保在對象被銷毀時清理所有圖表資源"""
+        plt.close('all')
+
 # 使用示例
 if __name__ == "__main__":
     calculator = AspectVectorCalculator()

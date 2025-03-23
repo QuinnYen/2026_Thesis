@@ -263,7 +263,7 @@ class LDATopicExtractor:
         # 保存圖形
         vis_path = os.path.join(self.vis_dir, f"{base_name}_topic_words.png")
         plt.savefig(vis_path, dpi=200, bbox_inches='tight')
-        plt.close()
+        plt.close('all')  # 確保關閉所有圖表
         
         return vis_path
     
@@ -306,7 +306,7 @@ class LDATopicExtractor:
         # 保存圖形
         vis_path = os.path.join(self.vis_dir, f"{base_name}_doc_topics.png")
         plt.savefig(vis_path, dpi=200, bbox_inches='tight')
-        plt.close('all')  # 關閉所有圖表，避免內存洩露
+        plt.close('all')  # 確保關閉所有圖表，避免內存洩露
         
         return vis_path
 
@@ -385,7 +385,7 @@ class LDATopicExtractor:
             base_name_without_ext = os.path.splitext(base_name)[0].replace('_bert_metadata', '')
             vis_path = os.path.join(self.vis_dir, f"{base_name_without_ext}_coherence.png")
             plt.savefig(vis_path, dpi=200, bbox_inches='tight')
-            plt.close()
+            plt.close('all')  # 確保關閉所有圖表
             
             if callback:
                 callback("Coherence analysis complete", 100)
