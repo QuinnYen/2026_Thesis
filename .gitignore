@@ -71,6 +71,7 @@ venv.bak/
 # 日誌檔案
 *.log
 logs/
+nltk_data/
 
 # 評論資料夾
 ReviewsDataBase/

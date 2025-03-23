@@ -15,6 +15,37 @@ class CrossDomainSentimentAnalysisApp:
         self.root.geometry("800x600")
         self.root.minsize(800, 600)
         
+        # 設置應用程式圖標和風格
+        self.style = ttk.Style()
+        self.style.configure('TNotebook', tabposition='n')
+        self.style.configure('TButton', font=('Arial', 10))
+        self.style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
+        self.style.configure('Status.TLabel', font=('Arial', 10), foreground='green')
+        
+        # 設置日誌
+        log_dir = "./Part02_/logs"
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        
+        self.logger = logging.getLogger('main_app')
+        self.logger.setLevel(logging.INFO)
+        
+        # 檔案處理器設定
+        file_handler = logging.FileHandler(os.path.join(log_dir, 'app.log'), encoding='utf-8')
+        file_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # 新增控制台輸出處理器
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)  # 控制台只顯示警告及以上級別
+        console_formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+        console_handler.setFormatter(console_formatter)
+        
+        # 添加處理器
+        self.logger.addHandler(file_handler)
+        self.logger.addHandler(console_handler)
+        
         # 確保NLTK資源已下載
         try:
             self._ensure_nltk_resources()
@@ -23,13 +54,6 @@ class CrossDomainSentimentAnalysisApp:
             self.logger.error(f"NLTK資源下載失敗: {str(e)}")
             root.destroy()
             return
-        
-        # 設置應用程式圖標和風格
-        self.style = ttk.Style()
-        self.style.configure('TNotebook', tabposition='n')
-        self.style.configure('TButton', font=('Arial', 10))
-        self.style.configure('Header.TLabel', font=('Arial', 12, 'bold'))
-        self.style.configure('Status.TLabel', font=('Arial', 10), foreground='green')
         
         # 創建變數
         self.file_path = tk.StringVar()
@@ -44,27 +68,12 @@ class CrossDomainSentimentAnalysisApp:
         self.aspect_vectors_path = None
         
         # 確保數據目錄存在
-        self.data_dir = "./data"
-        self.results_dir = "./results"
+        self.data_dir = "./Part02_/data"
+        self.results_dir = "./Part02_/results"
         
         for directory in [self.data_dir, self.results_dir]:
             if not os.path.exists(directory):
                 os.makedirs(directory)
-        
-        # 設置日誌
-        log_dir = "./logs"
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        
-        self.logger = logging.getLogger('main_app')
-        self.logger.setLevel(logging.INFO)
-        
-        file_handler = logging.FileHandler(os.path.join(log_dir, 'app.log'), encoding='utf-8')
-        file_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        file_handler.setFormatter(formatter)
-        
-        self.logger.addHandler(file_handler)
         
         # 建立介面
         self._create_widgets()
@@ -233,31 +242,79 @@ class CrossDomainSentimentAnalysisApp:
     
     def extract_bert_embeddings(self):
         """執行BERT語義提取"""
-        if not self.file_path.get():
-            messagebox.showerror("錯誤", "請先導入數據!")
+        if not self.processed_data_path:
+            messagebox.showerror("錯誤", "請先導入並處理數據!")
             return
         
-        self.status_var.set("正在進行BERT語義提取...")
-        self.progress_var.set(40)
+        # 首先打開控制台窗口
+        console_proc = ConsoleOutputManager.open_console("BERT語義提取")
         
-        # 在實際應用中，這裡應該啟動BERT處理
+        self.status_var.set("正在進行BERT語義提取...")
+        self.progress_var.set(30)
+        self.logger.info(f"開始BERT語義提取，處理文件: {self.processed_data_path}")
+        
+        # 在另一個線程中執行BERT提取
         threading.Thread(target=self._run_bert_extraction, daemon=True).start()
     
     def _run_bert_extraction(self):
         """實際執行BERT提取的方法"""
         try:
-            print("開始執行BERT語義提取")
+            from bert_embedder import BertEmbedder
             
-            # 模擬處理過程
-            import time
-            time.sleep(3)
+            # 獲取處理後的數據路徑
+            data_path = self.processed_data_path
+            
+            # 創建BERT編碼器
+            # 可以根據需要選擇不同的BERT模型，這裡使用基本的英文BERT
+            embedder = BertEmbedder(
+                model_name='bert-base-uncased',  # 可以根據語言選擇，如'bert-base-chinese'
+                output_dir=self.results_dir
+            )
+            
+            # 定義進度回調函數
+            def update_progress(message, percentage):
+                if percentage < 0:  # 錯誤情況
+                    self.root.after(0, lambda: self.status_var.set(f"錯誤: {message}"))
+                    return
+                    
+                # 更新進度條和狀態信息
+                progress = 30 + (percentage * 20 / 100)  # 將百分比轉換到30%-50%範圍
+                self.root.after(0, lambda: self.progress_var.set(progress))
+                self.root.after(0, lambda: self.status_var.set(message))
+                
+                # 記錄日誌
+                self.logger.info(f"{message} ({percentage}%)")
+            
+            # 執行BERT嵌入提取
+            result = embedder.extract_embeddings(
+                data_path,
+                text_column="clean_text",
+                batch_size=16,  # 可以根據可用內存調整
+                callback=update_progress
+            )
+            
+            # 保存結果路徑以供後續步驟使用
+            self.bert_embeddings_path = result['embeddings_path']
+            self.bert_metadata_path = result['metadata_path']
+            self.embedding_dim = result['embedding_dim']
             
             # 更新UI
-            self.root.after(0, lambda: self.status_var.set("BERT語義提取完成"))
+            self.root.after(0, lambda: self.status_var.set(f"BERT語義提取完成！嵌入維度: {self.embedding_dim}"))
             self.root.after(0, lambda: self.progress_var.set(50))
+            
+            # 顯示成功信息
+            self.root.after(0, lambda: messagebox.showinfo("成功", f"BERT語義提取完成！\n嵌入向量已保存至: {os.path.basename(self.bert_embeddings_path)}\n嵌入維度: {self.embedding_dim}"))
+            self.logger.info(f"BERT語義提取完成，嵌入向量已保存至: {self.bert_embeddings_path}，維度: {self.embedding_dim}")
+            
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("錯誤", f"BERT語義提取時發生錯誤: {str(e)}"))
+            import traceback
+            error_msg = f"BERT語義提取時發生錯誤: {str(e)}"
+            traceback.print_exc()
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+            self.root.after(0, lambda: messagebox.showerror("錯誤", error_msg))
             self.root.after(0, lambda: self.status_var.set("BERT語義提取失敗"))
+            self.root.after(0, lambda: self.progress_var.set(30))
     
     def perform_lda(self):
         """執行LDA面向切割"""
@@ -340,12 +397,43 @@ class CrossDomainSentimentAnalysisApp:
     
     def _ensure_nltk_resources(self):
         """確保必要的NLTK資源已下載"""
-        resources = ['punkt', 'averaged_perceptron_tagger', 'wordnet']
+        resources = [
+            'punkt',                    # 用於分詞
+            'stopwords',                # 停用詞
+            'wordnet',                  # 詞形還原
+            'omw-1.4',                  # Open Multilingual WordNet
+            'averaged_perceptron_tagger' # 詞性標註
+        ]
+        
+        # 設置NLTK下載目錄 - 確保使用專案目錄下的nltk_data
+        nltk_data_path = "./Part02_/nltk_data"
+        if not os.path.exists(nltk_data_path):
+            os.makedirs(nltk_data_path)
+        
+        # 將此路徑添加到NLTK搜索路徑中
+        nltk.data.path.insert(0, nltk_data_path)
+        
+        # 下載缺失的資源
         for resource in resources:
             try:
-                nltk.data.find(f'tokenizers/{resource}')
+                # 按資源類型嘗試正確的路徑
+                if resource in ['punkt', 'averaged_perceptron_tagger']:
+                    path = f'tokenizers/{resource}'
+                elif resource in ['stopwords', 'wordnet', 'omw-1.4']:
+                    path = f'corpora/{resource}'
+                else:
+                    path = resource
+                    
+                nltk.data.find(path)
+                self.logger.info(f"NLTK資源 '{resource}' 已存在")
             except LookupError:
-                nltk.download(resource, quiet=True)
+                self.logger.info(f"正在下載NLTK資源 '{resource}'...")
+                try:
+                    nltk.download(resource, download_dir=nltk_data_path, quiet=False)
+                    self.logger.info(f"NLTK資源 '{resource}' 下載完成")
+                except Exception as e:
+                    self.logger.error(f"下載NLTK資源 '{resource}' 時出錯: {str(e)}")
+                    raise
 
 # 啟動應用程式
 if __name__ == "__main__":

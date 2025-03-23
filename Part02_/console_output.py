@@ -86,7 +86,7 @@ if __name__ == "__main__":
     console_proc = ConsoleOutputManager.open_console("數據導入處理")
     
     # 設置日誌器
-    logger = ConsoleOutputManager.setup_console_logger("import_data", "logs/data_import.log")
+    logger = ConsoleOutputManager.setup_console_logger("import_data", "./Part02_/logs/data_import.log")
     
     # 輸出一些日誌
     logger.info("數據導入開始")
