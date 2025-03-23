@@ -56,7 +56,7 @@ class TextDataset(Dataset):
 class BertEmbedder:
     """使用BERT模型提取文本的語義表示"""
     
-    def __init__(self, model_name='bert-base-uncased', output_dir='./Part02_/results', device=None):
+    def __init__(self, model_name='bert-base-uncased', output_dir='./Part02_/results', device=None, logger=None):
         """
         初始化BERT編碼器
         
@@ -64,10 +64,11 @@ class BertEmbedder:
             model_name: 使用的BERT模型名稱
             output_dir: 輸出目錄
             device: 計算設備，如果為None，則自動選擇
+            logger: 日誌器
         """
         self.model_name = model_name
         self.output_dir = output_dir
-        self.logger = logging.getLogger('bert_embedder')
+        self.logger = logger or logging.getLogger(__name__)
         
         # 確保輸出目錄存在
         if not os.path.exists(output_dir):
@@ -94,6 +95,11 @@ class BertEmbedder:
             self.logger.error(traceback.format_exc())
             raise
     
+    def log(self, message, level=logging.INFO):
+        """統一的日誌處理方法"""
+        if self.logger:
+            self.logger.log(level, message)
+    
     def extract_embeddings(self, data_path, text_column='clean_text', batch_size=16, callback=None):
         """
         從文本中提取BERT嵌入
@@ -108,6 +114,9 @@ class BertEmbedder:
             embeddings_path: 嵌入向量保存路徑
         """
         try:
+            self.log(f"Starting to process file: {data_path}")
+            self.log(f"Using model: {self.model_name}")
+            
             # 讀取數據
             if callback:
                 callback("Loading data...", 10)

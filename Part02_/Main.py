@@ -8,12 +8,49 @@ import logging
 import nltk
 from console_output import ConsoleOutputManager
 
+class ModuleFilter(logging.Filter):
+    def __init__(self, module_name):
+        self.module_name = module_name
+    
+    def filter(self, record):
+        if record.name.startswith(self.module_name) and record.levelno < logging.WARNING:
+            return False
+        return True
+
+def configure_root_logger():
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+    
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.WARNING)
+    formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    
+    # 添加transformers庫的過濾器
+    root_logger.addFilter(ModuleFilter('transformers'))
+
+# 配置根日誌器
+configure_root_logger()
+
 class CrossDomainSentimentAnalysisApp:
     def __init__(self, root):
         self.root = root
         self.root.title("跨領域情感分析系統 v2.0")
         self.root.geometry("800x600")
         self.root.minsize(800, 600)
+        
+        # 計算視窗置中的位置
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        window_width = 800
+        window_height = 600
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
         # 設置應用程式圖標和風格
         self.style = ttk.Style()
@@ -35,16 +72,7 @@ class CrossDomainSentimentAnalysisApp:
         file_handler.setLevel(logging.INFO)
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         file_handler.setFormatter(formatter)
-        
-        # 新增控制台輸出處理器
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.WARNING)  # 控制台只顯示警告及以上級別
-        console_formatter = logging.Formatter('%(name)s - %(levelname)s - %(message)s')
-        console_handler.setFormatter(console_formatter)
-        
-        # 添加處理器
         self.logger.addHandler(file_handler)
-        self.logger.addHandler(console_handler)
         
         # 確保NLTK資源已下載
         try:
@@ -216,9 +244,6 @@ class CrossDomainSentimentAnalysisApp:
                 progress = 20 + (percentage * 0.8 / 100)  # 將百分比轉換到20%-100%範圍
                 self.root.after(0, lambda: self.progress_var.set(progress))
                 self.root.after(0, lambda: self.status_var.set(message))
-                
-                # 在控制台輸出日誌
-                print(f"{message} ({percentage}%)")
             
             # 執行數據導入
             processed_file_path = importer.import_data(file_path, callback=update_progress)
@@ -278,7 +303,8 @@ class CrossDomainSentimentAnalysisApp:
             # 創建BERT編碼器
             embedder = BertEmbedder(
                 model_name='bert-base-uncased',
-                output_dir=self.results_dir
+                output_dir=self.results_dir,
+                logger=logger  # 傳入專用的日誌器
             )
             
             # 定義進度回調函數
@@ -310,10 +336,13 @@ class CrossDomainSentimentAnalysisApp:
             
             # 記錄完成信息
             logger.info("====================================")
-            logger.info(f"BERT語義提取完成!")
-            logger.info(f"嵌入向量已保存至: {self.bert_embeddings_path}")
-            logger.info(f"元數據已保存至: {self.bert_metadata_path}")
-            logger.info(f"嵌入維度: {self.embedding_dim}")
+            logger.info(f"BERT semantic extraction complete!")
+            logger.info(f"Embedding vectors saved to: {self.bert_embeddings_path}")
+            logger.info(f"Metadata saved to: {self.bert_metadata_path}")
+            logger.info(f"Embedding dimension: {self.embedding_dim}")
+            logger.info("====================================")
+            logger.info(f"Processing is complete or in progress. To close this window, press Ctrl+C and then select Y.")
+            logger.info(f"You can also click the X in the top-right corner to close the window.")
             
             # 更新UI
             self.root.after(0, lambda: self.status_var.set(f"BERT語義提取完成！嵌入維度: {self.embedding_dim}"))
