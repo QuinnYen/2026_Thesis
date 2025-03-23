@@ -1,36 +1,54 @@
-# 跨領域情感分析數據處理工具 [開發中]
+# 跨領域情感分析系統 [開發中]
 
-此專案開發用於處理跨領域情感分析研究所需的數據集，提供資料載入、統計分析、視覺化和預處理功能，作為碩士論文研究的基礎工具。
+此專案開發用於跨領域情感分析研究，提供資料處理、特徵提取、面向切割和跨領域模型建構的完整流程，作為碩士論文研究的核心工具。
 
 ## 功能特色
 
-- **多領域資料支援**：支援 Amazon、Yelp 和 IMDB 三種不同領域的數據集
-- **數據統計與分析**：
-  - 情感分布分析
-  - 評論長度分析
-  - 詞頻分析
-  - 詞彙重疊分析（使用 Jaccard 相似度）
-  - 情感詞分布分析
-- **數據預處理**：
-  - 清除 HTML 標籤
-  - 移除標點符號
-  - 轉換為小寫
-  - 移除停用詞
-  - 詞幹提取
-  - 詞形還原
-- **批次處理**：支援大型資料集的批次預處理
+- **多領域資料處理**：
+  - 支援 Amazon (產品評論)、Yelp (餐廳評論) 和 IMDB (電影評論) 三種不同領域的數據集
+  - 自動識別並處理不同格式的數據 (CSV、JSON、TXT)
+  - 高效批次處理大型資料集
 
-## 環境需求
+- **文本預處理**：
+  - 移除 HTML 標籤、URL、特殊符號
+  - 文本正規化與標準化
+  - 分詞、移除停用詞、詞形還原
 
-- Python 3.6+
-- 依賴套件：
+- **特徵表示與面向切割**：
+  - **BERT 語義表示提取**：使用預訓練 BERT 模型生成高質量文本向量
+  - LDA 主題建模：識別不同領域間的共享面向
+  - 面向表示構建：計算面向相關句子的平均向量
+
+- **跨領域模型構建**：
+  - 領域適應/遷移學習
+  - 注意力機制整合 (面向級注意力)
+  - 整合領域間共性和差異特徵
+
+- **評估與分析**：
+  - 領域內評估 (內部測試) 和跨領域評估 (外部測試)
+  - 面向遷移效果分析
+  - 領域特性比較與可視化
+
+## 系統需求
+
+- **Python 3.7+**
+- **基礎套件**：
   ```
   pandas
   numpy
-  matplotlib
   nltk
-  jieba
+  beautifulsoup4
+  matplotlib
   tkinter
+  ```
+
+- **深度學習套件**：
+  ```
+  torch
+  transformers
+  scikit-learn
+  gensim
+  tqdm
   ```
 
 ## 安裝說明
@@ -41,79 +59,113 @@
    cd cross-domain-sentiment-analysis
    ```
 
-2. 安裝所需套件：
+2. 建立虛擬環境 (建議使用)：
+   ```
+   python -m venv venv
+   # Windows
+   venv\Scripts\activate
+   # macOS/Linux
+   source venv/bin/activate
+   ```
+
+3. 安裝必要套件：
    ```
    pip install -r requirements.txt
    ```
 
-3. 下載 NLTK 資源：
+4. 下載 NLTK 資源：
    ```python
    import nltk
    nltk.download('punkt')
    nltk.download('stopwords')
    nltk.download('wordnet')
-   nltk.download('vader_lexicon')
+   nltk.download('omw-1.4')
+   ```
+
+5. (選用) 預下載 BERT 模型 (適用於離線環境)：
+   ```
+   python bert_offline_downloader.py --model bert-base-uncased --output ./bert_models
    ```
 
 ## 使用方法
 
 1. 啟動應用程式：
    ```
-   python P1_main.py
+   python Main.py
    ```
 
-2. 資料載入：
-   - 在「Amazon數據」、「Yelp數據」和「IMDB數據」標籤頁中載入對應的數據檔案
-   - 支援的資料格式：CSV（Amazon、IMDB）、JSON（Yelp）
+2. **資料處理流程**：
 
-3. 資料分析：
-   - 在「數據統計」標籤頁中選擇分析類型
-   - 點擊「執行分析」生成視覺化結果
+   a. **導入數據**：
+   - 點擊「選擇文件」選擇要分析的評論資料文件
+   - 點擊「開始導入數據」執行資料清理與預處理
+   - 系統會自動識別文本列，並進行清洗、分詞和詞形還原
 
-4. 資料預處理：
-   - 在「數據預處理」標籤頁設定預處理選項
-   - 點擊「執行預處理」處理載入的數據
-   - 點擊「批次預處理（全量資料）」處理大型資料集
-   - 點擊「儲存預處理結果」保存處理後的資料
+   b. **BERT 語義提取**：
+   - 點擊「執行 BERT 語義提取」將文本轉換為向量表示
+   - 系統會使用預訓練的 BERT 模型提取語義特徵
+   - 結果將保存為 NPZ (向量) 和 CSV (元數據) 檔案
+
+   c. **LDA 面向切割**：
+   - 設定希望識別的主題數量
+   - 點擊「執行 LDA 面向切割」進行主題建模
+   - 系統會識別出跨領域的共享面向
+
+   d. **計算面向向量**：
+   - 點擊「執行計算」計算每個面向的平均向量表示
+   - 點擊「匯出平均向量」保存結果以供後續使用
+
+3. **模型訓練與評估** (開發中)：
+   - 在「模型訓練」和「評估分析」標籤頁中操作
+   - 設定源領域與目標領域
+   - 訓練跨領域模型並評估效果
 
 ## 資料集
 
-此工具設計用於處理以下公開資料集：
+此系統設計用於處理以下公開資料集：
 
 1. **Amazon 評論數據集**：[Amazon Product Reviews](https://jmcauley.ucsd.edu/data/amazon/)
-   - 提供不同產品類別的評論，適合跨領域研究
-   - 建議使用 Electronics、Books、Movies_and_TV 等類別
+   - 包含不同產品類別的評論，適合跨領域研究
+   - 推薦使用 Electronics、Books、Movies_and_TV 等類別
 
 2. **Yelp 評論數據集**：[Yelp Dataset Challenge](https://www.yelp.com/dataset)
-   - 在 `ReviewsDatabase` 資料夾中使用 `yelp_academic_dataset_review.json` 檔案
+   - 包含餐廳及其他商家評論，可作為獨立領域
 
 3. **IMDB 電影評論數據集**：[Stanford's IMDB Dataset](https://ai.stanford.edu/~amaas/data/sentiment/)
-   - 提供電影評論及其情感標籤（正面/負面）
-
-## 注意事項
-
-- 大型數據集處理可能需要較長時間，建議使用批次處理功能
-- `ReviewsDatabase` 資料夾不包含在版本控制中，需自行下載相關資料集
-- 對於跨領域分析，建議選擇至少兩個不同領域的數據集進行比較
+   - 提供電影評論及其情感標籤
 
 ## 專案結構
 
 ```
 .
-├── Part01_/               # 主專案資料夾
-│   ├── P1_main.py         # 主程式
-│   └── preprocessing_scripts/  # 預處理腳本
-├── ReviewsDatabase/       # 數據集資料夾 (不包含在Git中)
-├── venv/                  # Python虛擬環境 (不包含在Git中)
-├── nltk_Download.py       # NLTK資源下載腳本
+├── Main.py                # 主程式 (GUI)
+├── data_importer.py       # 資料導入與預處理模組
+├── bert_embedder.py       # BERT 語義提取模組
+├── lda_aspect_extractor.py # LDA 面向切割模組 (開發中)
+├── aspect_vector_calculator.py # 面向向量計算模組 (開發中)
+├── console_output.py      # 控制台輸出管理工具
+├── bert_offline_downloader.py # BERT 模型離線下載工具
+├── data/                  # 處理後數據目錄
+├── results/               # 結果目錄
+├── logs/                  # 日誌目錄
+├── models/                # 模型目錄
+├── bert_models/           # 預下載的 BERT 模型 (可選)
 ├── requirements.txt       # 依賴套件清單
-├── .gitignore             # Git忽略檔案清單
 └── README.md              # 說明文件
 ```
 
+## 注意事項
+
+- 處理大型資料集時，BERT 提取可能需要較長時間，建議使用支援 CUDA 的 GPU 加速
+- 第一次運行時，系統會自動下載 NLTK 資源和 BERT 模型，需要網絡連接
+- 對於跨領域分析，建議選擇至少兩個不同領域的數據集進行比較
+- 目前系統的「模型訓練」和「評估分析」模塊仍在開發中
+
 ## 未來擴展
 
+- 完成模型訓練和評估分析模塊
 - 添加更多數據集和領域支援
-- 集成注意力機制的可視化分析
-- 支援中文數據處理
-- 實現跨領域模型訓練與評估
+- 實現面向對齊和映射功能
+- 集成更多預訓練模型選項 (如 RoBERTa、XLNet)
+- 改進可視化分析功能
+- 支援中文資料處理和分析
