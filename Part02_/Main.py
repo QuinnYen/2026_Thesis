@@ -246,17 +246,25 @@ class CrossDomainSentimentAnalysisApp:
             messagebox.showerror("錯誤", "請先導入並處理數據!")
             return
         
-        # 首先打開控制台窗口
-        console_proc = ConsoleOutputManager.open_console("BERT語義提取")
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file = ConsoleOutputManager.open_console("BERT語義提取")
         
         self.status_var.set("正在進行BERT語義提取...")
         self.progress_var.set(30)
-        self.logger.info(f"開始BERT語義提取，處理文件: {self.processed_data_path}")
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        bert_logger = ConsoleOutputManager.setup_console_logger('bert_extraction', log_file)
+        bert_logger.info(f"Starting BERT semantic extraction, processing document: {self.processed_data_path}")
+        
+        # 記錄處理參數
+        bert_logger.info(f"Starting BERT embedding extraction with model: bert-base-uncased")
+        bert_logger.info(f"Output directory: {self.results_dir}")
+        bert_logger.info("====================================")
         
         # 在另一個線程中執行BERT提取
-        threading.Thread(target=self._run_bert_extraction, daemon=True).start()
+        threading.Thread(target=self._run_bert_extraction, args=(bert_logger, log_file), daemon=True).start()
     
-    def _run_bert_extraction(self):
+    def _run_bert_extraction(self, logger, log_file):
         """實際執行BERT提取的方法"""
         try:
             from bert_embedder import BertEmbedder
@@ -264,10 +272,12 @@ class CrossDomainSentimentAnalysisApp:
             # 獲取處理後的數據路徑
             data_path = self.processed_data_path
             
+            # 記錄信息到日誌
+            logger.info(f"Processing file: {data_path}")
+            
             # 創建BERT編碼器
-            # 可以根據需要選擇不同的BERT模型，這裡使用基本的英文BERT
             embedder = BertEmbedder(
-                model_name='bert-base-uncased',  # 可以根據語言選擇，如'bert-base-chinese'
+                model_name='bert-base-uncased',
                 output_dir=self.results_dir
             )
             
@@ -283,13 +293,13 @@ class CrossDomainSentimentAnalysisApp:
                 self.root.after(0, lambda: self.status_var.set(message))
                 
                 # 記錄日誌
-                self.logger.info(f"{message} ({percentage}%)")
+                logger.info(f"{message} ({percentage}%)")
             
             # 執行BERT嵌入提取
             result = embedder.extract_embeddings(
                 data_path,
                 text_column="clean_text",
-                batch_size=16,  # 可以根據可用內存調整
+                batch_size=16,
                 callback=update_progress
             )
             
@@ -298,20 +308,26 @@ class CrossDomainSentimentAnalysisApp:
             self.bert_metadata_path = result['metadata_path']
             self.embedding_dim = result['embedding_dim']
             
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"BERT語義提取完成!")
+            logger.info(f"嵌入向量已保存至: {self.bert_embeddings_path}")
+            logger.info(f"元數據已保存至: {self.bert_metadata_path}")
+            logger.info(f"嵌入維度: {self.embedding_dim}")
+            
             # 更新UI
             self.root.after(0, lambda: self.status_var.set(f"BERT語義提取完成！嵌入維度: {self.embedding_dim}"))
             self.root.after(0, lambda: self.progress_var.set(50))
             
             # 顯示成功信息
             self.root.after(0, lambda: messagebox.showinfo("成功", f"BERT語義提取完成！\n嵌入向量已保存至: {os.path.basename(self.bert_embeddings_path)}\n嵌入維度: {self.embedding_dim}"))
-            self.logger.info(f"BERT語義提取完成，嵌入向量已保存至: {self.bert_embeddings_path}，維度: {self.embedding_dim}")
             
         except Exception as e:
             import traceback
             error_msg = f"BERT語義提取時發生錯誤: {str(e)}"
             traceback.print_exc()
-            self.logger.error(error_msg)
-            self.logger.error(traceback.format_exc())
+            logger.error(error_msg)
+            logger.error(traceback.format_exc())
             self.root.after(0, lambda: messagebox.showerror("錯誤", error_msg))
             self.root.after(0, lambda: self.status_var.set("BERT語義提取失敗"))
             self.root.after(0, lambda: self.progress_var.set(30))
