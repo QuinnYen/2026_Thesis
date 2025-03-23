@@ -121,12 +121,13 @@ class CrossDomainSentimentAnalysisApp:
         self.tab_results = ttk.Frame(self.tab_control)  # 新增結果瀏覽分頁
         
         # 添加分頁到控制器
-        self.tab_control.add(self.tab_data_processing, text="資料處理")
-        self.tab_control.add(self.tab_model_training, text="模型訓練")
-        self.tab_control.add(self.tab_evaluation, text="評估分析")
-        self.tab_control.add(self.tab_visualization, text="結果可視化")
-        self.tab_control.add(self.tab_results, text="結果瀏覽")  # 新增結果瀏覽分頁
-        
+        tab_font = ('Arial', 10, 'bold')
+        self.tab_control.add(self.tab_data_processing, text="　資料處理　")
+        self.tab_control.add(self.tab_model_training, text="　模型訓練　")
+        self.tab_control.add(self.tab_evaluation, text="　評估分析　")
+        self.tab_control.add(self.tab_results, text="　結果瀏覽　")
+
+        self.style.configure('TNotebook.Tab', font=tab_font)
         self.tab_control.pack(expand=1, fill="both")
         
         # 設置資料處理分頁內容
@@ -167,14 +168,12 @@ class CrossDomainSentimentAnalysisApp:
         step3_frame = ttk.LabelFrame(main_frame, text="步驟 3: LDA面向切割", padding=10)
         step3_frame.pack(fill="x", pady=5)
         
-        ttk.Label(step3_frame, text="使用LDA進行主題建模，識別不同面向").pack(anchor="w", pady=5)
+        ttk.Label(step3_frame, text="使用LDA進行主題建模，識別不同面向 (主題數量將根據數據源自動設定)").pack(anchor="w", pady=5)
         
         lda_frame = ttk.Frame(step3_frame)
         lda_frame.pack(fill="x", pady=5)
         
-        ttk.Label(lda_frame, text="主題數量:").pack(side="left")
-        ttk.Entry(lda_frame, textvariable=self.topic_count, width=5).pack(side="left", padx=5)
-        ttk.Button(lda_frame, text="執行LDA面向切割", command=self.perform_lda).pack(side="right")
+        ttk.Button(lda_frame, text="執行LDA面向切割", command=self.perform_lda).pack(anchor="e", pady=5)
         
         # 步驟4: 計算面向相關句子的平均向量
         step4_frame = ttk.LabelFrame(main_frame, text="步驟 4: 計算面向相關句子的平均向量", padding=10)
@@ -187,6 +186,7 @@ class CrossDomainSentimentAnalysisApp:
         
         ttk.Button(vector_frame, text="執行計算", command=self.calculate_aspect_vectors).pack(side="left")
         ttk.Button(vector_frame, text="匯出平均向量", command=self.export_vectors).pack(side="right")
+
     
     def _setup_status_bar(self):
         status_frame = ttk.Frame(self.root, padding=10)
@@ -955,15 +955,6 @@ class CrossDomainSentimentAnalysisApp:
             messagebox.showerror("錯誤", "請先執行BERT語義提取!")
             return
         
-        try:
-            topic_count = int(self.topic_count.get())
-            if topic_count <= 0:
-                messagebox.showerror("錯誤", "主題數量必須大於零!")
-                return
-        except ValueError:
-            messagebox.showerror("錯誤", "主題數量必須是有效的整數!")
-            return
-        
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
         
@@ -972,26 +963,95 @@ class CrossDomainSentimentAnalysisApp:
         
         # 設置日誌器，同時輸出到控制台和日誌文件
         lda_logger = ConsoleOutputManager.setup_console_logger('lda_extraction', log_file)
-        lda_logger.info(f"Starting LDA aspect extraction, processing file: {self.bert_metadata_path}")
+        lda_logger.info(f"開始LDA面向切割，處理文件: {self.bert_metadata_path}")
         
-        # 記錄處理參數
-        lda_logger.info(f"Number of topics: {topic_count}")
-        lda_logger.info(f"Output directory: {self.results_dir}")
-        lda_logger.info("====================================")
+        # 確定數據來源，以便選擇對應的主題標籤
+        self.determine_data_source()
         
         # 在另一個線程中執行LDA面向切割
-        threading.Thread(target=self._run_lda, args=(topic_count, lda_logger, log_file, status_file), daemon=True).start()
+        threading.Thread(target=self._run_lda, args=(lda_logger, log_file, status_file), daemon=True).start()
+
+    def determine_data_source(self):
+        """根據檔案名稱或內容確定數據來源"""
+        # 從文件名或路徑判斷數據源
+        file_path = self.file_path.get() or ""
+        file_name = os.path.basename(file_path).lower()
+        
+        # 預設為未知數據源
+        self.data_source = "unknown"
+        
+        # 檢查文件名中的關鍵詞
+        if "imdb" in file_name or "movie" in file_name or "film" in file_name:
+            self.data_source = "imdb"
+            self.logger.info(f"檢測到IMDB電影評論數據: {file_name}")
+        elif "amazon" in file_name or "product" in file_name:
+            self.data_source = "amazon"
+            self.logger.info(f"檢測到Amazon產品評論數據: {file_name}")
+        elif "yelp" in file_name or "restaurant" in file_name:
+            self.data_source = "yelp"
+            self.logger.info(f"檢測到Yelp餐廳評論數據: {file_name}")
+        else:
+            # 也可以通過對話框讓用戶選擇
+            self.ask_data_source()
+
+    def ask_data_source(self):
+        """詢問用戶數據來源"""
+        from tkinter import simpledialog
+        
+        sources = {
+            "1": "imdb",
+            "2": "amazon", 
+            "3": "yelp"
+        }
+        
+        source = simpledialog.askstring(
+            "選擇數據來源",
+            "請選擇評論數據來源:\n1. IMDB電影評論\n2. Amazon產品評論\n3. Yelp餐廳評論",
+            initialvalue="1"
+        )
+        
+        if source in sources:
+            self.data_source = sources[source]
+            self.logger.info(f"用戶選擇了數據來源: {self.data_source}")
+        else:
+            self.data_source = "unknown"
+            self.logger.info("未指定數據來源或取消選擇")
     
-    def _run_lda(self, topic_count, logger, log_file, status_file):
+    def _run_lda(self, logger, log_file, status_file):
         """實際執行LDA的方法"""
         try:
             from lda_aspect_extractor import LDATopicExtractor
+            from topic_labels import TOPIC_LABELS
             
             # 獲取BERT元數據路徑
             metadata_path = self.bert_metadata_path
             
             # 記錄信息到日誌
-            logger.info(f"Processing file: {metadata_path}")
+            logger.info(f"處理文件: {metadata_path}")
+            logger.info(f"數據來源: {self.data_source}")
+            
+            # 獲取適合的主題標籤
+            topic_labels = None
+            if self.data_source in TOPIC_LABELS:
+                topic_labels = TOPIC_LABELS[self.data_source]
+                logger.info(f"已載入 {self.data_source} 的自定義主題標籤")
+                
+                # 輸出所有標籤
+                for idx, label in topic_labels.items():
+                    logger.info(f"主題 {idx+1}: {label}")
+                
+                # 自動設定主題數量為標籤數量
+                topic_count = len(topic_labels)
+                logger.info(f"根據主題標籤自動設定主題數量: {topic_count}")
+            else:
+                # 如果沒有匹配的標籤，則使用默認數量
+                topic_count = 10
+                logger.info(f"未找到匹配的主題標籤，使用默認主題數量: {topic_count}")
+            
+            # 記錄處理參數
+            logger.info(f"主題數量: {topic_count}")
+            logger.info(f"輸出目錄: {self.results_dir}")
+            logger.info("====================================")
             
             # 創建LDA面向提取器
             extractor = LDATopicExtractor(
@@ -1013,34 +1073,11 @@ class CrossDomainSentimentAnalysisApp:
                 # 記錄日誌
                 logger.info(f"{message} ({percentage}%)")
             
-            # 首先分析主題一致性（可選，如果要自動確定最佳主題數）
-            # 如果已經指定了主題數，這一步可以跳過
-            if topic_count <= 0:
-                logger.info("Starting topic coherence analysis to determine optimal number of topics...")
-                coherence_results = extractor.analyze_topic_coherence(
-                    metadata_path, 
-                    n_topics_range=range(5, 16),
-                    callback=update_progress
-                )
-                topic_count = coherence_results['optimal_topics']
-                logger.info(f"Optimal number of topics: {topic_count}")
-                
-                # 註冊一致性分析結果
-                self.result_manager.register_result(
-                    self.current_dataset_id,
-                    "lda_topic",
-                    "visualization",
-                    coherence_results['visualization_path'],
-                    metadata={
-                        "optimal_topics": topic_count,
-                        "analysis_type": "coherence"
-                    }
-                )
-            
             # 執行LDA面向切割
             results = extractor.run_lda(
                 metadata_path,
                 n_topics=topic_count,
+                topic_labels=topic_labels,
                 callback=update_progress
             )
             
@@ -1058,7 +1095,8 @@ class CrossDomainSentimentAnalysisApp:
                 self.lda_model_path,
                 metadata={
                     "n_topics": topic_count,
-                    "model_type": "LDA"
+                    "model_type": "LDA",
+                    "data_source": self.data_source
                 }
             )
             
@@ -1070,7 +1108,8 @@ class CrossDomainSentimentAnalysisApp:
                 self.topics_path,
                 metadata={
                     "n_topics": topic_count,
-                    "content": "topic keywords"
+                    "content": "topic keywords",
+                    "data_source": self.data_source
                 }
             )
             
@@ -1082,42 +1121,40 @@ class CrossDomainSentimentAnalysisApp:
                 self.topic_metadata_path,
                 metadata={
                     "n_topics": topic_count,
-                    "content": "documents with topic labels"
+                    "content": "documents with topic labels",
+                    "data_source": self.data_source
                 }
             )
             
             # 註冊處理結果 - 可視化結果
-            # 查找results中的可視化文件
-            vis_dir = os.path.join(self.lda_topics_dir, '..', 'visualizations')
-            for root, dirs, files in os.walk(vis_dir):
-                for file in files:
-                    if file.endswith('.png') and 'topic' in file.lower():
-                        vis_path = os.path.join(root, file)
-                        self.result_manager.register_result(
-                            self.current_dataset_id,
-                            "lda_topic",
-                            "visualization",
-                            vis_path,
-                            metadata={
-                                "visualization_type": "topic_words" if "topic_words" in file else "doc_topics"
-                            }
-                        )
+            for vis_path in results.get('visualizations', []):
+                vis_type = "topic_words" if "topic_words" in vis_path else "doc_topics"
+                self.result_manager.register_result(
+                    self.current_dataset_id,
+                    "lda_topic",
+                    "visualization",
+                    vis_path,
+                    metadata={
+                        "visualization_type": vis_type,
+                        "data_source": self.data_source
+                    }
+                )
             
             # 記錄完成信息
             logger.info("====================================")
-            logger.info(f"LDA aspect extraction complete!")
-            logger.info(f"LDA model saved to: {self.lda_model_path}")
-            logger.info(f"Topic words saved to: {self.topics_path}")
-            logger.info(f"Metadata with topic labels saved to: {self.topic_metadata_path}")
+            logger.info(f"LDA面向切割完成!")
+            logger.info(f"LDA模型已保存至: {self.lda_model_path}")
+            logger.info(f"主題詞已保存至: {self.topics_path}")
+            logger.info(f"帶主題標籤的元數據已保存至: {self.topic_metadata_path}")
             logger.info("====================================")
             
             # 顯示每個主題的頂部詞語
-            logger.info("Top words for each topic:")
+            logger.info("各個主題的頂部詞語:")
             for topic, words in results['topic_words'].items():
                 logger.info(f"{topic}: {', '.join(words[:10])}")
             
             logger.info("====================================")
-            logger.info(f"Processing complete. Window will close automatically in a few seconds.")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
             
             # 標記處理完成，觸發控制台自動關閉
             ConsoleOutputManager.mark_process_complete(status_file)
@@ -1462,4 +1499,10 @@ class CrossDomainSentimentAnalysisApp:
 if __name__ == "__main__":
     root = tk.Tk()
     app = CrossDomainSentimentAnalysisApp(root)
+    root.update()
+    # 根據操作系統設置窗口最大化
+    import platform
+    system = platform.system()
+    if system == "Windows":
+        root.state('zoomed')
     root.mainloop()

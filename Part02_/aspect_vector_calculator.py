@@ -211,7 +211,7 @@ class AspectVectorCalculator:
         
         # 檢查樣本數量，如果太少則跳過t-SNE
         if len(sample_embeddings) < 5:
-            self.log(f"樣本數量太少 ({len(sample_embeddings)}), 跳過t-SNE可視化", level=logging.WARNING)
+            self.log(f"Too few samples ({len(sample_embeddings)}), skipping t-SNE visualization", level=logging.WARNING)
             
             # 生成一個簡單的條形圖替代
             base_name = os.path.basename(metadata_path)
@@ -222,9 +222,9 @@ class AspectVectorCalculator:
             topic_counts = df['main_topic'].value_counts()
             plt.figure(figsize=(10, 6))
             topic_counts.plot(kind='bar')
-            plt.xlabel('主題')
-            plt.ylabel('文檔數量')
-            plt.title('各主題文檔數量統計')
+            plt.xlabel('Topics')
+            plt.ylabel('Document Count')
+            plt.title('Document Count by Topic')
             plt.tight_layout()
             plt.savefig(tsne_plot_path, dpi=300)
             plt.close()

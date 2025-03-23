@@ -301,7 +301,7 @@ class ResultManager:
         <html>
         <head>
             <meta charset="utf-8">
-            <title>跨領域情感分析 - 處理報告</title>
+            <title>Cross-Domain Sentiment Analysis - Processing Report</title>
             <style>
                 body {{ font-family: Arial, sans-serif; line-height: 1.6; max-width: 1200px; margin: 0 auto; padding: 20px; }}
                 h1, h2, h3 {{ color: #333; }}
@@ -320,30 +320,30 @@ class ResultManager:
             </style>
         </head>
         <body>
-            <h1>跨領域情感分析處理報告</h1>
+            <h1>Cross-Domain Sentiment Analysis Processing Report</h1>
             
             <div class="summary">
-                <h2>數據集摘要</h2>
-                <p><strong>數據集名稱:</strong> {dataset_info['name']}</p>
-                <p><strong>數據集ID:</strong> {dataset_id}</p>
-                <p><strong>創建時間:</strong> {dataset_info['created_at']}</p>
-                <p><strong>原始數據:</strong> {dataset_info['source_path']}</p>
-                <p><strong>狀態:</strong> <span class="status status-{dataset_info['summary']['status']}">
+                <h2>Dataset Summary</h2>
+                <p><strong>Dataset Name:</strong> {dataset_info['name']}</p>
+                <p><strong>Dataset ID:</strong> {dataset_id}</p>
+                <p><strong>Created At:</strong> {dataset_info['created_at']}</p>
+                <p><strong>Source Data:</strong> {dataset_info['source_path']}</p>
+                <p><strong>Status:</strong> <span class="status status-{dataset_info['summary']['status']}">
                     {dataset_info['summary']['status'].upper()}</span></p>
-                <p><strong>狀態信息:</strong> {dataset_info['summary']['message']}</p>
-                {f"<p><strong>完成時間:</strong> {dataset_info['summary'].get('completed_at', 'N/A')}</p>" 
+                <p><strong>Status Message:</strong> {dataset_info['summary']['message']}</p>
+                {f"<p><strong>Completed At:</strong> {dataset_info['summary'].get('completed_at', 'N/A')}</p>" 
                     if 'completed_at' in dataset_info['summary'] else ""}
             </div>
             
-            <h2>處理步驟</h2>
+            <h2>Processing Steps</h2>
         '''
         
         # 添加每個處理步驟的詳細信息
         step_titles = {
-            "data_import": "數據導入與預處理",
-            "bert_embedding": "BERT語義提取",
-            "lda_topic": "LDA面向切割",
-            "aspect_vector": "面向向量計算"
+            "data_import": "Data Import & Preprocessing",
+            "bert_embedding": "BERT Semantic Extraction",
+            "lda_topic": "LDA Topic Modeling",
+            "aspect_vector": "Aspect Vector Calculation"
         }
         
         for step_name, step_info in dataset_info["steps"].items():
@@ -351,11 +351,11 @@ class ResultManager:
             html += f'''
             <div class="step">
                 <h3>{step_title}</h3>
-                <p><strong>狀態:</strong> <span class="status status-{step_info['status']}">
+                <p><strong>Status:</strong> <span class="status status-{step_info['status']}">
                     {step_info['status'].upper()}</span></p>
-                <p><strong>完成時間:</strong> {step_info['completed_at']}</p>
+                <p><strong>Completed At:</strong> {step_info['completed_at']}</p>
                 
-                <h4>處理結果:</h4>
+                <h4>Results:</h4>
             '''
             
             # 分類顯示不同類型的結果
@@ -374,9 +374,9 @@ class ResultManager:
                     html += '''
                     <table>
                         <tr>
-                            <th>文件名</th>
-                            <th>路徑</th>
-                            <th>元數據</th>
+                            <th>Filename</th>
+                            <th>Path</th>
+                            <th>Metadata</th>
                         </tr>
                     '''
                     for result in results:
@@ -394,9 +394,13 @@ class ResultManager:
                 elif result_type == "visualization":
                     html += '<div style="display: flex; flex-wrap: wrap; gap: 20px;">'
                     for result in results:
+                        # 使用絕對路徑並修正file://格式
+                        abs_path = os.path.abspath(result["path"]).replace('\\', '/')
+                        img_url = f"file:///{abs_path}"
+                        
                         html += f'''
                         <div style="text-align: center; margin-bottom: 20px;">
-                            <img src="file:///{result["path"]}" class="visualization" style="max-width: 300px;">
+                            <img src="{img_url}" class="visualization" style="max-width: 600px;">
                             <div>{result["filename"]}</div>
                         </div>
                         '''
@@ -412,6 +416,15 @@ class ResultManager:
             html += '</div>'
         
         html += '''
+        <script>
+        // 為圖片添加點擊事件，點擊可放大查看
+        document.querySelectorAll('.visualization').forEach(img => {
+            img.style.cursor = 'pointer';
+            img.addEventListener('click', function() {
+                window.open(this.src, '_blank');
+            });
+        });
+        </script>
         </body>
         </html>
         '''

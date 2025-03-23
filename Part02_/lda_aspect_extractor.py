@@ -49,22 +49,24 @@ class LDATopicExtractor:
         if self.logger:
             self.logger.log(level, message)
     
-    def run_lda(self, metadata_path, text_column='tokens_str', n_topics=10, callback=None):
+    def run_lda(self, metadata_path, n_topics=10, text_column='tokens_str', topic_labels=None, callback=None):
         """
         執行LDA主題建模來識別面向
         
         Args:
             metadata_path: BERT元數據文件路徑（CSV）
-            text_column: 文本列名
             n_topics: 主題數量
+            text_column: 文本列名
+            topic_labels: 主題標籤字典，鍵為主題索引，值為標籤名稱 (可選)
             callback: 進度回調函數
-            
+                
         Returns:
             dict: 包含LDA模型和相關結果的字典
         """
         try:
             self.log(f"Starting LDA topic modeling with {n_topics} topics")
             self.log(f"Using metadata from: {metadata_path}")
+            self.log(f"Text column: {text_column}")
             
             # 讀取數據
             if callback:
@@ -81,7 +83,7 @@ class LDATopicExtractor:
                     text_column = 'clean_text'
                 else:
                     text_column = df.columns[0]
-                self.log(f"Specified text column '{text_column}' not found, using '{text_column}' instead")
+                self.log(f"Specified text column not found, using '{text_column}' instead")
             
             texts = df[text_column].fillna('').tolist()
             self.log(f"Loaded {len(texts)} text entries")
@@ -129,10 +131,22 @@ class LDATopicExtractor:
             # 獲取每個主題的頂部詞語
             n_top_words = 15
             topic_top_words = {}
+            
+            # 使用自定義標籤（如果提供）
+            use_custom_labels = topic_labels is not None and len(topic_labels) >= n_topics
+            
             for topic_idx, topic in enumerate(topic_word_distributions):
                 topic_words = [feature_names[i] for i in topic.argsort()[:-n_top_words - 1:-1]]
-                topic_top_words[f"Topic_{topic_idx+1}"] = topic_words
-                self.log(f"Topic {topic_idx+1}: {', '.join(topic_words[:10])}")
+                
+                # 獲取主題標籤：如果提供了自定義標籤則使用，否則使用默認的Topic_X格式
+                if use_custom_labels and topic_idx in topic_labels:
+                    topic_label = topic_labels[topic_idx]
+                    topic_key = f"Topic_{topic_idx+1}_{topic_label}"
+                else:
+                    topic_key = f"Topic_{topic_idx+1}"
+                    
+                topic_top_words[topic_key] = topic_words
+                self.log(f"{topic_key}: {', '.join(topic_words[:10])}")
             
             # 獲取文檔-主題分布
             if callback:
@@ -142,7 +156,15 @@ class LDATopicExtractor:
             
             # 獲取每個文檔的主要主題
             doc_main_topics = np.argmax(doc_topic_distributions, axis=1)
-            df['main_topic'] = [f"Topic_{i+1}" for i in doc_main_topics]
+            
+            # 創建主題標籤映射（用於文檔標籤）
+            if use_custom_labels:
+                topic_id_to_label = {idx: f"Topic_{idx+1}_{topic_labels[idx]}" for idx in range(n_topics) if idx in topic_labels}
+            else:
+                topic_id_to_label = {idx: f"Topic_{idx+1}" for idx in range(n_topics)}
+                
+            # 為每個文檔分配主題標籤
+            df['main_topic'] = [topic_id_to_label.get(topic_idx, f"Topic_{topic_idx+1}") for topic_idx in doc_main_topics]
             
             # 保存模型和結果
             if callback:
@@ -175,10 +197,10 @@ class LDATopicExtractor:
                 callback("Generating visualizations...", 95)
             
             # 1. 主題詞雲可視化
-            self._plot_top_words(lda_model, feature_names, n_top_words, base_name_without_ext)
+            vis_path1 = self._plot_top_words(lda_model, feature_names, n_top_words, base_name_without_ext, topic_labels)
             
             # 2. 文檔-主題分布可視化
-            self._plot_doc_topics(doc_topic_distributions, n_topics, base_name_without_ext)
+            vis_path2 = self._plot_doc_topics(doc_topic_distributions, n_topics, base_name_without_ext, topic_labels)
             
             if callback:
                 callback("LDA topic modeling complete", 100)
@@ -190,7 +212,8 @@ class LDATopicExtractor:
                 'topics_path': topics_path,
                 'topic_metadata_path': topic_metadata_path,
                 'n_topics': n_topics,
-                'topic_words': topic_top_words
+                'topic_words': topic_top_words,
+                'visualizations': [vis_path1, vis_path2]
             }
             
         except Exception as e:
@@ -200,22 +223,28 @@ class LDATopicExtractor:
                 callback(f"Error: {str(e)}", -1)
             raise
     
-    def _plot_top_words(self, lda_model, feature_names, n_top_words, base_name):
-        """生成主題-詞語分布可視化"""
+    def _plot_top_words(self, lda_model, feature_names, n_top_words, base_name, topic_labels=None):
+        """生成主題-詞語分布可視化（支持自定義主題標籤）"""
         fig, axes = plt.subplots(2, 5, figsize=(15, 8), sharex=True)
         axes = axes.flatten()
         
         for topic_idx, topic in enumerate(lda_model.components_):
             if topic_idx >= 10:  # 限制為前10個主題
                 break
-                
+                    
             top_features_ind = topic.argsort()[:-n_top_words - 1:-1]
             top_features = [feature_names[i] for i in top_features_ind]
             weights = topic[top_features_ind]
             
             ax = axes[topic_idx]
             ax.barh(top_features, weights)
-            ax.set_title(f'Topic {topic_idx+1}')
+            
+            # 使用自定義標籤（如果提供）
+            if topic_labels is not None and topic_idx in topic_labels:
+                ax.set_title(f'Topic {topic_idx+1}: {topic_labels[topic_idx]}')
+            else:
+                ax.set_title(f'Topic {topic_idx+1}')
+                
             ax.tick_params(axis='both', which='major', labelsize=8)
             ax.set_yticklabels(top_features, fontdict={'fontsize': 8})
         
@@ -227,9 +256,11 @@ class LDATopicExtractor:
         vis_path = os.path.join(self.vis_dir, f"{base_name}_topic_words.png")
         plt.savefig(vis_path, dpi=200, bbox_inches='tight')
         plt.close()
+        
+        return vis_path
     
-    def _plot_doc_topics(self, doc_topic_dist, n_topics, base_name):
-        """生成文檔-主題分布可視化"""
+    def _plot_doc_topics(self, doc_topic_dist, n_topics, base_name, topic_labels=None):
+        """生成文檔-主題分布可視化（支持自定義主題標籤）"""
         # 計算每個主題的文檔數量
         topic_counts = np.zeros(n_topics)
         doc_main_topics = np.argmax(doc_topic_dist, axis=1)
@@ -238,19 +269,28 @@ class LDATopicExtractor:
             topic_counts[topic_idx] = np.sum(doc_main_topics == topic_idx)
         
         # 繪製主題分布柱狀圖
-        plt.figure(figsize=(10, 6))
+        plt.figure(figsize=(12, 7))
         x = np.arange(n_topics)
         plt.bar(x, topic_counts)
-        plt.xlabel('Topic ID')
+        plt.xlabel('Topic')
         plt.ylabel('Number of Documents')
         plt.title('Document Distribution Across Topics')
-        plt.xticks(x, [f'Topic {i+1}' for i in range(n_topics)])
-        plt.xticks(rotation=45)
+        
+        # 使用自定義標籤（如果提供）
+        if topic_labels is not None:
+            x_labels = [f'Topic {i+1}\n{topic_labels.get(i, "")}' for i in range(n_topics)]
+        else:
+            x_labels = [f'Topic {i+1}' for i in range(n_topics)]
+            
+        plt.xticks(x, x_labels, rotation=45, ha='right')
+        plt.tight_layout()
         
         # 保存圖形
         vis_path = os.path.join(self.vis_dir, f"{base_name}_doc_topics.png")
         plt.savefig(vis_path, dpi=200, bbox_inches='tight')
         plt.close()
+        
+        return vis_path
 
     def analyze_topic_coherence(self, metadata_path, n_topics_range=range(5, 16), callback=None):
         """
