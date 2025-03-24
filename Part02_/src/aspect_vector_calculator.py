@@ -195,7 +195,7 @@ class AspectVectorCalculator:
     
     def _visualize_aspect_vectors(self, embeddings, df, metadata_path):
         """
-        使用t-SNE降維並可視化面向向量
+        使用t-SNE降維並可視化面向向量 - 修復版
         """
         self.log("Visualizing aspect vectors using t-SNE")
 
@@ -268,14 +268,22 @@ class AspectVectorCalculator:
         plt.xlabel('t-SNE維度 1')
         plt.ylabel('t-SNE維度 2')
         
-        # 添加圖例
-        legend1 = plt.legend(
-            handles=scatter.legend_elements()[0], 
-            labels=topic_labels,
-            title="主題",
-            loc="upper right"
-        )
-        plt.gca().add_artist(legend1)
+        # 修復圖例 - 將topic_labels轉換為列表以避免NumPy數組的布爾操作問題
+        legend_elements = scatter.legend_elements()[0]
+        topic_labels_list = list(topic_labels)  # 轉換為Python列表
+        
+        try:
+            # 修復版本的圖例創建
+            if len(legend_elements) > 0 and len(topic_labels_list) > 0:
+                legend1 = plt.legend(
+                    handles=legend_elements,
+                    labels=topic_labels_list,
+                    title="主題",
+                    loc="upper right"
+                )
+                plt.gca().add_artist(legend1)
+        except Exception as e:
+            self.log(f"Warning: Failed to create legend: {str(e)}", level=logging.WARNING)
         
         plt.tight_layout()
         

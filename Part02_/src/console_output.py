@@ -41,20 +41,22 @@ class ConsoleOutputManager:
         # 如果需要清除之前的日誌
         if clear_previous and os.path.exists(log_file):
             # 清空日誌檔案內容但保留檔案
-            open(log_file, 'w').close()
+            open(log_file, 'w', encoding='utf-8').close()
         
         # 存儲控制台狀態的文件
         status_file = os.path.join(log_dir, f"{title.replace(' ', '_').lower()}_status.txt")
         # 初始化狀態為"運行中"
-        with open(status_file, 'w') as f:
+        with open(status_file, 'w', encoding='utf-8') as f:
             f.write("running")
         
         # 不同平台的處理方式
         if sys.platform == 'win32':
             # Windows平台 - 使用單獨的批處理檔案來顯示日誌
             bat_file = os.path.join(tempfile.gettempdir(), f"{title.replace(' ', '_').lower()}.bat")
-            with open(bat_file, 'w') as f:
+            with open(bat_file, 'w', encoding='utf-8') as f:
                 f.write(f'@echo off\n')
+                # 設置控制台代碼頁為UTF-8
+                f.write(f'chcp 65001 > nul\n')  # > nul 用來隱藏輸出
                 f.write(f'title {title}\n')
                 f.write(f'echo 正在處理，請等待...\n')
                 f.write(f'echo 日誌將同時保存到: {log_file}\n')
@@ -96,7 +98,7 @@ class ConsoleOutputManager:
             status_file: 狀態文件路徑
         """
         try:
-            with open(status_file, 'w') as f:
+            with open(status_file, 'w', encoding='utf-8') as f:
                 f.write("complete")
         except Exception as e:
             print(f"無法更新狀態文件: {str(e)}")
@@ -121,7 +123,7 @@ class ConsoleOutputManager:
             logger.removeHandler(handler)
         
         # 控制台處理器
-        console_handler = logging.StreamHandler()
+        console_handler = logging.StreamHandler(sys.stdout)  # 明確使用stdout
         console_handler.setLevel(logging.INFO)
         console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
         console_handler.setFormatter(console_formatter)

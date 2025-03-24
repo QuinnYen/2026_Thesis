@@ -192,7 +192,10 @@ class CrossDomainSentimentAnalysisApp:
     def __init__(self, root):
         self.root = root
         self.root.title("跨領域情感分析系統 v3.0 (重構版)")
-        self.root.geometry("800x600")
+        
+        # 設置視窗最大化
+        self.root.state('zoomed')
+        # 設置最小視窗大小
         self.root.minsize(800, 600)
         
         # 計算視窗置中的位置
@@ -473,28 +476,48 @@ class CrossDomainSentimentAnalysisApp:
         self.data_tree.bind("<Double-1>", self._on_data_double_click)
     
     def _setup_vis_tab(self, parent):
-        """配置可視化標籤頁"""
+        """配置可視化標籤頁 - 網格布局版"""
         # 上方控制區
         control_frame = ttk.Frame(parent)
         control_frame.pack(fill="x", pady=5)
         
+        # 左側控制選項
+        options_frame = ttk.Frame(control_frame)
+        options_frame.pack(side="left", fill="x", expand=True)
+        
         # 選擇可視化類型下拉選單
-        ttk.Label(control_frame, text="可視化類型:").pack(side="left", padx=5)
-        self.vis_type_combo = ttk.Combobox(control_frame, state="readonly", values=["全部", "主題可視化", "向量可視化"])
+        ttk.Label(options_frame, text="可視化類型:").pack(side="left", padx=5)
+        self.vis_type_combo = ttk.Combobox(options_frame, state="readonly", values=["全部", "主題可視化", "向量可視化"])
         self.vis_type_combo.pack(side="left", padx=5)
         self.vis_type_combo.current(0)
         self.vis_type_combo.bind("<<ComboboxSelected>>", self._on_vis_type_changed)
         
-        # 滾動區域顯示圖片
-        canvas_frame = ttk.Frame(parent)
-        canvas_frame.pack(fill="both", expand=True, pady=5)
+        # 顯示模式選擇
+        ttk.Label(options_frame, text="顯示模式:").pack(side="left", padx=(15, 5))
+        self.vis_mode_combo = ttk.Combobox(options_frame, state="readonly", values=["縮略圖", "詳細信息"])
+        self.vis_mode_combo.pack(side="left", padx=5)
+        self.vis_mode_combo.current(0)
+        self.vis_mode_combo.bind("<<ComboboxSelected>>", self._refresh_vis_display)
         
-        # 創建Canvas和滾動條
-        self.vis_canvas = tk.Canvas(canvas_frame)
-        scrollbar = ttk.Scrollbar(canvas_frame, orient="vertical", command=self.vis_canvas.yview)
+        # 右側按鈕
+        buttons_frame = ttk.Frame(control_frame)
+        buttons_frame.pack(side="right")
         
-        # 創建內容框架
+        # 刷新按鈕
+        ttk.Button(buttons_frame, text="刷新", command=self._refresh_vis_display).pack(side="right", padx=5)
+        
+        # 創建主顯示區
+        self.vis_main_frame = ttk.Frame(parent)
+        self.vis_main_frame.pack(fill="both", expand=True, pady=5)
+        
+        # 創建滾動視圖
+        self.vis_canvas = tk.Canvas(self.vis_main_frame, bg="#f0f0f0")
+        scrollbar = ttk.Scrollbar(self.vis_main_frame, orient="vertical", command=self.vis_canvas.yview)
+        
+        # 內容框架
         self.vis_frame = ttk.Frame(self.vis_canvas)
+        
+        # 配置滾動
         self.vis_frame.bind(
             "<Configure>",
             lambda e: self.vis_canvas.configure(scrollregion=self.vis_canvas.bbox("all"))
@@ -503,8 +526,331 @@ class CrossDomainSentimentAnalysisApp:
         self.vis_canvas.create_window((0, 0), window=self.vis_frame, anchor="nw")
         self.vis_canvas.configure(yscrollcommand=scrollbar.set)
         
+        # 鼠標滾輪捲動
+        def _on_mousewheel(event):
+            # Windows和macOS的滾輪事件有所不同
+            if sys.platform == "win32":
+                self.vis_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            else:
+                self.vis_canvas.yview_scroll(int(-1*event.delta), "units")
+        
+        self.vis_canvas.bind_all("<MouseWheel>", _on_mousewheel)  # Windows
+        self.vis_canvas.bind_all("<Button-4>", lambda e: self.vis_canvas.yview_scroll(-1, "units"))  # Linux
+        self.vis_canvas.bind_all("<Button-5>", lambda e: self.vis_canvas.yview_scroll(1, "units"))  # Linux
+        
+        # 放置Canvas和滾動條
         self.vis_canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+        
+        # 保存所有可視化項目的引用
+        self.vis_items = []
+        
+        # 標記尚未顯示
+        self.vis_initialized = False
+    
+    def _refresh_vis_display(self, event=None):
+        """根據選擇的模式刷新可視化顯示"""
+        mode = self.vis_mode_combo.get()
+        vis_type = self.vis_type_combo.get()
+        
+        # 清空現有顯示
+        for widget in self.vis_frame.winfo_children():
+            widget.destroy()
+            
+        # 過濾可視化項目
+        filtered_items = []
+        for item in self.vis_items:
+            if vis_type == "全部" or item.get("vis_type", "") == vis_type:
+                filtered_items.append(item)
+        
+        if mode == "縮略圖":
+            self._display_thumbnail_grid(filtered_items)
+        else:
+            self._display_detailed_list(filtered_items)
+
+    def _display_thumbnail_grid(self, items):
+        """以網格布局顯示縮略圖"""
+        if not items:
+            ttk.Label(self.vis_frame, text="沒有可用的可視化項目", font=("Arial", 12)).pack(padx=20, pady=20)
+            return
+        
+        # 創建網格框架
+        grid_frame = ttk.Frame(self.vis_frame)
+        grid_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # 配置網格 - 每行顯示3個項目
+        COLUMNS = 3
+        row = 0
+        col = 0
+        
+        # 計算合適的縮略圖大小
+        canvas_width = self.vis_canvas.winfo_width() or 800  # 預設值
+        thumb_width = min(200, (canvas_width - 80) // COLUMNS)  # 考慮邊距
+        thumb_height = thumb_width * 3 // 4  # 保持4:3比例
+        
+        # 放置每個項目
+        for i, item in enumerate(items):
+            # 創建項目框架
+            cell_frame = ttk.Frame(grid_frame, borderwidth=2, relief="groove")
+            cell_frame.grid(row=row, column=col, padx=10, pady=10, sticky="nsew")
+            
+            try:
+                # 標題
+                title = item.get("filename", f"項目 {i+1}")
+                title_label = ttk.Label(cell_frame, text=title, font=("Arial", 9, "bold"), wraplength=thumb_width)
+                title_label.pack(pady=(5, 2))
+                
+                # 縮略圖
+                image_path = item.get("path", "")
+                if os.path.exists(image_path) and image_path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    try:
+                        # 讀取原始圖片
+                        original_img = Image.open(image_path)
+                        
+                        # 計算縮略圖尺寸 (保持原始比例)
+                        width, height = original_img.size
+                        ratio = min(thumb_width/width, thumb_height/height)
+                        new_width = int(width * ratio)
+                        new_height = int(height * ratio)
+                        
+                        # 創建縮略圖
+                        thumb_img = original_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                        
+                        # 創建白色背景
+                        bg_img = Image.new('RGB', (thumb_width, thumb_height), (240, 240, 240))
+                        # 將縮略圖貼在中央
+                        offset = ((thumb_width - new_width) // 2, (thumb_height - new_height) // 2)
+                        bg_img.paste(thumb_img, offset)
+                        
+                        # 轉換為Tkinter可用的格式
+                        photo = ImageTk.PhotoImage(bg_img)
+                        
+                        # 創建圖像標籤
+                        img_label = ttk.Label(cell_frame, image=photo)
+                        img_label.image = photo  # 保持引用
+                        img_label.pack(pady=5)
+                        
+                        # 添加點擊事件
+                        img_label.bind("<Button-1>", lambda e, path=image_path: self._open_file(path))
+                        
+                        # 關閉圖片以釋放資源
+                        original_img.close()
+                        thumb_img.close()
+                        bg_img.close()
+                    except Exception as e:
+                        self.logger.error(f"載入圖片時出錯: {str(e)}")
+                        ttk.Label(cell_frame, text="圖片載入失敗").pack(pady=10)
+                else:
+                    # 沒有圖片或圖片不存在
+                    ttk.Label(cell_frame, text="[無法顯示圖片]", font=("Arial", 9)).pack(pady=10)
+                
+                # 類型標籤
+                vis_type = item.get("vis_type", "未知類型")
+                type_label = ttk.Label(cell_frame, text=vis_type, font=("Arial", 8), foreground="gray")
+                type_label.pack(pady=2)
+                
+                # 操作按鈕
+                btn_frame = ttk.Frame(cell_frame)
+                btn_frame.pack(fill="x", pady=5, padx=5)
+                
+                ttk.Button(
+                    btn_frame, text="查看", width=8,
+                    command=lambda path=image_path: self._open_file(path)
+                ).pack(side="left", padx=2)
+                
+                # 添加額外信息按鈕
+                ttk.Button(
+                    btn_frame, text="詳情", width=8, 
+                    command=lambda item=item: self._show_visualization_details(item)
+                ).pack(side="right", padx=2)
+                
+            except Exception as e:
+                self.logger.error(f"處理可視化項目時出錯: {str(e)}")
+                traceback.print_exc()
+                ttk.Label(cell_frame, text=f"錯誤: {str(e)}", foreground="red").pack(pady=10)
+            
+            # 更新網格位置
+            col += 1
+            if col >= COLUMNS:
+                col = 0
+                row += 1
+        
+        # 確保每行的列寬相等
+        for c in range(COLUMNS):
+            grid_frame.columnconfigure(c, weight=1)
+
+    def _display_detailed_list(self, items):
+        """以詳細列表形式顯示可視化項目"""
+        if not items:
+            ttk.Label(self.vis_frame, text="沒有可用的可視化項目", font=("Arial", 12)).pack(padx=20, pady=20)
+            return
+        
+        for i, item in enumerate(items):
+            # 創建項目卡片
+            card = ttk.Frame(self.vis_frame, borderwidth=1, relief="solid")
+            card.pack(padx=10, pady=10, fill="x")
+            
+            try:
+                # 標題行
+                title_frame = ttk.Frame(card)
+                title_frame.pack(fill="x", padx=5, pady=5)
+                
+                filename = item.get("filename", f"項目 {i+1}")
+                vis_type = item.get("vis_type", "未知類型")
+                
+                ttk.Label(title_frame, text=filename, font=("Arial", 10, "bold")).pack(side="left")
+                ttk.Label(title_frame, text=f"[{vis_type}]", foreground="gray").pack(side="right")
+                
+                # 內容區 - 左側信息，右側縮略圖（如果有）
+                content_frame = ttk.Frame(card)
+                content_frame.pack(fill="x", padx=5, pady=5)
+                
+                # 左側信息
+                info_frame = ttk.Frame(content_frame)
+                info_frame.pack(side="left", fill="both", expand=True)
+                
+                path = item.get("path", "")
+                ttk.Label(info_frame, text=f"路徑: {path}", wraplength=400).pack(anchor="w", pady=2)
+                
+                step = item.get("step_display", "")
+                if step:
+                    ttk.Label(info_frame, text=f"處理步驟: {step}").pack(anchor="w", pady=2)
+                
+                # 右側縮略圖（如果是圖片）
+                if path and os.path.exists(path) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    try:
+                        # 讀取圖片並創建縮略圖
+                        original_img = Image.open(path)
+                        
+                        # 縮略圖尺寸
+                        thumb_size = (120, 90)
+                        thumb_img = original_img.copy()
+                        thumb_img.thumbnail(thumb_size, Image.Resampling.LANCZOS)
+                        
+                        # 轉換為Tkinter可用的格式
+                        photo = ImageTk.PhotoImage(thumb_img)
+                        
+                        # 創建圖像框架
+                        img_frame = ttk.Frame(content_frame)
+                        img_frame.pack(side="right", padx=10)
+                        
+                        # 顯示縮略圖
+                        img_label = ttk.Label(img_frame, image=photo)
+                        img_label.image = photo  # 保持引用
+                        img_label.pack()
+                        
+                        # 添加點擊事件
+                        img_label.bind("<Button-1>", lambda e, path=path: self._open_file(path))
+                        
+                        # 關閉圖片以釋放資源
+                        original_img.close()
+                        thumb_img.close()
+                    except Exception as e:
+                        self.logger.error(f"載入圖片時出錯: {str(e)}")
+                
+                # 操作按鈕
+                btn_frame = ttk.Frame(card)
+                btn_frame.pack(fill="x", padx=5, pady=5)
+                
+                ttk.Button(
+                    btn_frame, text="查看圖片", 
+                    command=lambda path=path: self._open_file(path)
+                ).pack(side="left", padx=5)
+                
+            except Exception as e:
+                self.logger.error(f"處理可視化項目時出錯: {str(e)}")
+                ttk.Label(card, text=f"錯誤: {str(e)}", foreground="red").pack(pady=5)
+    
+    def _show_visualization_details(self, item):
+        """顯示可視化項目的詳細信息"""
+        # 創建一個頂層窗口
+        details_window = tk.Toplevel(self.root)
+        details_window.title("可視化詳細信息")
+        details_window.geometry("500x400")
+        details_window.transient(self.root)  # 設為主窗口的子窗口
+        
+        # 設置窗口樣式
+        style = ttk.Style(details_window)
+        style.configure('Details.TLabel', font=('Arial', 10))
+        style.configure('DetailsTitle.TLabel', font=('Arial', 12, 'bold'))
+        
+        # 主框架
+        main_frame = ttk.Frame(details_window, padding=10)
+        main_frame.pack(fill="both", expand=True)
+        
+        # 標題
+        title = item.get("filename", "可視化項目")
+        ttk.Label(main_frame, text=title, style='DetailsTitle.TLabel').pack(pady=(0, 10))
+        
+        # 創建內容框架
+        content = ttk.Frame(main_frame)
+        content.pack(fill="both", expand=True)
+        
+        # 顯示所有項目詳情
+        row = 0
+        for key, value in item.items():
+            if key not in ['image', 'photo', 'widget']:  # 排除非文本屬性
+                ttk.Label(content, text=f"{key}:", style='Details.TLabel', width=15, anchor="e").grid(row=row, column=0, sticky="e", padx=5, pady=2)
+                
+                # 處理不同類型的值
+                if isinstance(value, str) and len(value) > 50:
+                    # 長文本使用文本框顯示
+                    text_widget = tk.Text(content, height=3, width=40, wrap="word")
+                    text_widget.grid(row=row, column=1, sticky="w", padx=5, pady=2)
+                    text_widget.insert("1.0", value)
+                    text_widget.config(state="disabled")  # 設為只讀
+                else:
+                    # 普通值使用標籤顯示
+                    ttk.Label(content, text=str(value), style='Details.TLabel', wraplength=350).grid(row=row, column=1, sticky="w", padx=5, pady=2)
+                
+                row += 1
+        
+        # 如果是圖片，添加在下方顯示縮略圖
+        path = item.get("path", "")
+        if path and os.path.exists(path) and path.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+            try:
+                # 打開圖片
+                img = Image.open(path)
+                
+                # 調整大小
+                max_size = (400, 300)
+                img.thumbnail(max_size, Image.Resampling.LANCZOS)
+                
+                # 轉換為Tkinter可用的格式
+                photo = ImageTk.PhotoImage(img)
+                
+                # 創建標籤顯示圖片
+                img_frame = ttk.Frame(main_frame)
+                img_frame.pack(pady=10)
+                
+                img_label = ttk.Label(img_frame, image=photo)
+                img_label.image = photo  # 保持引用
+                img_label.pack()
+                
+                # 添加點擊事件
+                img_label.bind("<Button-1>", lambda e, path=path: self._open_file(path))
+                
+            except Exception as e:
+                ttk.Label(main_frame, text=f"無法載入圖片: {str(e)}", foreground="red").pack(pady=5)
+        
+        # 底部按鈕
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(fill="x", pady=(10, 0))
+        
+        ttk.Button(btn_frame, text="打開文件", command=lambda: self._open_file(item.get("path", ""))).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="關閉", command=details_window.destroy).pack(side="right", padx=5)
+        
+        # 確保窗口置中
+        details_window.update_idletasks()
+        width = details_window.winfo_width()
+        height = details_window.winfo_height()
+        x = (details_window.winfo_screenwidth() // 2) - (width // 2)
+        y = (details_window.winfo_screenheight() // 2) - (height // 2)
+        details_window.geometry(f"{width}x{height}+{x}+{y}")
+        
+        # 設為模態窗口
+        details_window.grab_set()
+        details_window.focus_set()
     
     def _setup_status_bar(self):
         """設置底部狀態欄"""
@@ -554,7 +900,14 @@ class CrossDomainSentimentAnalysisApp:
         self.task_processor.start_task(self._import_data_task, file_path)
         
     def _import_data_task(self, file_path):
-        """數據導入任務 - 函數版本"""
+        """數據導入任務 - 函數版本 (含控制台輸出)"""
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("數據導入處理", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('data_import', log_file)
+        logger.info(f"開始數據導入，處理文件: {file_path}")
+        
         try:
             # 初始化導入器
             importer = DataImporter(output_dir=str(self.processed_data_dir))
@@ -566,6 +919,11 @@ class CrossDomainSentimentAnalysisApp:
                 self.status_var.set(message)
                 if percentage >= 0:
                     self.progress_var.set(percentage)
+                # 記錄到控制台
+                if percentage >= 0:
+                    logger.info(f"{message} ({percentage}%)")
+                else:
+                    logger.error(message)
                 return message, percentage
             
             # 執行導入操作
@@ -573,6 +931,16 @@ class CrossDomainSentimentAnalysisApp:
             
             # 保存結果路徑
             self.processed_data_path = processed_file_path
+            
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"數據導入完成!")
+            logger.info(f"處理後的數據保存為: {processed_file_path}")
+            logger.info("====================================")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
             
             # 返回結果字典
             return {
@@ -582,7 +950,13 @@ class CrossDomainSentimentAnalysisApp:
             }
         except Exception as e:
             # 記錄錯誤
-            self.logger.error(f"數據導入失敗: {str(e)}")
+            logger.error(f"數據導入失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
             raise
     
     def _extract_bert_embeddings(self):
@@ -595,12 +969,20 @@ class CrossDomainSentimentAnalysisApp:
         self.task_processor.start_task(self._extract_bert_task, self.processed_data_path)
     
     def _extract_bert_task(self, data_path):
-        """BERT語義提取任務 - 函數版本"""
+        """BERT語義提取任務 - 函數版本 (含控制台輸出)"""
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("BERT語義提取", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('bert_extraction', log_file)
+        logger.info(f"開始BERT語義提取，處理文件: {data_path}")
+        
         try:
             # 初始化BERT編碼器
             embedder = BertEmbedder(
                 model_name='bert-base-uncased',
-                output_dir=str(self.bert_embeddings_dir)
+                output_dir=str(self.bert_embeddings_dir),
+                logger=logger
             )
             
             # 定義進度回調
@@ -610,6 +992,11 @@ class CrossDomainSentimentAnalysisApp:
                 self.status_var.set(message)
                 if percentage >= 0:
                     self.progress_var.set(percentage)
+                # 記錄到控制台
+                if percentage >= 0:
+                    logger.info(f"{message} ({percentage}%)")
+                else:
+                    logger.error(message)
                 return message, percentage
             
             # 執行BERT嵌入提取
@@ -625,6 +1012,18 @@ class CrossDomainSentimentAnalysisApp:
             self.bert_metadata_path = result['metadata_path']
             self.embedding_dim = result['embedding_dim']
             
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"BERT語義提取完成!")
+            logger.info(f"嵌入向量保存至: {self.bert_embeddings_path}")
+            logger.info(f"元數據保存至: {self.bert_metadata_path}")
+            logger.info(f"嵌入維度: {self.embedding_dim}")
+            logger.info("====================================")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
             # 返回結果字典
             return {
                 "embeddings_path": result['embeddings_path'],
@@ -635,7 +1034,13 @@ class CrossDomainSentimentAnalysisApp:
             }
         except Exception as e:
             # 記錄錯誤
-            self.logger.error(f"BERT語義提取失敗: {str(e)}")
+            logger.error(f"BERT語義提取失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
             raise
     
     def _perform_lda(self):
@@ -689,10 +1094,18 @@ class CrossDomainSentimentAnalysisApp:
             self.data_source = "unknown"
     
     def _perform_lda_task(self, metadata_path, data_source):
-        """LDA面向切割任務 - 函數版本"""
+        """LDA面向切割任務 - 函數版本 (含控制台輸出)"""
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('lda_topic', log_file)
+        logger.info(f"開始LDA面向切割，處理文件: {metadata_path}")
+        logger.info(f"數據來源: {data_source}")
+        
         try:
             # 初始化LDA提取器
-            extractor = LDATopicExtractor(output_dir=str(self.lda_topics_dir))
+            extractor = LDATopicExtractor(output_dir=str(self.lda_topics_dir), logger=logger)
             
             # 獲取主題標籤
             from src.settings.topic_labels import TOPIC_LABELS_zh
@@ -702,6 +1115,10 @@ class CrossDomainSentimentAnalysisApp:
             if data_source in TOPIC_LABELS_zh:
                 topic_labels = TOPIC_LABELS_zh[data_source]
                 topic_count = len(topic_labels)
+                logger.info(f"使用 {data_source} 的自定義主題標籤")
+                logger.info(f"主題數量設為: {topic_count}")
+            else:
+                logger.info(f"未找到匹配的主題標籤，使用默認主題數量: {topic_count}")
                 
             # 定義進度回調
             progress_updates = []
@@ -710,6 +1127,11 @@ class CrossDomainSentimentAnalysisApp:
                 self.status_var.set(message)
                 if percentage >= 0:
                     self.progress_var.set(percentage)
+                # 記錄到控制台
+                if percentage >= 0:
+                    logger.info(f"{message} ({percentage}%)")
+                else:
+                    logger.error(message)
                 return message, percentage
                 
             # 執行LDA主題建模
@@ -726,6 +1148,26 @@ class CrossDomainSentimentAnalysisApp:
             self.topic_metadata_path = results['topic_metadata_path']
             self.topic_count = topic_count
             
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"LDA面向切割完成!")
+            logger.info(f"LDA模型保存至: {self.lda_model_path}")
+            logger.info(f"主題詞保存至: {self.topics_path}")
+            logger.info(f"帶主題標籤的元數據保存至: {self.topic_metadata_path}")
+            logger.info("====================================")
+            
+            # 顯示每個主題的頂部詞語
+            logger.info("各個主題的頂部詞語:")
+            if 'topic_words' in results:
+                for topic, words in results['topic_words'].items():
+                    logger.info(f"{topic}: {', '.join(words[:10])}")
+            
+            logger.info("====================================")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
             # 返回結果字典
             return {
                 "lda_model_path": results['lda_model_path'],
@@ -738,7 +1180,13 @@ class CrossDomainSentimentAnalysisApp:
             }
         except Exception as e:
             # 記錄錯誤
-            self.logger.error(f"LDA面向切割失敗: {str(e)}")
+            logger.error(f"LDA面向切割失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
             raise
     
     def _calculate_aspect_vectors(self):
@@ -755,10 +1203,19 @@ class CrossDomainSentimentAnalysisApp:
         )
     
     def _calculate_aspect_vectors_task(self, embeddings_path, topic_metadata_path):
-        """面向向量計算任務 - 函數版本"""
+        """面向向量計算任務 - 函數版本 (含控制台輸出)"""
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("面向向量計算", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('aspect_vector', log_file)
+        logger.info(f"開始面向向量計算")
+        logger.info(f"嵌入文件: {embeddings_path}")
+        logger.info(f"主題元數據: {topic_metadata_path}")
+        
         try:
             # 初始化向量計算器
-            calculator = AspectVectorCalculator(output_dir=str(self.aspect_vectors_dir))
+            calculator = AspectVectorCalculator(output_dir=str(self.aspect_vectors_dir), logger=logger)
             
             # 定義進度回調
             progress_updates = []
@@ -767,6 +1224,11 @@ class CrossDomainSentimentAnalysisApp:
                 self.status_var.set(message)
                 if percentage >= 0:
                     self.progress_var.set(percentage)
+                # 記錄到控制台
+                if percentage >= 0:
+                    logger.info(f"{message} ({percentage}%)")
+                else:
+                    logger.error(message)
                 return message, percentage
                 
             # 計算面向向量
@@ -781,6 +1243,27 @@ class CrossDomainSentimentAnalysisApp:
             aspect_metadata_path = results['aspect_metadata_path']
             tsne_plot_path = results.get('tsne_plot_path')
             
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"面向向量計算完成!")
+            logger.info(f"面向向量保存至: {aspect_vectors_path}")
+            logger.info(f"元數據保存至: {aspect_metadata_path}")
+            if tsne_plot_path:
+                logger.info(f"t-SNE可視化保存至: {tsne_plot_path}")
+            logger.info("====================================")
+            
+            # 記錄每個面向的文檔數量
+            logger.info("各面向文檔數量:")
+            if 'topic_doc_counts' in results:
+                for topic, count in results['topic_doc_counts'].items():
+                    logger.info(f"{topic}: {count}個文檔")
+                    
+            logger.info("====================================")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
             # 返回結果字典
             return {
                 "aspect_vectors_path": aspect_vectors_path,
@@ -792,7 +1275,13 @@ class CrossDomainSentimentAnalysisApp:
             }
         except Exception as e:
             # 記錄錯誤
-            self.logger.error(f"面向向量計算失敗: {str(e)}")
+            logger.error(f"面向向量計算失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
             raise
     
     def _export_vectors(self):
@@ -843,10 +1332,20 @@ class CrossDomainSentimentAnalysisApp:
         )
     
     def _export_vectors_task(self, aspect_vectors_path, output_path, output_format):
-        """向量導出任務 - 函數版本"""
+        """向量導出任務 - 函數版本 (含控制台輸出)"""
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("向量導出", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('vector_export', log_file)
+        logger.info(f"開始導出面向向量")
+        logger.info(f"面向向量文件: {aspect_vectors_path}")
+        logger.info(f"輸出格式: {output_format}")
+        logger.info(f"輸出路徑: {output_path}")
+        
         try:
             # 初始化向量計算器
-            calculator = AspectVectorCalculator(output_dir=os.path.dirname(output_path))
+            calculator = AspectVectorCalculator(output_dir=os.path.dirname(output_path), logger=logger)
             
             # 定義進度回調
             progress_updates = []
@@ -855,6 +1354,11 @@ class CrossDomainSentimentAnalysisApp:
                 self.status_var.set(message)
                 if percentage >= 0:
                     self.progress_var.set(percentage)
+                # 記錄到控制台
+                if percentage >= 0:
+                    logger.info(f"{message} ({percentage}%)")
+                else:
+                    logger.error(message)
                 return message, percentage
                 
             # 導出向量
@@ -863,6 +1367,16 @@ class CrossDomainSentimentAnalysisApp:
                 output_format=output_format,
                 callback=progress_callback
             )
+            
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"面向向量導出完成!")
+            logger.info(f"導出結果保存至: {result_path}")
+            logger.info("====================================")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
             
             # 返回結果字典
             return {
@@ -873,7 +1387,13 @@ class CrossDomainSentimentAnalysisApp:
             }
         except Exception as e:
             # 記錄錯誤
-            self.logger.error(f"向量導出失敗: {str(e)}")
+            logger.error(f"向量導出失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
             raise
     
     def _refresh_results(self):
@@ -940,7 +1460,7 @@ class CrossDomainSentimentAnalysisApp:
             self.logger.error(f"選擇數據集時出錯: {str(e)}")
     
     def _load_dataset_results(self, dataset_id):
-        """加載數據集的處理結果"""
+        """加載數據集的處理結果 - 添加可視化處理"""
         try:
             # 獲取數據集信息
             dataset_info = self.result_manager.get_dataset_summary(dataset_id)
@@ -951,9 +1471,8 @@ class CrossDomainSentimentAnalysisApp:
             for item in self.data_tree.get_children():
                 self.data_tree.delete(item)
             
-            # 清空可視化顯示區
-            for widget in self.vis_frame.winfo_children():
-                widget.destroy()
+            # 清空可視化項目列表
+            self.vis_items = []
             
             # 加載處理結果
             for step_name, step_info in dataset_info["steps"].items():
@@ -977,8 +1496,28 @@ class CrossDomainSentimentAnalysisApp:
                         )
                     
                     elif result_type == "visualization":
-                        # 添加到可視化頁面
-                        self._add_visualization(result, step_display)
+                        # 收集可視化項目
+                        vis_item = {
+                            "filename": result["filename"],
+                            "path": result["path"],
+                            "step": step_name,
+                            "step_display": step_display,
+                            "completed_at": step_info.get("completed_at", ""),
+                            "metadata": result.get("metadata", {})
+                        }
+                        
+                        # 確定可視化類型
+                        if "topic" in result["filename"].lower():
+                            vis_item["vis_type"] = "主題可視化"
+                        elif "vector" in result["filename"].lower() or "tsne" in result["filename"].lower():
+                            vis_item["vis_type"] = "向量可視化"
+                        else:
+                            vis_item["vis_type"] = "其他可視化"
+                        
+                        self.vis_items.append(vis_item)
+                
+            # 刷新可視化顯示
+            self._refresh_vis_display()
             
             # 更新狀態
             self.status_var.set(f"已載入數據集 '{dataset_info['name']}' 的處理結果")
