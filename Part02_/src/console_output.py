@@ -86,6 +86,7 @@ class ConsoleOutputManager:
             
             # 啟動批處理文件
             subprocess.Popen(f'start "" "{bat_file}"', shell=True)
+            # subprocess.Popen(f'start /MAX "" "{bat_file}"', shell=True)
         
         return log_file, status_file
 

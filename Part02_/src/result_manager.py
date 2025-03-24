@@ -198,27 +198,70 @@ class ResultManager:
             # 默認保留在原位置
             return file_path
         
-        # 如果文件已經在目標目錄中，不需要移動
-        if os.path.dirname(file_path) == target_dir:
-            return file_path
-        
-        # 複製文件到目標目錄
+        # 如果文件已經在目標目錄中，檢查文件名
         filename = os.path.basename(file_path)
         dest_path = os.path.join(target_dir, filename)
         
+        if os.path.dirname(file_path) == target_dir:
+            # 如果路徑完全相同，直接返回
+            if file_path == dest_path:
+                return file_path
+        
         try:
-            # 如果目標文件已存在，添加時間戳
-            if os.path.exists(dest_path):
+            # 檢查目標目錄中是否已有同名文件
+            # 檢查目標文件是否與源文件相同
+            if os.path.exists(dest_path) and not self._are_files_identical(file_path, dest_path):
                 name, ext = os.path.splitext(filename)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 dest_path = os.path.join(target_dir, f"{name}_{timestamp}{ext}")
             
-            shutil.copy2(file_path, dest_path)
-            self.logger.info(f"文件已複製到: {dest_path}")
+            # 只有當源文件和目標位置不同時才複製
+            if file_path != dest_path:
+                shutil.copy2(file_path, dest_path)
+                self.logger.info(f"文件已複製到: {dest_path}")
+            
             return dest_path
         except Exception as e:
             self.logger.error(f"複製文件時出錯: {str(e)}")
             return file_path
+
+    def _are_files_identical(self, file1, file2):
+        """
+        比較兩個文件是否相同
+        
+        Args:
+            file1: 第一個文件路徑
+            file2: 第二個文件路徑
+            
+        Returns:
+            bool: 文件是否相同
+        """
+        if not os.path.exists(file1) or not os.path.exists(file2):
+            return False
+        
+        # 首先比較文件大小
+        if os.path.getsize(file1) != os.path.getsize(file2):
+            return False
+        
+        # 如果文件較小，直接比較內容
+        if os.path.getsize(file1) < 1024 * 1024:  # 小於1MB
+            with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+                return f1.read() == f2.read()
+        
+        # 大文件只比較部分內容
+        with open(file1, 'rb') as f1, open(file2, 'rb') as f2:
+            # 比較開頭
+            start1 = f1.read(1024)
+            start2 = f2.read(1024)
+            if start1 != start2:
+                return False
+            
+            # 比較結尾
+            f1.seek(-1024, os.SEEK_END)
+            f2.seek(-1024, os.SEEK_END)
+            end1 = f1.read()
+            end2 = f2.read()
+            return end1 == end2
     
     def complete_dataset(self, dataset_id, status="completed", message="所有處理完成"):
         """

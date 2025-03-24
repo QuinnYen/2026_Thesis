@@ -1,5 +1,5 @@
 """
-重構後的跨領域情感分析系統，避免Tkinter多線程錯誤
+Tkinter單線程跨領域情感分析系統應用程式
 採用事件驅動設計，完全避免使用後台線程
 """
 
@@ -191,7 +191,7 @@ class TaskProcessor:
 class CrossDomainSentimentAnalysisApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("跨領域情感分析系統 v3.0 (重構版)")
+        self.root.title("跨領域情感分析系統-數據處理 v4.0")
         
         # 設置視窗最大化
         self.root.state('zoomed')
