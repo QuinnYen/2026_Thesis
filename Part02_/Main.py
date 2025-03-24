@@ -354,7 +354,45 @@ class CrossDomainSentimentAnalysisApp:
         """資料處理分頁界面"""
         main_frame = ttk.Frame(self.tab_data_processing, padding=10)
         main_frame.pack(fill="both", expand=True)
+
+        # 添加Yelp專用的數據處理部分
+        yelp_frame = ttk.LabelFrame(main_frame, text="Yelp數據處理（餐廳評論）", padding=10)
+        yelp_frame.pack(fill="x", pady=5)
         
+        ttk.Label(yelp_frame, text="選擇Yelp的business和review文件，並自動合併處理").pack(anchor="w", pady=5)
+        
+        # Business文件選擇
+        business_frame = ttk.Frame(yelp_frame)
+        business_frame.pack(fill="x", pady=2)
+        
+        self.business_path = tk.StringVar()
+        ttk.Label(business_frame, text="Business文件:").pack(side="left", padx=(0,5))
+        ttk.Label(business_frame, textvariable=self.business_path, width=50).pack(side="left", padx=5, fill="x", expand=True)
+        ttk.Button(business_frame, text="選擇", command=self._select_business_file).pack(side="right")
+        
+        # Review文件選擇
+        review_frame = ttk.Frame(yelp_frame)
+        review_frame.pack(fill="x", pady=2)
+        
+        self.review_path = tk.StringVar()
+        ttk.Label(review_frame, text="Review文件:   ").pack(side="left", padx=(0,5))
+        ttk.Label(review_frame, textvariable=self.review_path, width=50).pack(side="left", padx=5, fill="x", expand=True)
+        ttk.Button(review_frame, text="選擇", command=self._select_review_file).pack(side="right")
+        
+        # 抽樣設置
+        sample_frame = ttk.Frame(yelp_frame)
+        sample_frame.pack(fill="x", pady=2)
+        
+        ttk.Label(sample_frame, text="抽樣數量:     ").pack(side="left", padx=(0,5))
+        self.sample_size = tk.StringVar(value="50000")
+        ttk.Entry(sample_frame, textvariable=self.sample_size, width=10).pack(side="left")
+        
+        ttk.Label(sample_frame, text="筆評論").pack(side="left", padx=5)
+        
+        # 處理按鈕
+        ttk.Button(yelp_frame, text="處理Yelp數據", command=self._process_yelp_data).pack(anchor="e", pady=5)
+
+        # ===添加IMDB專用的數據處理部分===
         # 步驟1: 導入數據
         step1_frame = ttk.LabelFrame(main_frame, text="步驟 1: 導入數據", padding=10)
         step1_frame.pack(fill="x", pady=5)
@@ -1396,6 +1434,294 @@ class CrossDomainSentimentAnalysisApp:
             # 重新拋出異常
             raise
     
+    def _select_business_file(self):
+        """選擇Yelp的business文件"""
+        file_path = filedialog.askopenfilename(
+            title="選擇Yelp的business.json文件",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self.business_path.set(file_path)
+            self.status_var.set(f"已選擇business文件: {os.path.basename(file_path)}")
+            self.logger.info(f"已選擇business文件: {file_path}")
+
+    def _select_review_file(self):
+        """選擇Yelp的review文件"""
+        file_path = filedialog.askopenfilename(
+            title="選擇Yelp的review.json文件",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+        )
+        if file_path:
+            self.review_path.set(file_path)
+            self.status_var.set(f"已選擇review文件: {os.path.basename(file_path)}")
+            self.logger.info(f"已選擇review文件: {file_path}")
+
+    def _process_yelp_data(self):
+        """處理Yelp數據（合併business和review）"""
+        business_path = self.business_path.get()
+        review_path = self.review_path.get()
+        
+        if not business_path:
+            messagebox.showerror("錯誤", "請先選擇business文件!")
+            return
+            
+        if not review_path:
+            messagebox.showerror("錯誤", "請先選擇review文件!")
+            return
+        
+        # 獲取抽樣數量
+        try:
+            sample_size = int(self.sample_size.get())
+            if sample_size <= 0:
+                raise ValueError("抽樣數量必須大於0")
+        except ValueError as e:
+            messagebox.showerror("錯誤", f"抽樣數量設置無效: {str(e)}")
+            return
+        
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("Yelp數據處理", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('yelp_processing', log_file)
+        
+        # 更新狀態
+        self.status_var.set("正在處理Yelp數據...")
+        self.progress_var.set(10)
+        
+        # 設置輸出文件路徑
+        output_dir = str(self.processed_data_dir)
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+        
+        output_file = os.path.join(output_dir, f"processed_yelp_{sample_size}.csv")
+        
+        # 在任務處理器中運行Yelp數據處理
+        self.task_processor.start_task(
+            self._yelp_processing_task,
+            business_path,
+            review_path,
+            output_file,
+            sample_size,
+            logger,
+            status_file
+        )
+
+    def _yelp_processing_task(self, business_path, review_path, output_path, sample_size, logger, status_file):
+        """Yelp數據處理任務 - 函數版本"""
+        try:
+            import json
+            import pandas as pd
+            import random
+            import os
+            import time
+            
+            # 記錄開始時間
+            start_time = time.time()
+            
+            # 記錄處理參數
+            logger.info(f"=== Yelp數據處理開始 ===")
+            logger.info(f"Business文件: {business_path}")
+            logger.info(f"Review文件: {review_path}")
+            logger.info(f"輸出文件: {output_path}")
+            logger.info(f"抽樣數量: {sample_size}")
+            logger.info(f"============================")
+            
+            # 設定隨機種子確保結果可重現
+            random.seed(42)
+            
+            # 更新UI進度
+            self.status_var.set("正在讀取餐廳信息...")
+            self.progress_var.set(15)
+            
+            # 第一步：讀取商家數據，只保留餐廳類別
+            logger.info("正在讀取餐廳信息...")
+            restaurants = {}
+            restaurant_count = 0
+            
+            with open(business_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    business = json.loads(line)
+                    # 只保留餐廳類別的商家
+                    if business.get('categories') and 'Restaurants' in business['categories']:
+                        # 提取需要的欄位
+                        restaurants[business['business_id']] = {
+                            'name': business.get('name', ''),
+                            'city': business.get('city', ''),
+                            'state': business.get('state', ''),
+                            'stars': business.get('stars', 0),
+                            'categories': business.get('categories', '')
+                        }
+                        restaurant_count += 1
+                    
+                    # 每處理1000條記錄更新一次進度
+                    if restaurant_count % 1000 == 0:
+                        self.status_var.set(f"已讀取 {restaurant_count} 家餐廳...")
+            
+            logger.info(f"已識別 {restaurant_count} 家餐廳")
+            self.status_var.set(f"已識別 {restaurant_count} 家餐廳")
+            self.progress_var.set(30)
+            
+            # 更新UI進度
+            self.status_var.set("正在處理評論數據...")
+            self.progress_var.set(35)
+            
+            # 第二步：讀取評論數據並抽樣
+            logger.info("開始處理評論數據...")
+            sampled_reviews = []
+            processed_count = 0
+            eligible_count = 0
+            
+            with open(review_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        review = json.loads(line)
+                        business_id = review['business_id']
+                        
+                        # 檢查評論是否屬於餐廳
+                        if business_id in restaurants:
+                            eligible_count += 1
+                            
+                            # 使用水塘抽樣算法確保均勻抽樣
+                            if len(sampled_reviews) < sample_size:
+                                # 直接添加，直到達到樣本大小
+                                business = restaurants[business_id]
+                                merged_review = {
+                                    'business_id': business_id,
+                                    'business_name': business['name'],
+                                    'text': review.get('text', ''),
+                                    'review_stars': review.get('stars', 0),
+                                    'business_stars': business['stars'],
+                                    'city': business['city'],
+                                    'state': business['state'],
+                                    'categories': business['categories'],
+                                    'date': review.get('date', '')
+                                }
+                                sampled_reviews.append(merged_review)
+                            else:
+                                # 水塘抽樣：以 sample_size/已處理數量 的概率替換現有樣本
+                                j = random.randint(0, eligible_count - 1)
+                                if j < sample_size:
+                                    business = restaurants[business_id]
+                                    merged_review = {
+                                        'business_id': business_id,
+                                        'business_name': business['name'],
+                                        'text': review.get('text', ''),
+                                        'review_stars': review.get('stars', 0),
+                                        'business_stars': business['stars'],
+                                        'city': business['city'],
+                                        'state': business['state'],
+                                        'categories': business['categories'],
+                                        'date': review.get('date', '')
+                                    }
+                                    sampled_reviews[j] = merged_review
+                            
+                        # 更新處理計數和進度
+                        processed_count += 1
+                        if processed_count % 10000 == 0:
+                            progress = 35 + min(55, (eligible_count / sample_size) * 55)
+                            self.status_var.set(f"已處理 {processed_count} 條評論，找到 {eligible_count} 條餐廳評論")
+                            self.progress_var.set(progress)
+                            logger.info(f"已處理 {processed_count} 條評論，找到 {eligible_count} 條餐廳評論")
+                            
+                            # 如果已經找到足夠的樣本且處理了至少sample_size*10的評論，提前結束
+                            if eligible_count >= sample_size * 10 and len(sampled_reviews) == sample_size:
+                                logger.info(f"已收集足夠樣本，提前結束處理")
+                                break
+                            
+                    except Exception as e:
+                        logger.warning(f"處理評論時出錯: {str(e)}")
+                        continue
+            
+            # 確保我們不超過所需的樣本數
+            if len(sampled_reviews) > sample_size:
+                sampled_reviews = sampled_reviews[:sample_size]
+                
+            logger.info(f"共處理了 {processed_count} 條評論")
+            logger.info(f"其中有 {eligible_count} 條餐廳評論")
+            logger.info(f"成功抽樣 {len(sampled_reviews)} 條評論")
+            
+            # 更新UI進度
+            self.status_var.set("正在保存處理結果...")
+            self.progress_var.set(90)
+            
+            # 第三步：將抽樣的評論轉換為DataFrame
+            df = pd.DataFrame(sampled_reviews)
+            
+            # 添加清洗後的文本列
+            logger.info("正在進行文本清洗...")
+            
+            # 定義文本清洗函數（簡化版）
+            def clean_text(text):
+                if pd.isna(text) or not text:
+                    return ""
+                # 轉換為字符串
+                text = str(text)
+                # 移除多餘的空格
+                text = ' '.join(text.split())
+                return text
+            
+            # 應用文本清洗
+            df['clean_text'] = df['text'].apply(clean_text)
+            
+            # 保存為CSV
+            logger.info(f"正在保存處理結果到 {output_path}")
+            df.to_csv(output_path, index=False)
+            
+            # 計算處理時間
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            minutes, seconds = divmod(elapsed_time, 60)
+            
+            # 記錄處理完成信息
+            logger.info(f"============================")
+            logger.info(f"處理完成! 用時: {int(minutes)}分{int(seconds)}秒")
+            logger.info(f"總共處理了 {restaurant_count} 家餐廳")
+            logger.info(f"從 {eligible_count} 條餐廳評論中抽樣了 {len(sampled_reviews)} 條")
+            logger.info(f"結果已保存至: {output_path}")
+            logger.info(f"============================")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 創建數據集ID
+            dataset_name = f"Yelp_Restaurants_{len(sampled_reviews)}"
+            self.current_dataset_id = self.result_manager.register_dataset(dataset_name, output_path)
+            
+            # 註冊處理結果
+            self.result_manager.register_result(
+                self.current_dataset_id,
+                "data_import",
+                "data",
+                output_path,
+                metadata={
+                    "source_files": [business_path, review_path],
+                    "restaurants": restaurant_count,
+                    "sample_size": len(sampled_reviews)
+                }
+            )
+            
+            # 保存處理後的文件路徑以供後續步驟使用
+            self.processed_data_path = output_path
+            
+            # 返回結果
+            return {
+                "processed_file_path": output_path,
+                "step": "data_import",
+                "sample_size": len(sampled_reviews),
+                "restaurant_count": restaurant_count
+            }
+            
+        except Exception as e:
+            # 記錄錯誤
+            logger.error(f"Yelp數據處理失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
+            raise
+
     def _refresh_results(self):
         """刷新結果顯示"""
         self._refresh_datasets()
