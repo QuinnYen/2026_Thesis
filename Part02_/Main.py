@@ -355,9 +355,51 @@ class CrossDomainSentimentAnalysisApp:
         main_frame = ttk.Frame(self.tab_data_processing, padding=10)
         main_frame.pack(fill="both", expand=True)
 
-        # 添加Yelp專用的數據處理部分
-        yelp_frame = ttk.LabelFrame(main_frame, text="Yelp數據處理（餐廳評論）", padding=10)
-        yelp_frame.pack(fill="x", pady=5)
+        # 創建一個專用資料來源框架
+        data_source_frame = ttk.LabelFrame(main_frame, text="資料來源選擇", padding=10)
+        data_source_frame.pack(fill="x", pady=5)
+        
+        # 添加切換標籤頁的按鈕
+        source_buttons_frame = ttk.Frame(data_source_frame)
+        source_buttons_frame.pack(fill="x", pady=5)
+        
+        # 創建資料來源標籤頁
+        source_notebook = ttk.Notebook(data_source_frame)
+        source_notebook.pack(fill="x", pady=5)
+        
+        # IMDB 電影評論頁面
+        imdb_frame = ttk.Frame(source_notebook, padding=5)
+        source_notebook.add(imdb_frame, text="IMDB電影評論")
+        
+        ttk.Label(imdb_frame, text="選擇IMDB電影評論資料集檔案").pack(anchor="w", pady=5)
+        imdb_file_frame = ttk.Frame(imdb_frame)
+        imdb_file_frame.pack(fill="x", pady=2)
+        
+        self.imdb_path = tk.StringVar()
+        ttk.Label(imdb_file_frame, text="IMDB檔案:").pack(side="left", padx=(0,5))
+        ttk.Label(imdb_file_frame, textvariable=self.imdb_path, width=50).pack(side="left", padx=5, fill="x", expand=True)
+        ttk.Button(imdb_file_frame, text="選擇", command=lambda: self._select_file_for_source("imdb")).pack(side="right")
+        
+        ttk.Button(imdb_frame, text="處理IMDB數據", command=lambda: self._import_data_with_source("imdb")).pack(anchor="e", pady=5)
+        
+        # Amazon 產品評論頁面
+        amazon_frame = ttk.Frame(source_notebook, padding=5)
+        source_notebook.add(amazon_frame, text="Amazon產品評論")
+        
+        ttk.Label(amazon_frame, text="選擇Amazon產品評論資料集檔案").pack(anchor="w", pady=5)
+        amazon_file_frame = ttk.Frame(amazon_frame)
+        amazon_file_frame.pack(fill="x", pady=2)
+        
+        self.amazon_path = tk.StringVar()
+        ttk.Label(amazon_file_frame, text="Amazon檔案:").pack(side="left", padx=(0,5))
+        ttk.Label(amazon_file_frame, textvariable=self.amazon_path, width=50).pack(side="left", padx=5, fill="x", expand=True)
+        ttk.Button(amazon_file_frame, text="選擇", command=lambda: self._select_file_for_source("amazon")).pack(side="right")
+        
+        ttk.Button(amazon_frame, text="處理Amazon數據", command=lambda: self._import_data_with_source("amazon")).pack(anchor="e", pady=5)
+        
+        # Yelp 餐廳評論頁面
+        yelp_frame = ttk.Frame(source_notebook, padding=5)
+        source_notebook.add(yelp_frame, text="Yelp餐廳評論")
         
         ttk.Label(yelp_frame, text="選擇Yelp的business和review文件，並自動合併處理").pack(anchor="w", pady=5)
         
@@ -391,21 +433,20 @@ class CrossDomainSentimentAnalysisApp:
         
         # 處理按鈕
         ttk.Button(yelp_frame, text="處理Yelp數據", command=self._process_yelp_data).pack(anchor="e", pady=5)
-
-        # ===添加IMDB專用的數據處理部分===
-        # 步驟1: 導入數據
-        step1_frame = ttk.LabelFrame(main_frame, text="步驟 1: 導入數據", padding=10)
-        step1_frame.pack(fill="x", pady=5)
         
-        ttk.Label(step1_frame, text="選擇評論資料集導入系統 (Amazon、Yelp、IMDB)").pack(anchor="w", pady=5)
+        # 通用文件選擇頁面 (保留原有功能)
+        generic_frame = ttk.Frame(source_notebook, padding=5)
+        source_notebook.add(generic_frame, text="其他資料")
         
-        file_frame = ttk.Frame(step1_frame)
+        ttk.Label(generic_frame, text="選擇評論資料集導入系統 (CSV, JSON, TXT格式)").pack(anchor="w", pady=5)
+        
+        file_frame = ttk.Frame(generic_frame)
         file_frame.pack(fill="x", pady=5)
         
         ttk.Button(file_frame, text="選擇文件", command=self._select_file).pack(side="left")
         ttk.Label(file_frame, textvariable=self.file_path).pack(side="left", padx=10)
         ttk.Button(file_frame, text="開始導入數據", command=self._import_data).pack(side="right")
-        
+
         # 步驟2: BERT提取語義表示
         step2_frame = ttk.LabelFrame(main_frame, text="步驟 2: BERT提取語義表示", padding=10)
         step2_frame.pack(fill="x", pady=5)
@@ -430,11 +471,18 @@ class CrossDomainSentimentAnalysisApp:
         
         ttk.Label(step4_frame, text="為每個識別出的面向計算代表性向量").pack(anchor="w", pady=5)
         
+        # 修改按鈕布局 - 垂直排列，面向計算在上，匯出在下
         vector_frame = ttk.Frame(step4_frame)
         vector_frame.pack(fill="x", pady=5)
         
-        ttk.Button(vector_frame, text="執行計算", command=self._calculate_aspect_vectors).pack(side="left")
-        ttk.Button(vector_frame, text="匯出平均向量", command=self._export_vectors).pack(side="right")
+        # 創建包含按鈕的容器框架，使用垂直佈局
+        buttons_container = ttk.Frame(vector_frame)
+        buttons_container.pack(side="right")
+        
+        # 面向計算按鈕在上方
+        ttk.Button(buttons_container, text="執行計算", command=self._calculate_aspect_vectors).pack(pady=(0, 5))
+        # 匯出按鈕在下方
+        ttk.Button(buttons_container, text="匯出平均向量", command=self._export_vectors).pack()
     
     def _setup_results_tab(self):
         """結果瀏覽分頁界面"""
@@ -484,6 +532,47 @@ class CrossDomainSentimentAnalysisApp:
         self._setup_data_tab(self.data_tab)
         self._setup_vis_tab(self.vis_tab)
     
+    def _select_file_for_source(self, source_type):
+        """為特定資料來源選擇文件"""
+        file_path = filedialog.askopenfilename(
+            title=f"選擇{source_type}評論資料文件",
+            filetypes=[("CSV Files", "*.csv"), ("JSON Files", "*.json"), ("Text Files", "*.txt"), ("All Files", "*.*")]
+        )
+        if file_path:
+            if source_type == "imdb":
+                self.imdb_path.set(file_path)
+            elif source_type == "amazon":
+                self.amazon_path.set(file_path)
+            self.status_var.set(f"已選擇{source_type}文件: {os.path.basename(file_path)}")
+            self.logger.info(f"已選擇{source_type}文件: {file_path}")
+
+    def _import_data_with_source(self, source_type):
+        """導入特定來源的數據"""
+        # 獲取對應來源的文件路徑
+        if source_type == "imdb":
+            file_path = self.imdb_path.get()
+        elif source_type == "amazon":
+            file_path = self.amazon_path.get()
+        else:
+            file_path = ""
+            
+        if not file_path:
+            messagebox.showerror("錯誤", f"請先選擇{source_type}文件!")
+            return
+            
+        # 設置數據來源
+        self.data_source = source_type
+        
+        # 設置通用文件路徑，以便後續處理
+        self.file_path.set(file_path)
+        
+        # 創建數據集ID
+        dataset_name = os.path.basename(file_path).split('.')[0]
+        self.current_dataset_id = self.result_manager.register_dataset(dataset_name, file_path)
+        
+        # 開始導入任務
+        self.task_processor.start_task(self._import_data_task, file_path)
+
     def _setup_data_tab(self, parent):
         """配置數據標籤頁"""
         # 創建Treeview
