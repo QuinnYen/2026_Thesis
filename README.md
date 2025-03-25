@@ -22,7 +22,7 @@
 
 1. 克隆此專案到本地：
 ```
-git clone https://github.com/yourusername/cross-domain-sentiment-analysis.git
+git clone https://github.com/QuinnYen/2026_Thesis.git
 cd cross-domain-sentiment-analysis
 ```
 
