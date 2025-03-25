@@ -61,7 +61,7 @@ class TextDataset(Dataset):
 class BertEmbedder:
     """使用BERT模型提取文本的語義表示"""
     
-    def __init__(self, model_name='bert-base-uncased', output_dir='./Part02_/results', device=None, logger=None):
+    def __init__(self, model_name='bert-base-uncased', output_dir='./Part02_/results', device=None, logger=None, force_cpu=False):
         """
         初始化BERT編碼器
         
@@ -70,6 +70,7 @@ class BertEmbedder:
             output_dir: 輸出目錄
             device: 計算設備，如果為None，則自動選擇
             logger: 日誌器
+            force_cpu: 是否強制使用CPU即使有GPU可用
         """
         self.model_name = model_name
         self.output_dir = output_dir
@@ -79,9 +80,42 @@ class BertEmbedder:
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         
-        # 設置設備
+        # 檢查CUDA可用性
+        self.cuda_available = torch.cuda.is_available()
+        
+        # 設置設備 - 自動檢測並選擇
         if device is None:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            if self.cuda_available and not force_cpu:
+                self.device = torch.device('cuda')
+                self.logger.info(f"使用GPU: {torch.cuda.get_device_name(0)}")
+                try:
+                    mem_info = torch.cuda.get_device_properties(0).total_memory / 1024 ** 3
+                    self.logger.info(f"GPU記憶體: {mem_info:.2f} GB")
+                except Exception as e:
+                    self.logger.warning(f"無法獲取GPU記憶體資訊: {str(e)}")
+            else:
+                self.device = torch.device('cpu')
+                if force_cpu:
+                    self.logger.info("根據設定強制使用CPU進行處理")
+                elif not self.cuda_available:
+                    self.logger.info("找不到可用的GPU，將使用CPU進行處理")
+                    
+                    # 提供診斷信息
+                    self.logger.info("CUDA診斷信息:")
+                    self.logger.info(f"- PyTorch版本: {torch.__version__}")
+                    self.logger.info(f"- CUDA版本 (PyTorch): {torch.version.cuda}")
+                    
+                    # 嘗試獲取系統CUDA信息
+                    try:
+                        import subprocess
+                        result = subprocess.run(['nvidia-smi'], capture_output=True, text=True)
+                        if result.returncode == 0:
+                            self.logger.info("系統已安裝NVIDIA驅動程序，但PyTorch無法使用CUDA")
+                            self.logger.info("可能需要重新安裝支援CUDA的PyTorch版本")
+                        else:
+                            self.logger.info("系統未檢測到NVIDIA驅動程序")
+                    except:
+                        self.logger.info("無法執行nvidia-smi檢查")
         else:
             self.device = device
         

@@ -1105,11 +1105,12 @@ class CrossDomainSentimentAnalysisApp:
         logger.info(f"開始BERT語義提取，處理文件: {data_path}")
         
         try:
-            # 初始化BERT編碼器
+            # 初始化BERT編碼器 - 自動檢測裝置
             embedder = BertEmbedder(
                 model_name='bert-base-uncased',
                 output_dir=str(self.bert_embeddings_dir),
-                logger=logger
+                logger=logger,
+                force_cpu=False  # 不強制使用CPU，自動檢測裝置
             )
             
             # 定義進度回調
@@ -1125,6 +1126,32 @@ class CrossDomainSentimentAnalysisApp:
                 else:
                     logger.error(message)
                 return message, percentage
+            
+            # 如果檔案不存在則自動處理
+            if not os.path.exists(data_path):
+                logger.warning(f"找不到指定檔案: {data_path}")
+                
+                # 嘗試查找正確的檔案名
+                data_dir = os.path.dirname(data_path)
+                expected_file_prefix = os.path.basename(data_path).split('_')[0:2]
+                expected_file_prefix = '_'.join(expected_file_prefix)
+                
+                if data_dir and os.path.exists(data_dir):
+                    logger.info(f"嘗試在 {data_dir} 查找匹配 {expected_file_prefix}* 的檔案")
+                    matching_files = [f for f in os.listdir(data_dir) if f.startswith(expected_file_prefix) and f.endswith('.csv')]
+                    
+                    if matching_files:
+                        # 使用最新的匹配檔案
+                        newest_file = max(matching_files, key=lambda f: os.path.getmtime(os.path.join(data_dir, f)))
+                        correct_path = os.path.join(data_dir, newest_file)
+                        logger.info(f"找到替代檔案: {correct_path}")
+                        data_path = correct_path
+                        
+                        # 更新訊息
+                        self.status_var.set(f"使用找到的檔案: {os.path.basename(data_path)}")
+                        logger.info(f"將使用檔案: {data_path}")
+                    else:
+                        logger.error(f"在 {data_dir} 中找不到匹配的檔案")
             
             # 執行BERT嵌入提取
             result = embedder.extract_embeddings(
