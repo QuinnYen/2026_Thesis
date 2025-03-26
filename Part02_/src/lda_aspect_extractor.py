@@ -15,6 +15,7 @@ from src.settings.visualization_config import apply_chinese_to_plot, format_topi
 import pickle
 import json
 import re
+import time
 
 # 設置日誌
 logging.basicConfig(
@@ -54,15 +55,19 @@ class LDATopicExtractor:
         if self.logger:
             self.logger.log(level, message)
     
-    def run_lda(self, metadata_path, n_topics=10, text_column='tokens_str', topic_labels=None, callback=None):
+    def run_lda(self, metadata_path, n_topics=10, text_column='tokens_str', topic_labels=None, 
+            doc_topic_prior=None, topic_word_prior=None, max_iter=None, callback=None):
         """
-        執行LDA主題建模來識別面向
+        執行LDA主題建模來識別面向 - 加入更多參數選項
         
         Args:
             metadata_path: BERT元數據文件路徑（CSV）
             n_topics: 主題數量
             text_column: 文本列名
             topic_labels: 主題標籤字典，鍵為主題索引，值為標籤名稱 (可選)
+            doc_topic_prior: 文檔主題先驗分布的濃度參數（alpha值）
+            topic_word_prior: 主題詞先驗分布的濃度參數（beta值）
+            max_iter: 最大迭代次數
             callback: 進度回調函數
                 
         Returns:
@@ -72,6 +77,14 @@ class LDATopicExtractor:
             self.log(f"Starting LDA topic modeling with {n_topics} topics")
             self.log(f"Using metadata from: {metadata_path}")
             self.log(f"Text column: {text_column}")
+            
+            # 記錄額外參數
+            if doc_topic_prior is not None:
+                self.log(f"Alpha (doc_topic_prior): {doc_topic_prior}")
+            if topic_word_prior is not None:
+                self.log(f"Beta (topic_word_prior): {topic_word_prior}")
+            if max_iter is not None:
+                self.log(f"Max iterations: {max_iter}")
             
             # 讀取數據
             if callback:
@@ -97,11 +110,12 @@ class LDATopicExtractor:
             if callback:
                 callback("Creating document-term matrix...", 30)
             
-            # 使用TF-IDF進行特徵抽取
+            # 使用TF-IDF進行特徵抽取 - 針對大型資料集優化
             vectorizer = TfidfVectorizer(
-                max_df=0.95,  # 忽略在95%以上文檔中出現的詞
-                min_df=2,     # 忽略在少於2個文檔中出現的詞
-                max_features=5000,  # 最多保留5000個特徵
+                max_df=0.8,      # 降低閾值，過濾出現在超過80%文檔中的詞
+                min_df=5,        # 增加最小文檔頻率，忽略極少出現的詞
+                max_features=10000,  # 增加特徵數量以捕捉更多詞彙
+                ngram_range=(1, 2),  # 使用單詞和雙詞組合作為特徵
                 stop_words='english'  # 使用英文停用詞
             )
             
@@ -115,13 +129,37 @@ class LDATopicExtractor:
             if callback:
                 callback(f"Training LDA model with {n_topics} topics...", 50)
             
-            lda_model = LatentDirichletAllocation(
-                n_components=n_topics, 
-                random_state=42,
-                learning_method='online',
-                max_iter=10,
-                verbose=0
-            )
+            # 設定 LDA 模型參數
+            lda_params = {
+                'n_components': n_topics,
+                'random_state': 42,
+                'learning_method': 'online',
+                'n_jobs': -1  # 使用所有可用 CPU 核心
+            }
+            
+            # 添加自訂參數（如果提供）
+            if doc_topic_prior is not None:
+                lda_params['doc_topic_prior'] = doc_topic_prior
+            if topic_word_prior is not None:
+                lda_params['topic_word_prior'] = topic_word_prior
+            if max_iter is not None:
+                lda_params['max_iter'] = max_iter
+            else:
+                # 根據資料集大小自動調整迭代次數
+                if len(texts) < 1000:
+                    lda_params['max_iter'] = 20
+                elif len(texts) < 10000:
+                    lda_params['max_iter'] = 30
+                else:
+                    lda_params['max_iter'] = 50
+                    lda_params['evaluate_every'] = 5
+                    lda_params['verbose'] = 1
+            
+            # 記錄最終模型參數
+            self.log(f"LDA model parameters: {lda_params}")
+            
+            # 初始化 LDA 模型
+            lda_model = LatentDirichletAllocation(**lda_params)
             
             self.log("Training LDA model...")
             lda_model.fit(X)
@@ -171,6 +209,13 @@ class LDATopicExtractor:
             # 為每個文檔分配主題標籤
             df['main_topic'] = [topic_id_to_label.get(topic_idx, f"Topic_{topic_idx+1}") for topic_idx in doc_main_topics]
             
+            # 新增：計算並記錄每個主題的文檔數量分布
+            topic_counts = df['main_topic'].value_counts().to_dict()
+            self.log("Topic distribution statistics:")
+            for topic, count in topic_counts.items():
+                percentage = (count / len(df)) * 100
+                self.log(f"  {topic}: {count} documents ({percentage:.2f}%)")
+            
             # 保存模型和結果
             if callback:
                 callback("Saving model and results...", 90)
@@ -197,6 +242,16 @@ class LDATopicExtractor:
             topic_metadata_path = os.path.join(self.output_dir, f"{base_name_without_ext}_with_topics.csv")
             df.to_csv(topic_metadata_path, index=False)
             
+            # 保存主題分布統計數據
+            stats_path = os.path.join(self.output_dir, f"{base_name_without_ext}_topic_stats.json")
+            with open(stats_path, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'topic_counts': topic_counts,
+                    'params': lda_params,
+                    'n_docs': len(df),
+                    'n_topics': n_topics
+                }, f, ensure_ascii=False, indent=2)
+            
             # 生成可視化
             if callback:
                 callback("Generating visualizations...", 95)
@@ -207,6 +262,9 @@ class LDATopicExtractor:
             # 2. 文檔-主題分布可視化
             vis_path2 = self._plot_doc_topics(doc_topic_distributions, n_topics, base_name_without_ext, topic_labels)
             
+            # 3. 生成主題相似度矩陣可視化
+            vis_path3 = self._plot_topic_similarity(lda_model, base_name_without_ext)
+            
             if callback:
                 callback("LDA topic modeling complete", 100)
             
@@ -216,9 +274,11 @@ class LDATopicExtractor:
                 'vectorizer_path': vectorizer_path,
                 'topics_path': topics_path,
                 'topic_metadata_path': topic_metadata_path,
+                'topic_stats_path': stats_path,
                 'n_topics': n_topics,
                 'topic_words': topic_top_words,
-                'visualizations': [vis_path1, vis_path2]
+                'topic_counts': topic_counts,
+                'visualizations': [vis_path1, vis_path2, vis_path3]
             }
             
         except Exception as e:
@@ -228,6 +288,60 @@ class LDATopicExtractor:
                 callback(f"Error: {str(e)}", -1)
             raise
     
+    def _plot_topic_similarity(self, lda_model, base_name):
+        """生成主題相似度矩陣可視化"""
+        try:
+            # 計算主題之間的相似度矩陣
+            n_topics = lda_model.n_components
+            similarity_matrix = np.zeros((n_topics, n_topics))
+            
+            # 使用詞分布的餘弦相似度
+            for i in range(n_topics):
+                for j in range(n_topics):
+                    # 計算兩個主題詞分布的餘弦相似度
+                    topic_i = lda_model.components_[i]
+                    topic_j = lda_model.components_[j]
+                    
+                    # 正規化向量
+                    topic_i_norm = topic_i / np.sqrt(np.sum(topic_i ** 2))
+                    topic_j_norm = topic_j / np.sqrt(np.sum(topic_j ** 2))
+                    
+                    # 計算餘弦相似度
+                    similarity = np.dot(topic_i_norm, topic_j_norm)
+                    similarity_matrix[i, j] = similarity
+            
+            # 創建可視化
+            plt.figure(figsize=(10, 8))
+            plt.imshow(similarity_matrix, cmap='viridis')
+            plt.colorbar(label='餘弦相似度')
+            plt.title('主題間相似度矩陣')
+            plt.xlabel('主題')
+            plt.ylabel('主題')
+            
+            # 添加主題標籤
+            topic_labels = [f'主題 {i+1}' for i in range(n_topics)]
+            plt.xticks(range(n_topics), topic_labels, rotation=45)
+            plt.yticks(range(n_topics), topic_labels)
+            
+            # 在每個單元格中添加數值
+            for i in range(n_topics):
+                for j in range(n_topics):
+                    plt.text(j, i, f'{similarity_matrix[i, j]:.2f}',
+                            ha='center', va='center', 
+                            color='white' if similarity_matrix[i, j] > 0.5 else 'black')
+            
+            plt.tight_layout()
+            
+            # 保存圖形
+            vis_path = os.path.join(self.vis_dir, f"{base_name}_topic_similarity.png")
+            plt.savefig(vis_path, dpi=200, bbox_inches='tight')
+            plt.close('all')  # 確保關閉所有圖表
+            
+            return vis_path
+        except Exception as e:
+            self.log(f"Warning: Failed to generate topic similarity visualization: {str(e)}", level=logging.WARNING)
+            return None
+
     def _plot_top_words(self, lda_model, feature_names, n_top_words, base_name, topic_labels=None):
         """生成主題-詞語分布可視化（支持自定義主題標籤）"""
         fig, axes = plt.subplots(2, 5, figsize=(15, 8), sharex=True)
@@ -333,9 +447,13 @@ class LDATopicExtractor:
             text_column = 'tokens_str' if 'tokens_str' in df.columns else 'clean_text'
             texts = df[text_column].fillna('').tolist()
             
-            # 創建向量化器
+            # 創建TF-IDF 向量化器
             vectorizer = TfidfVectorizer(
-                max_df=0.95, min_df=2, max_features=5000, stop_words='english'
+                max_df=0.8,  # 降低閾值，過濾出現在超過 80% 文檔中的詞
+                min_df=5,    # 增加最小文檔頻率，忽略極少出現的詞
+                max_features=5000,  # 保留特徵數量
+                ngram_range=(1, 2),  # 使用單詞和雙詞組合作為特徵
+                stop_words='english'  # 使用英文停用詞
             )
             X = vectorizer.fit_transform(texts)
             
@@ -400,6 +518,312 @@ class LDATopicExtractor:
             
         except Exception as e:
             self.log(f"Error in LDA coherence analysis: {str(e)}", level=logging.ERROR)
+            self.log(traceback.format_exc(), level=logging.ERROR)
+            if callback:
+                callback(f"Error: {str(e)}", -1)
+            raise
+
+    # 對於不同規模的資料集自動調整參數的函數
+    def get_lda_params(data_size, n_topics):
+        """
+        根據資料集大小自動調整 LDA 參數
+        
+        Args:
+            data_size: 資料集大小
+            n_topics: 主題數量
+            
+        Returns:
+            dict: LDA 參數字典
+        """
+        if data_size < 100:
+            # 小型資料集
+            return {
+                'n_components': n_topics,
+                'doc_topic_prior': 0.5,  # 適中的 alpha
+                'topic_word_prior': 0.1,  # 適中的 beta
+                'max_iter': 20,
+                'n_jobs': -1,
+                'random_state': 42,
+                'learning_method': 'online',
+            }
+        elif data_size < 10000:
+            # 中型資料集
+            return {
+                'n_components': n_topics,
+                'doc_topic_prior': 0.7,  # 較大的 alpha
+                'topic_word_prior': 0.05,  # 較小的 beta
+                'max_iter': 30,
+                'n_jobs': -1,
+                'random_state': 42,
+                'learning_method': 'online',
+            }
+        else:
+            # 大型資料集
+            return {
+                'n_components': n_topics,
+                'doc_topic_prior': 0.9,  # 更大的 alpha
+                'topic_word_prior': 0.01,  # 更小的 beta
+                'max_iter': 50,
+                'n_jobs': -1,
+                'random_state': 42,
+                'learning_method': 'online',
+                'learning_decay': 0.7,
+                'evaluate_every': 5,
+                'verbose': 1
+            }
+    
+    def evaluate_topic_models(self, metadata_path, min_topics=5, max_topics=15, step=1, 
+                          alpha_values=[0.1, 0.5, 0.9], beta_values=[0.01, 0.05, 0.1],
+                          callback=None):
+        """
+        評估不同主題數量和參數組合的 LDA 模型
+        
+        Args:
+            metadata_path: BERT元數據文件路徑（CSV）
+            min_topics: 最小主題數量
+            max_topics: 最大主題數量
+            step: 主題數量遞增步長
+            alpha_values: 要測試的 alpha 值列表
+            beta_values: 要測試的 beta 值列表
+            callback: 進度回調函數
+            
+        Returns:
+            dict: 不同參數組合的評估結果
+        """
+        try:
+            self.log(f"開始進行 LDA 參數網格搜索")
+            
+            # 讀取數據
+            if callback:
+                callback("Loading metadata for grid search...", 5)
+            
+            df = pd.read_csv(metadata_path)
+            text_column = 'tokens_str' if 'tokens_str' in df.columns else 'clean_text'
+            texts = df[text_column].fillna('').tolist()
+            
+            # 創建向量化器並轉換文本
+            vectorizer = TfidfVectorizer(
+                max_df=0.8, 
+                min_df=5, 
+                max_features=5000, 
+                ngram_range=(1, 2),
+                stop_words='english'
+            )
+            X = vectorizer.fit_transform(texts)
+            
+            # 儲存評估結果
+            results = {}
+            total_combinations = len(range(min_topics, max_topics+1, step)) * len(alpha_values) * len(beta_values)
+            current_step = 0
+            
+            # 記錄開始時間
+            start_time = time.time()
+            
+            # 開始網格搜索
+            for n_topics in range(min_topics, max_topics+1, step):
+                results[n_topics] = {}
+                
+                for alpha in alpha_values:
+                    for beta in beta_values:
+                        # 更新進度
+                        current_step += 1
+                        progress = 5 + int((current_step / total_combinations) * 90)
+                        
+                        if callback:
+                            callback(f"Testing model with {n_topics} topics, alpha={alpha}, beta={beta}", progress)
+                            
+                        # 初始化和訓練 LDA 模型
+                        lda_model = LatentDirichletAllocation(
+                            n_components=n_topics,
+                            doc_topic_prior=alpha,
+                            topic_word_prior=beta,
+                            random_state=42,
+                            learning_method='online',
+                            max_iter=20,
+                            n_jobs=-1
+                        )
+                        
+                        # 訓練模型
+                        lda_model.fit(X)
+                        
+                        # 計算困惑度（perplexity）
+                        perplexity = lda_model.perplexity(X)
+                        
+                        # 計算主題一致性（模擬 u_mass 一致性計算法）
+                        topic_words = []
+                        feature_names = vectorizer.get_feature_names_out()
+                        for topic_idx, topic in enumerate(lda_model.components_):
+                            top_words_idx = topic.argsort()[:-11:-1]
+                            top_words = [feature_names[i] for i in top_words_idx]
+                            topic_words.append(top_words)
+                        
+                        # 計算不同主題間的距離（越大越好）
+                        topic_distances = 0
+                        n_pairs = 0
+                        for i in range(len(topic_words)):
+                            for j in range(i+1, len(topic_words)):
+                                overlap = len(set(topic_words[i]) & set(topic_words[j]))
+                                topic_distances += (10 - overlap) / 10.0  # 歸一化距離
+                                n_pairs += 1
+                        
+                        avg_topic_distance = topic_distances / n_pairs if n_pairs > 0 else 0
+                        
+                        # 計算文檔-主題分布的熵（越大越好，表示多樣性）
+                        doc_topic_dist = lda_model.transform(X)
+                        entropy_sum = 0
+                        for dist in doc_topic_dist:
+                            # 小數值修正，避免 log(0)
+                            dist = np.clip(dist, 1e-10, 1.0)
+                            # 歸一化
+                            dist = dist / dist.sum()
+                            # 計算熵
+                            entropy = -np.sum(dist * np.log(dist))
+                            entropy_sum += entropy
+                        
+                        avg_entropy = entropy_sum / len(doc_topic_dist)
+                        
+                        # 綜合評分（越高越好）
+                        # 主題距離越大、熵越大、困惑度越小，表現越好
+                        combined_score = avg_topic_distance + avg_entropy - (perplexity / 10000)
+                        
+                        # 保存結果
+                        param_key = f"alpha={alpha:.2f},beta={beta:.2f}"
+                        results[n_topics][param_key] = {
+                            'perplexity': perplexity,
+                            'avg_topic_distance': avg_topic_distance,
+                            'avg_entropy': avg_entropy,
+                            'combined_score': combined_score
+                        }
+                        
+                        self.log(f"Topics: {n_topics}, Alpha: {alpha}, Beta: {beta}, " +
+                                f"Perplexity: {perplexity:.2f}, " +
+                                f"Avg Topic Distance: {avg_topic_distance:.2f}, " +
+                                f"Avg Entropy: {avg_entropy:.2f}, " +
+                                f"Combined Score: {combined_score:.2f}")
+            
+            # 找到最佳參數組合
+            best_score = -float('inf')
+            best_params = None
+            
+            for n_topics in results:
+                for param_key, metrics in results[n_topics].items():
+                    if metrics['combined_score'] > best_score:
+                        best_score = metrics['combined_score']
+                        alpha, beta = [float(val.split('=')[1]) for val in param_key.split(',')]
+                        best_params = {
+                            'n_topics': n_topics,
+                            'alpha': alpha,
+                            'beta': beta,
+                            'metrics': metrics
+                        }
+            
+            # 生成評估報告
+            if callback:
+                callback("Generating evaluation report...", 95)
+                
+            # 創建報告目錄
+            report_dir = os.path.join(self.vis_dir, "param_search")
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir)
+                
+            # 生成可視化圖表
+            plt.figure(figsize=(12, 8))
+            
+            # 繪製不同主題數量的綜合得分
+            plt.subplot(2, 2, 1)
+            for alpha in alpha_values:
+                for beta in beta_values:
+                    param_key = f"alpha={alpha:.2f},beta={beta:.2f}"
+                    scores = [results[n_topics][param_key]['combined_score'] 
+                            if param_key in results[n_topics] else float('nan') 
+                            for n_topics in results]
+                    plt.plot(list(results.keys()), scores, marker='o', label=param_key)
+            
+            plt.xlabel('主題數量')
+            plt.ylabel('綜合評分 (越高越好)')
+            plt.title('不同參數組合的綜合評分')
+            plt.legend(loc='best')
+            plt.grid(True)
+            
+            # 繪製不同主題數量的困惑度
+            plt.subplot(2, 2, 2)
+            for alpha in alpha_values:
+                for beta in beta_values:
+                    param_key = f"alpha={alpha:.2f},beta={beta:.2f}"
+                    perplexities = [results[n_topics][param_key]['perplexity'] 
+                                if param_key in results[n_topics] else float('nan') 
+                                for n_topics in results]
+                    plt.plot(list(results.keys()), perplexities, marker='o', label=param_key)
+            
+            plt.xlabel('主題數量')
+            plt.ylabel('困惑度 (越低越好)')
+            plt.title('不同參數組合的困惑度')
+            plt.legend(loc='best')
+            plt.grid(True)
+            
+            # 繪製不同主題數量的熵
+            plt.subplot(2, 2, 3)
+            for alpha in alpha_values:
+                for beta in beta_values:
+                    param_key = f"alpha={alpha:.2f},beta={beta:.2f}"
+                    entropies = [results[n_topics][param_key]['avg_entropy'] 
+                            if param_key in results[n_topics] else float('nan') 
+                            for n_topics in results]
+                    plt.plot(list(results.keys()), entropies, marker='o', label=param_key)
+            
+            plt.xlabel('主題數量')
+            plt.ylabel('平均熵 (越高越好)')
+            plt.title('不同參數組合的平均熵')
+            plt.legend(loc='best')
+            plt.grid(True)
+            
+            # 繪製不同主題數量的主題距離
+            plt.subplot(2, 2, 4)
+            for alpha in alpha_values:
+                for beta in beta_values:
+                    param_key = f"alpha={alpha:.2f},beta={beta:.2f}"
+                    distances = [results[n_topics][param_key]['avg_topic_distance'] 
+                                if param_key in results[n_topics] else float('nan') 
+                                for n_topics in results]
+                    plt.plot(list(results.keys()), distances, marker='o', label=param_key)
+            
+            plt.xlabel('主題數量')
+            plt.ylabel('平均主題距離 (越高越好)')
+            plt.title('不同參數組合的平均主題距離')
+            plt.legend(loc='best')
+            plt.grid(True)
+            
+            plt.tight_layout()
+            
+            # 保存圖表
+            base_name = os.path.basename(metadata_path)
+            base_name_without_ext = os.path.splitext(base_name)[0].replace('_bert_metadata', '')
+            vis_path = os.path.join(report_dir, f"{base_name_without_ext}_param_search.png")
+            plt.savefig(vis_path, dpi=200, bbox_inches='tight')
+            plt.close()
+            
+            # 計算總執行時間
+            total_time = time.time() - start_time
+            minutes, seconds = divmod(total_time, 60)
+            
+            if callback:
+                callback("Evaluation complete", 100)
+            
+            # 返回結果
+            self.log(f"Parameter grid search completed in {int(minutes)}m {int(seconds)}s")
+            self.log(f"Best parameters: Topics={best_params['n_topics']}, " +
+                    f"Alpha={best_params['alpha']}, Beta={best_params['beta']}")
+            self.log(f"Best score: {best_params['metrics']['combined_score']:.2f}")
+            
+            return {
+                'results': results,
+                'best_params': best_params,
+                'visualization_path': vis_path,
+                'execution_time': f"{int(minutes)}m {int(seconds)}s"
+            }
+            
+        except Exception as e:
+            self.log(f"Error in parameter evaluation: {str(e)}", level=logging.ERROR)
             self.log(traceback.format_exc(), level=logging.ERROR)
             if callback:
                 callback(f"Error: {str(e)}", -1)

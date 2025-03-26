@@ -454,44 +454,85 @@ class CrossDomainSentimentAnalysisApp:
         ttk.Label(step2_frame, text="使用BERT模型為評論文本生成向量表示").pack(anchor="w", pady=5)
         ttk.Button(step2_frame, text="執行BERT語義提取", command=self._extract_bert_embeddings).pack(anchor="e", pady=5)
         
-        # ===步驟3: LDA面向切割===
+        # 步驟3: LDA面向切割 - 增加參數設置
         step3_frame = ttk.LabelFrame(main_frame, text="步驟 3: LDA面向切割", padding=10)
         step3_frame.pack(fill="x", pady=5)
-
-        ttk.Label(step3_frame, text="使用LDA進行主題建模，識別不同面向").pack(anchor="w", pady=5)
-
-        # 添加配置區域
-        config_frame = ttk.Frame(step3_frame)
-        config_frame.pack(fill="x", pady=5)
-
-        # 添加自動偵測選項
-        self.auto_detect_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(config_frame, text="自動偵測資料來源和主題數量", 
-                    variable=self.auto_detect_var, 
-                    command=self._toggle_topic_config).pack(anchor="w", pady=2)
-
-        # 資料來源選擇區域 - 將框架保存為類屬性
-        self.source_frame = ttk.Frame(config_frame)
-        self.source_frame.pack(fill="x", pady=2)
-        ttk.Label(self.source_frame, text="資料來源:").pack(side="left", padx=(20, 5))
-        self.data_source_var = tk.StringVar(value="imdb")
-        self.data_source_combo = ttk.Combobox(self.source_frame, textvariable=self.data_source_var, 
-                                        state="readonly", width=15)
-        self.data_source_combo['values'] = ["imdb", "amazon", "yelp"]
-        self.data_source_combo.pack(side="left", padx=5)
-        self.data_source_combo['state'] = 'disabled'  # 初始設為禁用
-
-        # 主題數量設定區域 - 將框架保存為類屬性
-        self.topic_frame = ttk.Frame(config_frame)
-        self.topic_frame.pack(fill="x", pady=2)
-        ttk.Label(self.topic_frame, text="主題數量:").pack(side="left", padx=(20, 5))
+        
+        ttk.Label(step3_frame, text="使用LDA進行主題建模，識別不同面向 (主題數量將根據數據源自動設定)").pack(anchor="w", pady=5)
+        
+        # 添加LDA參數配置區域
+        lda_params_frame = ttk.LabelFrame(step3_frame, text="LDA參數設置", padding=5)
+        lda_params_frame.pack(fill="x", pady=5)
+        
+        # 第一行參數
+        params_row1 = ttk.Frame(lda_params_frame)
+        params_row1.pack(fill="x", pady=2)
+        
+        # 主題數量
+        ttk.Label(params_row1, text="主題數量:").pack(side="left", padx=(0, 5))
         self.topic_count_var = tk.StringVar(value="10")
-        self.topic_count_entry = ttk.Entry(self.topic_frame, textvariable=self.topic_count_var, width=8)
-        self.topic_count_entry.pack(side="left", padx=5)
-        self.topic_count_entry['state'] = 'disabled'  # 初始設為禁用
-
-        # 執行按鈕
-        ttk.Button(step3_frame, text="執行LDA面向切割", command=self._perform_lda).pack(anchor="e", pady=5)
+        topic_count_entry = ttk.Entry(params_row1, textvariable=self.topic_count_var, width=5)
+        topic_count_entry.pack(side="left", padx=5)
+        
+        # Alpha值 (文檔主題先驗)
+        ttk.Label(params_row1, text="Alpha值:").pack(side="left", padx=(15, 5))
+        self.alpha_var = tk.StringVar(value="0.9")
+        alpha_entry = ttk.Entry(params_row1, textvariable=self.alpha_var, width=5)
+        alpha_entry.pack(side="left", padx=5)
+        ttk.Label(params_row1, text="(越大主題分布越分散)").pack(side="left")
+        
+        # 第二行參數
+        params_row2 = ttk.Frame(lda_params_frame)
+        params_row2.pack(fill="x", pady=2)
+        
+        # Beta值 (主題詞先驗)
+        ttk.Label(params_row2, text="Beta值:").pack(side="left", padx=(0, 5))
+        self.beta_var = tk.StringVar(value="0.01")
+        beta_entry = ttk.Entry(params_row2, textvariable=self.beta_var, width=5)
+        beta_entry.pack(side="left", padx=5)
+        ttk.Label(params_row2, text="(越小主題詞分布越集中)").pack(side="left")
+        
+        # 迭代次數
+        ttk.Label(params_row2, text="迭代次數:").pack(side="left", padx=(15, 5))
+        self.max_iter_var = tk.StringVar(value="50")
+        max_iter_entry = ttk.Entry(params_row2, textvariable=self.max_iter_var, width=5)
+        max_iter_entry.pack(side="left", padx=5)
+        ttk.Label(params_row2, text="(越多收斂越充分)").pack(side="left")
+        
+        # 第三行參數
+        params_row3 = ttk.Frame(lda_params_frame)
+        params_row3.pack(fill="x", pady=2)
+        
+        # 是否使用自動參數
+        self.auto_params_var = tk.BooleanVar(value=True)
+        auto_params_check = ttk.Checkbutton(
+            params_row3, 
+            text="使用自動參數調整 (根據資料量大小自動設置最佳參數)", 
+            variable=self.auto_params_var,
+            command=self._toggle_lda_params
+        )
+        auto_params_check.pack(side="left", padx=5)
+        
+        # 調用自動參數切換函數設置初始狀態
+        self._toggle_lda_params()
+        
+        # 操作按鈕區域
+        lda_btn_frame = ttk.Frame(step3_frame)
+        lda_btn_frame.pack(fill="x", pady=5)
+        
+        # 參數評估按鈕
+        ttk.Button(
+            lda_btn_frame, 
+            text="評估最佳參數", 
+            command=self._evaluate_lda_params
+        ).pack(side="left", padx=5)
+        
+        # 執行LDA按鈕
+        ttk.Button(
+            lda_btn_frame, 
+            text="執行LDA面向切割", 
+            command=self._perform_lda
+        ).pack(side="right", padx=5)
         
         # ===步驟4: 計算面向相關句子的平均向量===
         step4_frame = ttk.LabelFrame(main_frame, text="步驟 4: 計算面向相關句子的平均向量", padding=10)
@@ -1015,6 +1056,138 @@ class CrossDomainSentimentAnalysisApp:
         details_window.grab_set()
         details_window.focus_set()
     
+    def _toggle_lda_params(self):
+        """根據自動參數選擇狀態切換參數輸入框的可用性"""
+        state = "disabled" if self.auto_params_var.get() else "normal"
+        
+        # 獲取所有參數輸入框
+        for widget in self.root.winfo_children():
+            if isinstance(widget, ttk.Frame):
+                for child in widget.winfo_children():
+                    if isinstance(child, ttk.LabelFrame) and child.cget("text") == "步驟 3: LDA面向切割":
+                        for grandchild in child.winfo_children():
+                            if isinstance(grandchild, ttk.LabelFrame) and grandchild.cget("text") == "LDA參數設置":
+                                for row in grandchild.winfo_children():
+                                    if isinstance(row, ttk.Frame):
+                                        for entry in row.winfo_children():
+                                            if isinstance(entry, ttk.Entry):
+                                                entry.configure(state=state)
+
+    def _evaluate_lda_params(self):
+        """評估不同LDA參數組合的效能"""
+        if not self.bert_metadata_path:
+            messagebox.showerror("錯誤", "請先執行BERT語義提取!")
+            return
+            
+        # 確認評估參數
+        result = messagebox.askokcancel(
+            "評估LDA參數", 
+            "這將測試不同主題數量和參數組合，可能需要較長時間。\n\n" +
+            "預設將測試主題數量5-15之間，以及不同的Alpha/Beta組合。\n\n" +
+            "是否繼續?"
+        )
+        
+        if not result:
+            return
+            
+        # 開始參數評估任務
+        self.task_processor.start_task(self._evaluate_lda_params_task, self.bert_metadata_path)
+
+    def _evaluate_lda_params_task(self, metadata_path):
+        """LDA參數評估任務 - 函數版本 (含控制台輸出)"""
+        # 打開控制台窗口並獲取日誌文件路徑
+        log_file, status_file = ConsoleOutputManager.open_console("LDA參數評估", auto_close=True)
+        
+        # 設置日誌器，同時輸出到控制台和日誌文件
+        logger = ConsoleOutputManager.setup_console_logger('lda_param_evaluation', log_file)
+        logger.info(f"開始LDA參數評估，處理文件: {metadata_path}")
+        
+        try:
+            # 初始化LDA提取器
+            extractor = LDATopicExtractor(output_dir=str(self.lda_topics_dir), logger=logger)
+            
+            # 定義進度回調
+            progress_updates = []
+            def progress_callback(message, percentage):
+                progress_updates.append((message, percentage))
+                self.status_var.set(message)
+                if percentage >= 0:
+                    self.progress_var.set(percentage)
+                # 記錄到控制台
+                if percentage >= 0:
+                    logger.info(f"{message} ({percentage}%)")
+                else:
+                    logger.error(message)
+                return message, percentage
+                
+            # 執行參數評估
+            results = extractor.evaluate_topic_models(
+                metadata_path,
+                min_topics=5,
+                max_topics=15,
+                step=2,
+                alpha_values=[0.1, 0.5, 0.9],
+                beta_values=[0.01, 0.05, 0.1],
+                callback=progress_callback
+            )
+            
+            # 記錄完成信息
+            logger.info("====================================")
+            logger.info(f"LDA參數評估完成!")
+            logger.info(f"最佳參數:")
+            logger.info(f"  主題數量: {results['best_params']['n_topics']}")
+            logger.info(f"  Alpha值: {results['best_params']['alpha']}")
+            logger.info(f"  Beta值: {results['best_params']['beta']}")
+            logger.info(f"  綜合評分: {results['best_params']['metrics']['combined_score']:.2f}")
+            logger.info(f"評估報告保存至: {results['visualization_path']}")
+            logger.info(f"執行時間: {results['execution_time']}")
+            logger.info("====================================")
+            logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
+            
+            # 標記處理完成，觸發控制台自動關閉
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 更新界面上的參數值
+            self.root.after(100, lambda: self._update_lda_params(results['best_params']))
+            
+            # 返回結果字典
+            return {
+                "best_params": results['best_params'],
+                "visualization_path": results['visualization_path'],
+                "step": "lda_param_evaluation",
+                "progress_updates": progress_updates
+            }
+        except Exception as e:
+            # 記錄錯誤
+            logger.error(f"LDA參數評估失敗: {str(e)}")
+            logger.error(traceback.format_exc())
+            
+            # 標記處理完成
+            ConsoleOutputManager.mark_process_complete(status_file)
+            
+            # 重新拋出異常
+            raise
+
+    def _update_lda_params(self, best_params):
+        """使用最佳參數更新界面"""
+        self.topic_count_var.set(str(best_params['n_topics']))
+        self.alpha_var.set(str(best_params['alpha']))
+        self.beta_var.set(str(best_params['beta']))
+        
+        # 提示用戶參數已更新
+        messagebox.showinfo(
+            "參數評估完成", 
+            f"已找到最佳參數組合:\n\n" +
+            f"主題數量: {best_params['n_topics']}\n" +
+            f"Alpha值: {best_params['alpha']}\n" +
+            f"Beta值: {best_params['beta']}\n\n" +
+            f"這些參數已自動更新到界面上"
+        )
+        
+        # 自動勾選「使用自動參數調整」選項
+        self.auto_params_var.set(False)
+        self._toggle_lda_params()
+
     def _setup_status_bar(self):
         """設置底部狀態欄 - 僅使用文本提醒"""
         status_frame = ttk.Frame(self.root, padding=10)
@@ -1262,37 +1435,56 @@ class CrossDomainSentimentAnalysisApp:
             raise
     
     def _perform_lda(self):
-        """執行LDA面向切割"""
+        """執行LDA面向切割 - 修改為使用自訂參數"""
         if not self.bert_metadata_path:
             messagebox.showerror("錯誤", "請先執行BERT語義提取!")
             return
             
-        # 根據自動偵測選項決定資料來源和主題數量
-        use_custom_topic_count = False
+        # 確定數據來源
+        self._determine_data_source()
         
-        if self.auto_detect_var.get():
-            # 自動確定數據來源
-            self._determine_data_source()
-            # 使用預設主題數量（由資料來源決定）
-            topic_count = None
-        else:
-            # 使用使用者設定的資料來源和主題數量
-            self.data_source = self.data_source_var.get()
+        # 獲取 LDA 參數
+        use_auto_params = self.auto_params_var.get()
+        
+        # 如果不使用自動參數，則讀取用戶輸入
+        if not use_auto_params:
             try:
+                # 讀取並驗證參數
                 topic_count = int(self.topic_count_var.get())
-                if topic_count <= 0:
-                    raise ValueError("主題數量必須大於0")
-                use_custom_topic_count = True
+                alpha = float(self.alpha_var.get())
+                beta = float(self.beta_var.get())
+                max_iter = int(self.max_iter_var.get())
+                
+                # 簡單驗證
+                if topic_count < 1 or topic_count > 100:
+                    raise ValueError("主題數量應介於 1 到 100 之間")
+                if alpha <= 0:
+                    raise ValueError("Alpha 值必須大於 0")
+                if beta <= 0:
+                    raise ValueError("Beta 值必須大於 0")
+                if max_iter < 10:
+                    raise ValueError("迭代次數至少為 10")
+                
+                # 封裝參數
+                lda_params = {
+                    'n_topics': topic_count,
+                    'alpha': alpha,
+                    'beta': beta,
+                    'max_iter': max_iter
+                }
             except ValueError as e:
-                messagebox.showerror("錯誤", f"主題數量設定無效: {str(e)}")
+                messagebox.showerror("參數錯誤", f"LDA 參數設定無效: {str(e)}")
                 return
-        
+        else:
+            # 使用自動參數（將在任務中自動確定）
+            lda_params = None
+            
         # 開始LDA任務
         self.task_processor.start_task(
             self._perform_lda_task, 
             self.bert_metadata_path, 
             self.data_source,
-            topic_count if use_custom_topic_count else None
+            lda_params
         )
     
     def _determine_data_source(self):
@@ -1333,8 +1525,8 @@ class CrossDomainSentimentAnalysisApp:
         else:
             self.data_source = "unknown"
     
-    def _perform_lda_task(self, metadata_path, data_source, custom_topic_count=None):
-        """LDA面向切割任務 - 函數版本 (含控制台輸出)"""
+    def _perform_lda_task(self, metadata_path, data_source, custom_params=None):
+        """LDA面向切割任務 - 函數版本 (含控制台輸出) - 加入自訂參數支援"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
         
@@ -1351,25 +1543,33 @@ class CrossDomainSentimentAnalysisApp:
             from src.settings.topic_labels import TOPIC_LABELS_zh
             topic_labels = None
             
-            if data_source in TOPIC_LABELS_zh:
-                topic_labels = TOPIC_LABELS_zh[data_source]
-                # 確定主題數量
-                if custom_topic_count is not None:
-                    # 使用自定義主題數量
-                    topic_count = custom_topic_count
-                    logger.info(f"使用自定義主題數量: {topic_count}")
-                else:
-                    # 使用預設主題數量
-                    topic_count = len(topic_labels)
-                    logger.info(f"使用 {data_source} 的預設主題數量: {topic_count}")
+            # 如果使用自訂參數
+            if custom_params:
+                logger.info(f"使用自訂參數:")
+                logger.info(f"  主題數量: {custom_params['n_topics']}")
+                logger.info(f"  Alpha 值: {custom_params['alpha']}")
+                logger.info(f"  Beta 值: {custom_params['beta']}")
+                logger.info(f"  迭代次數: {custom_params['max_iter']}")
                 
-                logger.info(f"使用 {data_source} 的自定義主題標籤")
+                topic_count = custom_params['n_topics']
+                
+                # 取得主題標籤 (如果數據來源匹配且主題數量相等)
+                if data_source in TOPIC_LABELS_zh and len(TOPIC_LABELS_zh[data_source]) == topic_count:
+                    topic_labels = TOPIC_LABELS_zh[data_source]
+                    logger.info(f"使用 {data_source} 的自定義主題標籤")
+                else:
+                    logger.info(f"未找到匹配的主題標籤，將使用自動生成的標籤")
             else:
-                # 未知資料來源，使用自定義或預設主題數量
-                topic_count = custom_topic_count if custom_topic_count is not None else 10
-                logger.info(f"未找到匹配的主題標籤，使用一般主題")
-                logger.info(f"主題數量設為: {topic_count}")
-            
+                # 使用數據來源的預設主題數量
+                if data_source in TOPIC_LABELS_zh:
+                    topic_labels = TOPIC_LABELS_zh[data_source]
+                    topic_count = len(topic_labels)
+                    logger.info(f"使用 {data_source} 的自定義主題標籤")
+                    logger.info(f"主題數量設為: {topic_count}")
+                else:
+                    topic_count = 10  # 默認值
+                    logger.info(f"未找到匹配的主題標籤，使用默認主題數量: {topic_count}")
+                    
             # 定義進度回調
             progress_updates = []
             def progress_callback(message, percentage):
@@ -1383,13 +1583,26 @@ class CrossDomainSentimentAnalysisApp:
                 else:
                     logger.error(message)
                 return message, percentage
-                    
+            
+            # 準備LDA模型參數
+            lda_kwargs = {
+                'n_topics': topic_count,
+                'topic_labels': topic_labels,
+                'callback': progress_callback
+            }
+            
+            # 如果有自訂參數，加入更多參數
+            if custom_params:
+                lda_kwargs.update({
+                    'doc_topic_prior': custom_params['alpha'],
+                    'topic_word_prior': custom_params['beta'],
+                    'max_iter': custom_params['max_iter']
+                })
+                
             # 執行LDA主題建模
             results = extractor.run_lda(
                 metadata_path,
-                n_topics=topic_count,
-                topic_labels=topic_labels,
-                callback=progress_callback
+                **lda_kwargs
             )
             
             # 保存結果到實例變量
@@ -1426,7 +1639,8 @@ class CrossDomainSentimentAnalysisApp:
                 "n_topics": topic_count,
                 "step": "lda_topic",
                 "visualizations": results.get('visualizations', []),
-                "progress_updates": progress_updates
+                "progress_updates": progress_updates,
+                "custom_params": custom_params
             }
         except Exception as e:
             # 記錄錯誤
