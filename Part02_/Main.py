@@ -16,6 +16,11 @@ import time
 from pathlib import Path
 import matplotlib.pyplot as plt
 from PIL import Image, ImageTk
+import pandas as pd
+import numpy as np
+import time
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # 確保matplotlib使用非互動模式
 plt.ioff()
@@ -28,6 +33,8 @@ from src.lda_aspect_extractor import LDATopicExtractor
 from src.aspect_vector_calculator import AspectVectorCalculator
 from src.result_manager import ResultManager
 from src.settings.visualization_config import configure_chinese_fonts, check_chinese_display
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
 
 class TaskProcessor:
     """
@@ -467,46 +474,11 @@ class CrossDomainSentimentAnalysisApp:
         # 第一行參數
         params_row1 = ttk.Frame(lda_params_frame)
         params_row1.pack(fill="x", pady=2)
-        
-        # 主題數量
-        ttk.Label(params_row1, text="主題數量:").pack(side="left", padx=(0, 5))
-        self.topic_count_var = tk.StringVar(value="10")
-        topic_count_entry = ttk.Entry(params_row1, textvariable=self.topic_count_var, width=5)
-        topic_count_entry.pack(side="left", padx=5)
-        
-        # Alpha值 (文檔主題先驗)
-        ttk.Label(params_row1, text="Alpha值:").pack(side="left", padx=(15, 5))
-        self.alpha_var = tk.StringVar(value="0.9")
-        alpha_entry = ttk.Entry(params_row1, textvariable=self.alpha_var, width=5)
-        alpha_entry.pack(side="left", padx=5)
-        ttk.Label(params_row1, text="(越大主題分布越分散)").pack(side="left")
-        
-        # 第二行參數
-        params_row2 = ttk.Frame(lda_params_frame)
-        params_row2.pack(fill="x", pady=2)
-        
-        # Beta值 (主題詞先驗)
-        ttk.Label(params_row2, text="Beta值:").pack(side="left", padx=(0, 5))
-        self.beta_var = tk.StringVar(value="0.01")
-        beta_entry = ttk.Entry(params_row2, textvariable=self.beta_var, width=5)
-        beta_entry.pack(side="left", padx=5)
-        ttk.Label(params_row2, text="(越小主題詞分布越集中)").pack(side="left")
-        
-        # 迭代次數
-        ttk.Label(params_row2, text="迭代次數:").pack(side="left", padx=(15, 5))
-        self.max_iter_var = tk.StringVar(value="50")
-        max_iter_entry = ttk.Entry(params_row2, textvariable=self.max_iter_var, width=5)
-        max_iter_entry.pack(side="left", padx=5)
-        ttk.Label(params_row2, text="(越多收斂越充分)").pack(side="left")
-        
-        # 第三行參數
-        params_row3 = ttk.Frame(lda_params_frame)
-        params_row3.pack(fill="x", pady=2)
-        
+
         # 是否使用自動參數
         self.auto_params_var = tk.BooleanVar(value=True)
         auto_params_check = ttk.Checkbutton(
-            params_row3, 
+            params_row1, 
             text="使用自動參數調整 (根據資料量大小自動設置最佳參數)", 
             variable=self.auto_params_var,
             command=self._toggle_lda_params
@@ -515,6 +487,33 @@ class CrossDomainSentimentAnalysisApp:
         
         # 調用自動參數切換函數設置初始狀態
         self._toggle_lda_params()
+        
+        # 第二行參數
+        params_row2 = ttk.Frame(lda_params_frame)
+        params_row2.pack(fill="x", pady=3)
+        
+        # Alpha值 (文檔主題先驗)
+        ttk.Label(params_row2, text="Alpha值:").pack(side="left", padx=(15, 5))
+        self.alpha_var = tk.StringVar(value="0.9")
+        alpha_entry = ttk.Entry(params_row2, textvariable=self.alpha_var, width=5)
+        alpha_entry.pack(side="left", padx=5)
+        ttk.Label(params_row2, text="(越大主題分布越分散)").pack(side="left")
+        ttk.Frame(params_row2, width=20).pack(side="left")
+        
+        # Beta值 (主題詞先驗)
+        ttk.Label(params_row2, text="Beta值:").pack(side="left", padx=5)
+        self.beta_var = tk.StringVar(value="0.01")
+        beta_entry = ttk.Entry(params_row2, textvariable=self.beta_var, width=5)
+        beta_entry.pack(side="left", padx=5)
+        ttk.Label(params_row2, text="(越小主題詞分布越集中)").pack(side="left")
+        ttk.Frame(params_row2, width=20).pack(side="left")
+        
+        # 迭代次數
+        ttk.Label(params_row2, text="迭代次數:").pack(side="left", padx=5)
+        self.max_iter_var = tk.StringVar(value="50")
+        max_iter_entry = ttk.Entry(params_row2, textvariable=self.max_iter_var, width=5)
+        max_iter_entry.pack(side="left", padx=5)
+        ttk.Label(params_row2, text="(越多收斂越充分)").pack(side="left")
         
         # 操作按鈕區域
         lda_btn_frame = ttk.Frame(step3_frame)
@@ -1083,7 +1082,7 @@ class CrossDomainSentimentAnalysisApp:
         result = messagebox.askokcancel(
             "評估LDA參數", 
             "這將測試不同主題數量和參數組合，可能需要較長時間。\n\n" +
-            "預設將測試主題數量5-15之間，以及不同的Alpha/Beta組合。\n\n" +
+            "預設將測試主題數量10個，以及不同的Alpha/Beta組合。\n\n" +
             "是否繼續?"
         )
         
@@ -1094,13 +1093,14 @@ class CrossDomainSentimentAnalysisApp:
         self.task_processor.start_task(self._evaluate_lda_params_task, self.bert_metadata_path)
 
     def _evaluate_lda_params_task(self, metadata_path):
-        """LDA參數評估任務 - 函數版本 (含控制台輸出)"""
+        """LDA參數評估任務 - 函數版本 (含控制台輸出) - 固定主題數量為10"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA參數評估", auto_close=True)
         
         # 設置日誌器，同時輸出到控制台和日誌文件
         logger = ConsoleOutputManager.setup_console_logger('lda_param_evaluation', log_file)
         logger.info(f"開始LDA參數評估，處理文件: {metadata_path}")
+        logger.info(f"固定主題數量為10，僅評估不同的alpha和beta值")
         
         try:
             # 初始化LDA提取器
@@ -1119,28 +1119,215 @@ class CrossDomainSentimentAnalysisApp:
                 else:
                     logger.error(message)
                 return message, percentage
-                
-            # 執行參數評估
-            results = extractor.evaluate_topic_models(
-                metadata_path,
-                min_topics=5,
-                max_topics=15,
-                step=2,
-                alpha_values=[0.1, 0.5, 0.9],
-                beta_values=[0.01, 0.05, 0.1],
-                callback=progress_callback
+            
+            # 讀取數據
+            logger.info("Loading metadata for grid search...")
+            
+            df = pd.read_csv(metadata_path)
+            
+            # 尋找可用的文本欄位 - 按優先順序檢查
+            text_columns = ['tokens_str', 'clean_text', 'text']
+            text_column = None
+            
+            for col in text_columns:
+                if col in df.columns:
+                    text_column = col
+                    logger.info(f"使用文本欄位: {text_column}")
+                    break
+                    
+            if text_column is None:
+                # 如果找不到預期的文本欄位，顯示可用的欄位並拋出錯誤
+                available_columns = ", ".join(df.columns.tolist())
+                logger.error(f"找不到可用的文本欄位。可用欄位: {available_columns}")
+                raise ValueError(f"找不到可用的文本欄位 (tokens_str/clean_text/text)。可用欄位: {available_columns}")
+            
+            texts = df[text_column].fillna('').tolist()
+            
+            # 創建向量化器並轉換文本
+            logger.info("Creating document-term matrix...")
+            vectorizer = TfidfVectorizer(
+                max_df=0.8, 
+                min_df=5, 
+                max_features=5000, 
+                ngram_range=(1, 2),
+                stop_words='english'
             )
+            X = vectorizer.fit_transform(texts)
+            logger.info(f"Created document-term matrix with shape: {X.shape}")
+            
+            # 儲存評估結果
+            results = {}
+            topic_count = 10  # 固定為10
+            results[topic_count] = {}
+            
+            # Alpha和Beta值
+            alpha_values = [0.1, 0.5, 0.9]
+            beta_values = [0.01, 0.05, 0.1]
+            
+            total_combinations = len(alpha_values) * len(beta_values)
+            current_step = 0
+            
+            # 記錄開始時間
+            start_time = time.time()
+            
+            # 開始網格搜索 - 只有一個固定主題數量的參數組合
+            logger.info(f"Testing different alpha and beta values with fixed 10 topics...")
+            
+            # 其餘代碼保持不變...
+            
+            for alpha in alpha_values:
+                for beta in beta_values:
+                    # 更新進度
+                    current_step += 1
+                    progress = 10 + int((current_step / total_combinations) * 80)
+                    
+                    progress_callback(f"Testing model with 10 topics, alpha={alpha}, beta={beta}", progress)
+                        
+                    # 初始化和訓練 LDA 模型
+                    lda_model = LatentDirichletAllocation(
+                        n_components=topic_count,
+                        doc_topic_prior=alpha,
+                        topic_word_prior=beta,
+                        random_state=42,
+                        learning_method='online',
+                        max_iter=20,
+                        n_jobs=-1
+                    )
+                    
+                    # 訓練模型
+                    lda_model.fit(X)
+                    
+                    # 計算困惑度
+                    perplexity = lda_model.perplexity(X)
+                    
+                    # 計算主題一致性
+                    topic_words = []
+                    feature_names = vectorizer.get_feature_names_out()
+                    for topic_idx, topic in enumerate(lda_model.components_):
+                        top_words_idx = topic.argsort()[:-11:-1]
+                        top_words = [feature_names[i] for i in top_words_idx]
+                        topic_words.append(top_words)
+                    
+                    # 計算不同主題間的距離
+                    topic_distances = 0
+                    n_pairs = 0
+                    for i in range(len(topic_words)):
+                        for j in range(i+1, len(topic_words)):
+                            overlap = len(set(topic_words[i]) & set(topic_words[j]))
+                            topic_distances += (10 - overlap) / 10.0
+                            n_pairs += 1
+                    
+                    avg_topic_distance = topic_distances / n_pairs if n_pairs > 0 else 0
+                    
+                    # 計算文檔-主題分布的熵
+                    doc_topic_dist = lda_model.transform(X)
+                    entropy_sum = 0
+                    for dist in doc_topic_dist:
+                        dist = np.clip(dist, 1e-10, 1.0)
+                        dist = dist / dist.sum()
+                        entropy = -np.sum(dist * np.log(dist))
+                        entropy_sum += entropy
+                    
+                    avg_entropy = entropy_sum / len(doc_topic_dist)
+                    
+                    # 綜合評分
+                    combined_score = avg_topic_distance + avg_entropy - (perplexity / 10000)
+                    
+                    # 保存結果
+                    param_key = f"alpha={alpha:.2f},beta={beta:.2f}"
+                    results[topic_count][param_key] = {
+                        'perplexity': perplexity,
+                        'avg_topic_distance': avg_topic_distance,
+                        'avg_entropy': avg_entropy,
+                        'combined_score': combined_score
+                    }
+                    
+                    logger.info(f"Topics: {topic_count}, Alpha: {alpha}, Beta: {beta}, " +
+                            f"Perplexity: {perplexity:.2f}, " +
+                            f"Avg Topic Distance: {avg_topic_distance:.2f}, " +
+                            f"Avg Entropy: {avg_entropy:.2f}, " +
+                            f"Combined Score: {combined_score:.2f}")
+            
+            # 找到最佳參數組合
+            best_score = -float('inf')
+            best_params = None
+            
+            for param_key, metrics in results[topic_count].items():
+                if metrics['combined_score'] > best_score:
+                    best_score = metrics['combined_score']
+                    alpha, beta = [float(val.split('=')[1]) for val in param_key.split(',')]
+                    best_params = {
+                        'n_topics': topic_count,
+                        'alpha': alpha,
+                        'beta': beta,
+                        'metrics': metrics
+                    }
+            
+            # 生成評估報告
+            progress_callback("Generating evaluation report...", 95)
+                    
+            # 創建報告目錄
+            report_dir = os.path.join(extractor.vis_dir, "param_search")
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir)
+            
+            # 創建簡單的評估結果圖表
+            plt.figure(figsize=(10, 8))
+            
+            # 收集評估指標
+            alphas = []
+            betas = []
+            scores = []
+            perplexities = []
+            
+            for param_key, metrics in results[topic_count].items():
+                alpha, beta = [float(val.split('=')[1]) for val in param_key.split(',')]
+                alphas.append(alpha)
+                betas.append(beta)
+                scores.append(metrics['combined_score'])
+                perplexities.append(metrics['perplexity'])
+            
+            # 創建數據框
+            df_results = pd.DataFrame({
+                'Alpha': alphas,
+                'Beta': betas,
+                'Score': scores,
+                'Perplexity': perplexities
+            })
+            
+            # 繪製熱圖
+            pivot_score = df_results.pivot_table(values='Score', index='Alpha', columns='Beta')
+            pivot_perp = df_results.pivot_table(values='Perplexity', index='Alpha', columns='Beta')
+            
+            plt.subplot(2, 1, 1)
+            sns.heatmap(pivot_score, annot=True, cmap='viridis', fmt='.2f')
+            plt.title('Combined Score by Alpha and Beta (Higher is Better)')
+            
+            plt.subplot(2, 1, 2)
+            sns.heatmap(pivot_perp, annot=True, cmap='viridis_r', fmt='.1f')
+            plt.title('Perplexity by Alpha and Beta (Lower is Better)')
+            
+            plt.tight_layout()
+            
+            # 保存圖表
+            base_name = os.path.basename(metadata_path)
+            base_name_without_ext = os.path.splitext(base_name)[0].replace('_bert_metadata', '')
+            vis_path = os.path.join(report_dir, f"{base_name_without_ext}_param_search_fixed10.png")
+            plt.savefig(vis_path, dpi=200, bbox_inches='tight')
+            plt.close()
+            
+            # 計算總執行時間
+            total_time = time.time() - start_time
+            minutes, seconds = divmod(total_time, 60)
             
             # 記錄完成信息
             logger.info("====================================")
-            logger.info(f"LDA參數評估完成!")
-            logger.info(f"最佳參數:")
-            logger.info(f"  主題數量: {results['best_params']['n_topics']}")
-            logger.info(f"  Alpha值: {results['best_params']['alpha']}")
-            logger.info(f"  Beta值: {results['best_params']['beta']}")
-            logger.info(f"  綜合評分: {results['best_params']['metrics']['combined_score']:.2f}")
-            logger.info(f"評估報告保存至: {results['visualization_path']}")
-            logger.info(f"執行時間: {results['execution_time']}")
+            logger.info(f"參數評估完成!")
+            logger.info(f"主題數量固定為: 10")
+            logger.info(f"最佳參數: Alpha={best_params['alpha']}, Beta={best_params['beta']}")
+            logger.info(f"最佳評分: {best_params['metrics']['combined_score']:.2f}")
+            logger.info(f"評估報告保存至: {vis_path}")
+            logger.info(f"執行時間: {int(minutes)}m {int(seconds)}s")
             logger.info("====================================")
             logger.info(f"處理已完成。窗口將在幾秒後自動關閉。")
             
@@ -1148,12 +1335,12 @@ class CrossDomainSentimentAnalysisApp:
             ConsoleOutputManager.mark_process_complete(status_file)
             
             # 更新界面上的參數值
-            self.root.after(100, lambda: self._update_lda_params(results['best_params']))
+            self.root.after(100, lambda: self._update_lda_params(best_params))
             
             # 返回結果字典
             return {
-                "best_params": results['best_params'],
-                "visualization_path": results['visualization_path'],
+                "best_params": best_params,
+                "visualization_path": vis_path,
                 "step": "lda_param_evaluation",
                 "progress_updates": progress_updates
             }
@@ -1170,7 +1357,6 @@ class CrossDomainSentimentAnalysisApp:
 
     def _update_lda_params(self, best_params):
         """使用最佳參數更新界面"""
-        self.topic_count_var.set(str(best_params['n_topics']))
         self.alpha_var.set(str(best_params['alpha']))
         self.beta_var.set(str(best_params['beta']))
         
@@ -1178,10 +1364,10 @@ class CrossDomainSentimentAnalysisApp:
         messagebox.showinfo(
             "參數評估完成", 
             f"已找到最佳參數組合:\n\n" +
-            f"主題數量: {best_params['n_topics']}\n" +
+            f"主題數量: 10 (固定值)\n" +
             f"Alpha值: {best_params['alpha']}\n" +
             f"Beta值: {best_params['beta']}\n\n" +
-            f"這些參數已自動更新到界面上"
+            f"Alpha和Beta參數已更新到界面上"
         )
         
         # 自動勾選「使用自動參數調整」選項
@@ -1189,7 +1375,7 @@ class CrossDomainSentimentAnalysisApp:
         self._toggle_lda_params()
 
     def _setup_status_bar(self):
-        """設置底部狀態欄 - 僅使用文本提醒"""
+        """設置底部狀態欄 - 增加進度條顯示"""
         status_frame = ttk.Frame(self.root, padding=10)
         status_frame.pack(side="bottom", fill="x")
         
@@ -1202,9 +1388,34 @@ class CrossDomainSentimentAnalysisApp:
         )
         self.status_label.pack(anchor="w", pady=5)
         
-        # 移除進度條，但保留進度變數以維持程式邏輯
-        # self.progress_bar = ttk.Progressbar(...)
-        # self.progress_bar.pack(...)
+        # 添加進度條
+        progress_frame = ttk.Frame(status_frame)
+        progress_frame.pack(fill="x", pady=3)
+        
+        self.progress_bar = ttk.Progressbar(
+            progress_frame,
+            variable=self.progress_var,
+            orient="horizontal",
+            length=500,
+            mode="determinate"
+        )
+        self.progress_bar.pack(side="left", fill="x", expand=True)
+        
+        # 添加百分比顯示
+        self.progress_percent = tk.StringVar(value="0%")
+        percent_label = ttk.Label(
+            progress_frame,
+            textvariable=self.progress_percent,
+            width=5
+        )
+        percent_label.pack(side="right", padx=(5, 0))
+        
+        # 監聽進度變量變更以更新百分比顯示
+        def update_percent(*args):
+            value = self.progress_var.get()
+            self.progress_percent.set(f"{int(value)}%")
+        
+        self.progress_var.trace_add("write", update_percent)
         
         # 添加一個階段指示器標籤
         self.stage_var = tk.StringVar(value="準備就緒")
@@ -1450,7 +1661,7 @@ class CrossDomainSentimentAnalysisApp:
         if not use_auto_params:
             try:
                 # 讀取並驗證參數
-                topic_count = int(self.topic_count_var.get())
+                topic_count = 10
                 alpha = float(self.alpha_var.get())
                 beta = float(self.beta_var.get())
                 max_iter = int(self.max_iter_var.get())
@@ -1526,7 +1737,7 @@ class CrossDomainSentimentAnalysisApp:
             self.data_source = "unknown"
     
     def _perform_lda_task(self, metadata_path, data_source, custom_params=None):
-        """LDA面向切割任務 - 函數版本 (含控制台輸出) - 加入自訂參數支援"""
+        """LDA面向切割任務 - 函數版本 (含控制台輸出) - 加入自訂參數支援並固定主題數量為10"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
         
@@ -1539,37 +1750,40 @@ class CrossDomainSentimentAnalysisApp:
             # 初始化LDA提取器
             extractor = LDATopicExtractor(output_dir=str(self.lda_topics_dir), logger=logger)
             
+            # 固定設置主題數量為10，確保與標籤數量一致
+            topic_count = 10
+            logger.info(f"強制設置主題數量為10以匹配預定義標籤")
+            
             # 獲取主題標籤
             from src.settings.topic_labels import TOPIC_LABELS_zh
             topic_labels = None
             
+            # 將資料來源轉為小寫以確保匹配
+            data_source_lower = data_source.lower() if data_source else "unknown"
+            
+            # 嘗試獲取對應的主題標籤
+            if data_source_lower in TOPIC_LABELS_zh:
+                topic_labels = TOPIC_LABELS_zh[data_source_lower]
+                logger.info(f"使用 {data_source} 的預定義主題標籤")
+            else:
+                logger.info(f"未找到匹配的主題標籤（{data_source}），將使用自動生成的標籤")
+                
             # 如果使用自訂參數
             if custom_params:
                 logger.info(f"使用自訂參數:")
-                logger.info(f"  主題數量: {custom_params['n_topics']}")
-                logger.info(f"  Alpha 值: {custom_params['alpha']}")
-                logger.info(f"  Beta 值: {custom_params['beta']}")
-                logger.info(f"  迭代次數: {custom_params['max_iter']}")
+                # 主題數量仍然使用固定值
+                logger.info(f"  主題數量: 10 (固定值)")
                 
-                topic_count = custom_params['n_topics']
-                
-                # 取得主題標籤 (如果數據來源匹配且主題數量相等)
-                if data_source in TOPIC_LABELS_zh and len(TOPIC_LABELS_zh[data_source]) == topic_count:
-                    topic_labels = TOPIC_LABELS_zh[data_source]
-                    logger.info(f"使用 {data_source} 的自定義主題標籤")
-                else:
-                    logger.info(f"未找到匹配的主題標籤，將使用自動生成的標籤")
+                # 記錄其他可能的自訂參數
+                if 'alpha' in custom_params:
+                    logger.info(f"  Alpha 值: {custom_params['alpha']}")
+                if 'beta' in custom_params:
+                    logger.info(f"  Beta 值: {custom_params['beta']}")
+                if 'max_iter' in custom_params:
+                    logger.info(f"  迭代次數: {custom_params['max_iter']}")
             else:
-                # 使用數據來源的預設主題數量
-                if data_source in TOPIC_LABELS_zh:
-                    topic_labels = TOPIC_LABELS_zh[data_source]
-                    topic_count = len(topic_labels)
-                    logger.info(f"使用 {data_source} 的自定義主題標籤")
-                    logger.info(f"主題數量設為: {topic_count}")
-                else:
-                    topic_count = 10  # 默認值
-                    logger.info(f"未找到匹配的主題標籤，使用默認主題數量: {topic_count}")
-                    
+                logger.info(f"使用默認參數，主題數量設為: 10")
+                        
             # 定義進度回調
             progress_updates = []
             def progress_callback(message, percentage):
@@ -1586,19 +1800,20 @@ class CrossDomainSentimentAnalysisApp:
             
             # 準備LDA模型參數
             lda_kwargs = {
-                'n_topics': topic_count,
+                'n_topics': topic_count,  # 固定為10
                 'topic_labels': topic_labels,
                 'callback': progress_callback
             }
             
-            # 如果有自訂參數，加入更多參數
+            # 如果有自訂參數，只加入alpha、beta和max_iter
             if custom_params:
-                lda_kwargs.update({
-                    'doc_topic_prior': custom_params['alpha'],
-                    'topic_word_prior': custom_params['beta'],
-                    'max_iter': custom_params['max_iter']
-                })
-                
+                if 'alpha' in custom_params:
+                    lda_kwargs['doc_topic_prior'] = custom_params['alpha']
+                if 'beta' in custom_params:
+                    lda_kwargs['topic_word_prior'] = custom_params['beta']
+                if 'max_iter' in custom_params:
+                    lda_kwargs['max_iter'] = custom_params['max_iter']
+                    
             # 執行LDA主題建模
             results = extractor.run_lda(
                 metadata_path,
@@ -1609,7 +1824,7 @@ class CrossDomainSentimentAnalysisApp:
             self.lda_model_path = results['lda_model_path']
             self.topics_path = results['topics_path']
             self.topic_metadata_path = results['topic_metadata_path']
-            self.topic_count = topic_count
+            self.topic_count = topic_count  # 固定使用10個主題
             
             # 記錄完成信息
             logger.info("====================================")

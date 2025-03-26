@@ -263,7 +263,7 @@ class LDATopicExtractor:
             vis_path2 = self._plot_doc_topics(doc_topic_distributions, n_topics, base_name_without_ext, topic_labels)
             
             # 3. 生成主題相似度矩陣可視化
-            vis_path3 = self._plot_topic_similarity(lda_model, base_name_without_ext)
+            vis_path3 = self._plot_topic_similarity(lda_model, base_name_without_ext, topic_labels)
             
             if callback:
                 callback("LDA topic modeling complete", 100)
@@ -288,8 +288,8 @@ class LDATopicExtractor:
                 callback(f"Error: {str(e)}", -1)
             raise
     
-    def _plot_topic_similarity(self, lda_model, base_name):
-        """生成主題相似度矩陣可視化"""
+    def _plot_topic_similarity(self, lda_model, base_name, topic_labels=None):
+        """生成主題相似度矩陣可視化 - 支持自定義主題標籤"""
         try:
             # 計算主題之間的相似度矩陣
             n_topics = lda_model.n_components
@@ -318,10 +318,21 @@ class LDATopicExtractor:
             plt.xlabel('主題')
             plt.ylabel('主題')
             
-            # 添加主題標籤
-            topic_labels = [f'主題 {i+1}' for i in range(n_topics)]
-            plt.xticks(range(n_topics), topic_labels, rotation=45)
-            plt.yticks(range(n_topics), topic_labels)
+            # 添加主題標籤 - 使用自定義標籤（如果提供）
+            if topic_labels is not None:
+                # 格式化標籤
+                formatted_labels = {}
+                for i in range(n_topics):
+                    if i in topic_labels:
+                        formatted_labels[i] = f'主題 {i+1}\n{topic_labels.get(i, "")}'
+                    else:
+                        formatted_labels[i] = f'主題 {i+1}'
+                topic_label_texts = [formatted_labels[i] for i in range(n_topics)]
+            else:
+                topic_label_texts = [f'主題 {i+1}' for i in range(n_topics)]
+                
+            plt.xticks(range(n_topics), topic_label_texts, rotation=45, ha='right')
+            plt.yticks(range(n_topics), topic_label_texts)
             
             # 在每個單元格中添加數值
             for i in range(n_topics):
