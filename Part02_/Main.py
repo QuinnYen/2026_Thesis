@@ -367,7 +367,7 @@ class CrossDomainSentimentAnalysisApp:
         source_notebook = ttk.Notebook(data_source_frame)
         source_notebook.pack(fill="x", pady=5)
         
-        # IMDB 電影評論頁面
+        # ===IMDB 電影評論頁面===
         imdb_frame = ttk.Frame(source_notebook, padding=5)
         source_notebook.add(imdb_frame, text="IMDB電影評論")
         
@@ -382,7 +382,7 @@ class CrossDomainSentimentAnalysisApp:
         
         ttk.Button(imdb_frame, text="處理IMDB數據", command=lambda: self._import_data_with_source("imdb")).pack(anchor="e", pady=5)
         
-        # Amazon 產品評論頁面
+        # ===Amazon 產品評論頁面===
         amazon_frame = ttk.Frame(source_notebook, padding=5)
         source_notebook.add(amazon_frame, text="Amazon產品評論")
         
@@ -397,7 +397,7 @@ class CrossDomainSentimentAnalysisApp:
         
         ttk.Button(amazon_frame, text="處理Amazon數據", command=lambda: self._import_data_with_source("amazon")).pack(anchor="e", pady=5)
         
-        # Yelp 餐廳評論頁面
+        # ===Yelp 餐廳評論頁面===
         yelp_frame = ttk.Frame(source_notebook, padding=5)
         source_notebook.add(yelp_frame, text="Yelp餐廳評論")
         
@@ -434,7 +434,7 @@ class CrossDomainSentimentAnalysisApp:
         # 處理按鈕
         ttk.Button(yelp_frame, text="處理Yelp數據", command=self._process_yelp_data).pack(anchor="e", pady=5)
         
-        # 通用文件選擇頁面 (保留原有功能)
+        # 通用文件選擇頁面
         generic_frame = ttk.Frame(source_notebook, padding=5)
         source_notebook.add(generic_frame, text="其他資料")
         
@@ -447,41 +447,69 @@ class CrossDomainSentimentAnalysisApp:
         ttk.Label(file_frame, textvariable=self.file_path).pack(side="left", padx=10)
         ttk.Button(file_frame, text="開始導入數據", command=self._import_data).pack(side="right")
 
-        # 步驟2: BERT提取語義表示
+        # ===步驟2: BERT提取語義表示===
         step2_frame = ttk.LabelFrame(main_frame, text="步驟 2: BERT提取語義表示", padding=10)
         step2_frame.pack(fill="x", pady=5)
         
         ttk.Label(step2_frame, text="使用BERT模型為評論文本生成向量表示").pack(anchor="w", pady=5)
         ttk.Button(step2_frame, text="執行BERT語義提取", command=self._extract_bert_embeddings).pack(anchor="e", pady=5)
         
-        # 步驟3: LDA面向切割
+        # ===步驟3: LDA面向切割===
         step3_frame = ttk.LabelFrame(main_frame, text="步驟 3: LDA面向切割", padding=10)
         step3_frame.pack(fill="x", pady=5)
+
+        ttk.Label(step3_frame, text="使用LDA進行主題建模，識別不同面向").pack(anchor="w", pady=5)
+
+        # 添加配置區域
+        config_frame = ttk.Frame(step3_frame)
+        config_frame.pack(fill="x", pady=5)
+
+        # 添加自動偵測選項
+        self.auto_detect_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(config_frame, text="自動偵測資料來源和主題數量", 
+                    variable=self.auto_detect_var, 
+                    command=self._toggle_topic_config).pack(anchor="w", pady=2)
+
+        # 資料來源選擇區域 - 將框架保存為類屬性
+        self.source_frame = ttk.Frame(config_frame)
+        self.source_frame.pack(fill="x", pady=2)
+        ttk.Label(self.source_frame, text="資料來源:").pack(side="left", padx=(20, 5))
+        self.data_source_var = tk.StringVar(value="imdb")
+        self.data_source_combo = ttk.Combobox(self.source_frame, textvariable=self.data_source_var, 
+                                        state="readonly", width=15)
+        self.data_source_combo['values'] = ["imdb", "amazon", "yelp"]
+        self.data_source_combo.pack(side="left", padx=5)
+        self.data_source_combo['state'] = 'disabled'  # 初始設為禁用
+
+        # 主題數量設定區域 - 將框架保存為類屬性
+        self.topic_frame = ttk.Frame(config_frame)
+        self.topic_frame.pack(fill="x", pady=2)
+        ttk.Label(self.topic_frame, text="主題數量:").pack(side="left", padx=(20, 5))
+        self.topic_count_var = tk.StringVar(value="10")
+        self.topic_count_entry = ttk.Entry(self.topic_frame, textvariable=self.topic_count_var, width=8)
+        self.topic_count_entry.pack(side="left", padx=5)
+        self.topic_count_entry['state'] = 'disabled'  # 初始設為禁用
+
+        # 執行按鈕
+        ttk.Button(step3_frame, text="執行LDA面向切割", command=self._perform_lda).pack(anchor="e", pady=5)
         
-        ttk.Label(step3_frame, text="使用LDA進行主題建模，識別不同面向 (主題數量將根據數據源自動設定)").pack(anchor="w", pady=5)
-        
-        lda_frame = ttk.Frame(step3_frame)
-        lda_frame.pack(fill="x", pady=5)
-        
-        ttk.Button(lda_frame, text="執行LDA面向切割", command=self._perform_lda).pack(anchor="e", pady=5)
-        
-        # 步驟4: 計算面向相關句子的平均向量
+        # ===步驟4: 計算面向相關句子的平均向量===
         step4_frame = ttk.LabelFrame(main_frame, text="步驟 4: 計算面向相關句子的平均向量", padding=10)
         step4_frame.pack(fill="x", pady=5)
         
         ttk.Label(step4_frame, text="為每個識別出的面向計算代表性向量").pack(anchor="w", pady=5)
         
-        # 修改按鈕布局 - 垂直排列，面向計算在上，匯出在下
+        # 按鈕布局
         vector_frame = ttk.Frame(step4_frame)
         vector_frame.pack(fill="x", pady=5)
         
-        # 創建包含按鈕的容器框架，使用垂直佈局
+        # 含按鈕的容器框架
         buttons_container = ttk.Frame(vector_frame)
         buttons_container.pack(side="right")
         
-        # 面向計算按鈕在上方
+        # 面向計算按鈕
         ttk.Button(buttons_container, text="執行計算", command=self._calculate_aspect_vectors).pack(pady=(0, 5))
-        # 匯出按鈕在下方
+        # 匯出按鈕
         ttk.Button(buttons_container, text="匯出平均向量", command=self._export_vectors).pack()
     
     def _setup_results_tab(self):
@@ -516,7 +544,7 @@ class CrossDomainSentimentAnalysisApp:
         # 查看報告按鈕
         ttk.Button(dataset_frame, text="查看處理報告", command=self._view_dataset_report).pack(side="right", padx=5)
         
-        # 結果分類顯示區 (可以使用Notebook)
+        # 結果分類顯示區
         result_notebook = ttk.Notebook(main_frame)
         result_notebook.pack(fill="both", expand=True, pady=10)
         
@@ -602,6 +630,14 @@ class CrossDomainSentimentAnalysisApp:
         # 雙擊打開文件
         self.data_tree.bind("<Double-1>", self._on_data_double_click)
     
+    def _toggle_topic_config(self):
+        """根據自動偵測選項切換配置區域的啟用狀態"""
+        state = "disabled" if self.auto_detect_var.get() else "normal"
+        # 設置資料來源下拉選單狀態
+        self.data_source_combo['state'] = state
+        # 設置主題數量輸入框狀態
+        self.topic_count_entry['state'] = state
+
     def _setup_vis_tab(self, parent):
         """配置可視化標籤頁 - 網格布局版"""
         # 上方控制區
@@ -980,23 +1016,31 @@ class CrossDomainSentimentAnalysisApp:
         details_window.focus_set()
     
     def _setup_status_bar(self):
-        """設置底部狀態欄"""
+        """設置底部狀態欄 - 僅使用文本提醒"""
         status_frame = ttk.Frame(self.root, padding=10)
         status_frame.pack(side="bottom", fill="x")
         
-        ttk.Label(status_frame, textvariable=self.status_var, style="Status.TLabel").pack(anchor="w")
-        
-        progress_frame = ttk.Frame(status_frame)
-        progress_frame.pack(fill="x", pady=5)
-        
-        self.progress_bar = ttk.Progressbar(
-            progress_frame, 
-            orient="horizontal", 
-            length=100, 
-            mode="determinate", 
-            variable=self.progress_var
+        # 使用更明顯的字體和顏色來顯示狀態
+        self.status_label = ttk.Label(
+            status_frame, 
+            textvariable=self.status_var, 
+            font=('Arial', 11),
+            foreground='#0066cc'  # 使用藍色顯示狀態文本
         )
-        self.progress_bar.pack(fill="x")
+        self.status_label.pack(anchor="w", pady=5)
+        
+        # 移除進度條，但保留進度變數以維持程式邏輯
+        # self.progress_bar = ttk.Progressbar(...)
+        # self.progress_bar.pack(...)
+        
+        # 添加一個階段指示器標籤
+        self.stage_var = tk.StringVar(value="準備就緒")
+        self.stage_label = ttk.Label(
+            status_frame, 
+            textvariable=self.stage_var,
+            font=('Arial', 10, 'italic')
+        )
+        self.stage_label.pack(anchor="w")
     
     # ================================================
     # 功能方法：不使用多線程，採用事件驅動方式
@@ -1044,13 +1088,33 @@ class CrossDomainSentimentAnalysisApp:
             def progress_callback(message, percentage):
                 progress_updates.append((message, percentage))
                 self.status_var.set(message)
+                
+                # 根據百分比更新階段指示文本
+                if percentage < 0:
+                    self.stage_var.set("處理錯誤")
+                elif percentage < 20:
+                    self.stage_var.set("初始化階段")
+                elif percentage < 40:
+                    self.stage_var.set("資料載入中")
+                elif percentage < 60:
+                    self.stage_var.set("處理進行中")
+                elif percentage < 80:
+                    self.stage_var.set("分析階段")
+                elif percentage < 100:
+                    self.stage_var.set("最終處理中")
+                else:
+                    self.stage_var.set("處理完成")
+                
+                # 仍然更新進度變數以維持程式邏輯
                 if percentage >= 0:
                     self.progress_var.set(percentage)
+                
                 # 記錄到控制台
                 if percentage >= 0:
                     logger.info(f"{message} ({percentage}%)")
                 else:
                     logger.error(message)
+                
                 return message, percentage
             
             # 執行導入操作
@@ -1203,11 +1267,33 @@ class CrossDomainSentimentAnalysisApp:
             messagebox.showerror("錯誤", "請先執行BERT語義提取!")
             return
             
-        # 確定數據來源
-        self._determine_data_source()
+        # 根據自動偵測選項決定資料來源和主題數量
+        use_custom_topic_count = False
+        
+        if self.auto_detect_var.get():
+            # 自動確定數據來源
+            self._determine_data_source()
+            # 使用預設主題數量（由資料來源決定）
+            topic_count = None
+        else:
+            # 使用使用者設定的資料來源和主題數量
+            self.data_source = self.data_source_var.get()
+            try:
+                topic_count = int(self.topic_count_var.get())
+                if topic_count <= 0:
+                    raise ValueError("主題數量必須大於0")
+                use_custom_topic_count = True
+            except ValueError as e:
+                messagebox.showerror("錯誤", f"主題數量設定無效: {str(e)}")
+                return
         
         # 開始LDA任務
-        self.task_processor.start_task(self._perform_lda_task, self.bert_metadata_path, self.data_source)
+        self.task_processor.start_task(
+            self._perform_lda_task, 
+            self.bert_metadata_path, 
+            self.data_source,
+            topic_count if use_custom_topic_count else None
+        )
     
     def _determine_data_source(self):
         """確定數據來源"""
@@ -1231,9 +1317,9 @@ class CrossDomainSentimentAnalysisApp:
     def _ask_data_source(self):
         """詢問用戶數據來源"""
         sources = {
-            "1": "imdb",
-            "2": "amazon", 
-            "3": "yelp"
+            "1": "IMDB",
+            "2": "Amazon", 
+            "3": "Yelp"
         }
         
         source = simpledialog.askstring(
@@ -1247,7 +1333,7 @@ class CrossDomainSentimentAnalysisApp:
         else:
             self.data_source = "unknown"
     
-    def _perform_lda_task(self, metadata_path, data_source):
+    def _perform_lda_task(self, metadata_path, data_source, custom_topic_count=None):
         """LDA面向切割任務 - 函數版本 (含控制台輸出)"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
@@ -1264,16 +1350,26 @@ class CrossDomainSentimentAnalysisApp:
             # 獲取主題標籤
             from src.settings.topic_labels import TOPIC_LABELS_zh
             topic_labels = None
-            topic_count = 10  # 默認值
             
             if data_source in TOPIC_LABELS_zh:
                 topic_labels = TOPIC_LABELS_zh[data_source]
-                topic_count = len(topic_labels)
-                logger.info(f"使用 {data_source} 的自定義主題標籤")
-                logger.info(f"主題數量設為: {topic_count}")
-            else:
-                logger.info(f"未找到匹配的主題標籤，使用默認主題數量: {topic_count}")
+                # 確定主題數量
+                if custom_topic_count is not None:
+                    # 使用自定義主題數量
+                    topic_count = custom_topic_count
+                    logger.info(f"使用自定義主題數量: {topic_count}")
+                else:
+                    # 使用預設主題數量
+                    topic_count = len(topic_labels)
+                    logger.info(f"使用 {data_source} 的預設主題數量: {topic_count}")
                 
+                logger.info(f"使用 {data_source} 的自定義主題標籤")
+            else:
+                # 未知資料來源，使用自定義或預設主題數量
+                topic_count = custom_topic_count if custom_topic_count is not None else 10
+                logger.info(f"未找到匹配的主題標籤，使用一般主題")
+                logger.info(f"主題數量設為: {topic_count}")
+            
             # 定義進度回調
             progress_updates = []
             def progress_callback(message, percentage):
@@ -1287,7 +1383,7 @@ class CrossDomainSentimentAnalysisApp:
                 else:
                     logger.error(message)
                 return message, percentage
-                
+                    
             # 執行LDA主題建模
             results = extractor.run_lda(
                 metadata_path,
