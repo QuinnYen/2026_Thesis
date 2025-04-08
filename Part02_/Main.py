@@ -43,7 +43,6 @@ class TaskProcessor:
     def __init__(self, root, status_var, progress_var, on_complete=None):
         self.root = root
         self.status_var = status_var
-        self.progress_var = progress_var
         self.on_complete = on_complete
         self.is_running = False
         self.current_step = 0
@@ -231,7 +230,7 @@ class CrossDomainSentimentAnalysisApp:
         # 創建變數
         self.file_path = tk.StringVar()
         self.topic_count = tk.StringVar(value="10")  # 預設LDA主題數量
-        self.progress_var = tk.DoubleVar(value=0)
+        self.progress_var = tk.DoubleVar(value=0)  # 用於追蹤進度百分比，但不顯示進度條
         self.status_var = tk.StringVar(value="準備就緒。")
         
         # 設置風格
@@ -670,6 +669,7 @@ class CrossDomainSentimentAnalysisApp:
         
         # 相似度注意力權重
         self.similarity_weight_var = tk.DoubleVar(value=0.33)
+        self.similarity_display_var = tk.StringVar(value="0.330")  # 格式化顯示用
         similarity_frame = ttk.Frame(self.combine_frame)
         similarity_frame.pack(fill="x", pady=2)
         ttk.Label(similarity_frame, text="相似度注意力權重:").pack(side="left", padx=5)
@@ -680,10 +680,11 @@ class CrossDomainSentimentAnalysisApp:
             orient="horizontal",
             length=200
         ).pack(side="left", padx=5)
-        ttk.Label(similarity_frame, textvariable=self.similarity_weight_var).pack(side="left", padx=5)
+        ttk.Label(similarity_frame, textvariable=self.similarity_display_var).pack(side="left", padx=5)
     
         # 關鍵詞注意力權重
         self.keyword_weight_var = tk.DoubleVar(value=0.33)
+        self.keyword_display_var = tk.StringVar(value="0.330")  # 格式化顯示用
         keyword_frame = ttk.Frame(self.combine_frame)
         keyword_frame.pack(fill="x", pady=2)
         ttk.Label(keyword_frame, text="關鍵詞注意力權重:").pack(side="left", padx=5)
@@ -694,10 +695,11 @@ class CrossDomainSentimentAnalysisApp:
             orient="horizontal",
             length=200
         ).pack(side="left", padx=5)
-        ttk.Label(keyword_frame, textvariable=self.keyword_weight_var).pack(side="left", padx=5)
+        ttk.Label(keyword_frame, textvariable=self.keyword_display_var).pack(side="left", padx=5)
     
         # 自注意力權重
         self.self_weight_var = tk.DoubleVar(value=0.34)
+        self.self_display_var = tk.StringVar(value="0.340")  # 格式化顯示用
         self_frame = ttk.Frame(self.combine_frame)
         self_frame.pack(fill="x", pady=2)
         ttk.Label(self_frame, text="自注意力權重:      ").pack(side="left", padx=5)
@@ -708,8 +710,22 @@ class CrossDomainSentimentAnalysisApp:
             orient="horizontal",
             length=200
         ).pack(side="left", padx=5)
-        ttk.Label(self_frame, textvariable=self.self_weight_var).pack(side="left", padx=5)
+        ttk.Label(self_frame, textvariable=self.self_display_var).pack(side="left", padx=5)
     
+        # 添加跟蹤函數，限制顯示最多三位小數
+        def update_weight_display(*args):
+            self.similarity_display_var.set(f"{self.similarity_weight_var.get():.3f}")
+            self.keyword_display_var.set(f"{self.keyword_weight_var.get():.3f}")
+            self.self_display_var.set(f"{self.self_weight_var.get():.3f}")
+        
+        # 綁定權重變量變化
+        self.similarity_weight_var.trace_add("write", update_weight_display)
+        self.keyword_weight_var.trace_add("write", update_weight_display)
+        self.self_weight_var.trace_add("write", update_weight_display)
+        
+        # 初始化顯示
+        update_weight_display()
+
         # 當選擇組合注意力時顯示權重設定區
         def on_attention_selected(event):
             if self.attention_var.get() == "組合注意力":
@@ -734,7 +750,7 @@ class CrossDomainSentimentAnalysisApp:
         self._toggle_lda_params()
         
         # 在視窗關閉時解除綁定
-        self.root.bind("<Destroy>", lambda event: _unbind_mousewheel())
+        self.root.bind("<Destroy>", lambda event: _unbind_mousewheel(self))
 
     def _setup_results_tab(self):
         """結果瀏覽分頁界面"""
@@ -1294,7 +1310,9 @@ class CrossDomainSentimentAnalysisApp:
             progress_updates = []
             def progress_callback(message, percentage):
                 progress_updates.append((message, percentage))
-                self.status_var.set(message)
+                # 強化顯示訊息，整合百分比資訊
+                enhanced_message = f"{message} - {int(percentage)}%" if percentage >= 0 else message
+                self.status_var.set(enhanced_message)
                 if percentage >= 0:
                     self.progress_var.set(percentage)
                 # 記錄到控制台
@@ -1559,7 +1577,7 @@ class CrossDomainSentimentAnalysisApp:
         self._toggle_lda_params()
 
     def _setup_status_bar(self):
-        """設置底部狀態欄 - 增加進度條顯示"""
+        """設置底部狀態欄 - 強化進度文字訊息"""
         status_frame = ttk.Frame(self.root, padding=10)
         status_frame.pack(side="bottom", fill="x")
         
@@ -1567,48 +1585,32 @@ class CrossDomainSentimentAnalysisApp:
         self.status_label = ttk.Label(
             status_frame, 
             textvariable=self.status_var, 
-            font=('Arial', 11),
+            font=('Arial', 12, 'bold'),
             foreground='#0066cc'  # 使用藍色顯示狀態文本
         )
         self.status_label.pack(anchor="w", pady=5)
         
-        # 添加進度條
-        progress_frame = ttk.Frame(status_frame)
-        progress_frame.pack(fill="x", pady=3)
-        
-        self.progress_bar = ttk.Progressbar(
-            progress_frame,
-            variable=self.progress_var,
-            orient="horizontal",
-            length=500,
-            mode="determinate"
-        )
-        self.progress_bar.pack(side="left", fill="x", expand=True)
-        
-        # 添加百分比顯示
+        # 添加進度百分比顯示，整合階段信息
         self.progress_percent = tk.StringVar(value="0%")
         percent_label = ttk.Label(
-            progress_frame,
+            status_frame,
             textvariable=self.progress_percent,
-            width=5
+            font=('Arial', 11),
+            foreground='#009900'  # 使用綠色顯示進度百分比
         )
-        percent_label.pack(side="right", padx=(5, 0))
+        percent_label.pack(anchor="w", pady=2)
         
         # 監聽進度變量變更以更新百分比顯示
         def update_percent(*args):
             value = self.progress_var.get()
-            self.progress_percent.set(f"{int(value)}%")
+            stage = self.stage_var.get()
+            self.progress_percent.set(f"[{stage}] 進度: {int(value)}%")
         
         self.progress_var.trace_add("write", update_percent)
         
-        # 添加一個階段指示器標籤
+        # 添加一個階段指示器標籤（不可見，但保留變量以維持程式邏輯）
         self.stage_var = tk.StringVar(value="準備就緒")
-        self.stage_label = ttk.Label(
-            status_frame, 
-            textvariable=self.stage_var,
-            font=('Arial', 10, 'italic')
-        )
-        self.stage_label.pack(anchor="w")
+        self.stage_var.trace_add("write", update_percent)
     
     # ================================================
     # 功能方法：不使用多線程，採用事件驅動方式
@@ -1655,31 +1657,29 @@ class CrossDomainSentimentAnalysisApp:
             progress_updates = []
             def progress_callback(message, percentage):
                 progress_updates.append((message, percentage))
+                
+                # 更新主要狀態訊息
                 self.status_var.set(message)
                 
                 # 根據百分比更新階段指示文本
                 if percentage < 0:
-                    self.stage_var.set("處理錯誤")
+                    self.stage_var.set("⚠️ 處理錯誤")
                 elif percentage < 20:
-                    self.stage_var.set("初始化階段")
+                    self.stage_var.set("⏳ 初始階段 (準備中)")
                 elif percentage < 40:
-                    self.stage_var.set("資料載入中")
+                    self.stage_var.set("📥 資料載入階段")
                 elif percentage < 60:
-                    self.stage_var.set("處理進行中")
+                    self.stage_var.set("🔄 處理進行中")
                 elif percentage < 80:
-                    self.stage_var.set("分析階段")
+                    self.stage_var.set("📊 資料分析階段")
                 elif percentage < 100:
-                    self.stage_var.set("最終處理中")
+                    self.stage_var.set("📋 最終處理階段")
                 else:
-                    self.stage_var.set("處理完成")
+                    self.stage_var.set("✅ 處理完成")
                 
-                # 仍然更新進度變數以維持程式邏輯
+                # 記錄進度到日誌
                 if percentage >= 0:
-                    self.progress_var.set(percentage)
-                
-                # 記錄到控制台
-                if percentage >= 0:
-                    logger.info(f"{message} ({percentage}%)")
+                    logger.info(f"{message}")
                 else:
                     logger.error(message)
                 
@@ -3074,34 +3074,59 @@ class CrossDomainSentimentAnalysisApp:
     
     def _on_closing(self):
         """處理窗口關閉事件"""
-        # 顯示正在清理的信息
-        self.status_var.set("正在清理資源，請稍候...")
-        self.root.update_idletasks()
-        
-        # 關閉所有matplotlib圖表
-        plt.close('all')
-        
-        # 清除各種參考
-        self.data_tree = None
-        self.vis_frame = None
-        
-        # 刪除tkinter變量
-        self.file_path = None
-        self.topic_count = None
-        self.progress_var = None
-        self.status_var = None
-        
-        # 確保結果管理器保存所有變更
-        if hasattr(self, 'result_manager'):
+        try:
+            # 顯示正在清理的信息
+            self.status_var.set("正在清理資源，請稍候...")
+            self.root.update_idletasks()
+            
+            # 首先取消所有排程的任務
+            for after_id in self.root.tk.call('after', 'info'):
+                try:
+                    self.root.after_cancel(after_id)
+                except:
+                    pass
+            
+            # 解除所有事件綁定
             try:
-                # 保存結果索引
-                if hasattr(self.result_manager, '_save_index'):
-                    self.result_manager._save_index()
+                # 解除可能的全局滑鼠滾輪事件
+                self.root.unbind_all("<MouseWheel>")
+                self.root.unbind_all("<Button-4>")
+                self.root.unbind_all("<Button-5>")
+                
+                # 解除其他事件
+                if hasattr(self, 'wheel_bindings'):
+                    for event_name, binding_id in self.wheel_bindings:
+                        try:
+                            self.tab_data_processing.unbind(event_name, binding_id)
+                        except:
+                            pass
             except:
                 pass
-        
-        # 最後銷毀窗口
-        self.root.destroy()
+            
+            # 關閉所有matplotlib圖表
+            plt.close('all')
+            
+            # 確保結果管理器保存所有變更
+            if hasattr(self, 'result_manager'):
+                try:
+                    # 保存結果索引
+                    if hasattr(self.result_manager, '_save_index'):
+                        self.result_manager._save_index()
+                except:
+                    pass
+            
+            # 執行 withdraw()，先隱藏窗口，避免使用者看到銷毀過程中的異常
+            self.root.withdraw()
+            
+            # 最後銷毀窗口 (使用 after_idle 確保先完成其他事件)
+            self.root.after_idle(lambda: self.root.quit())
+        except Exception as e:
+            print(f"關閉應用程式時發生錯誤: {str(e)}")
+            # 如果清理過程出錯，仍然嘗試終止程序
+            try:
+                self.root.quit()
+            except:
+                pass
 
 # 主程序
 if __name__ == "__main__":
