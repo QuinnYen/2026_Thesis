@@ -358,10 +358,121 @@ class CrossDomainSentimentAnalysisApp:
         self._setup_status_bar()
     
     def _setup_data_processing_tab(self):
-        """資料處理分頁界面"""
-        main_frame = ttk.Frame(self.tab_data_processing, padding=10)
-        main_frame.pack(fill="both", expand=True)
-
+        """資料處理分頁界面 - 添加滾動功能"""
+        
+        # 創建滾動框架
+        main_container = ttk.Frame(self.tab_data_processing)
+        main_container.pack(fill="both", expand=True)
+        
+        # 創建Canvas作為滾動區域
+        self.canvas = tk.Canvas(main_container)
+        
+        # 創建垂直滾動條
+        scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=self.canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 配置Canvas
+        self.canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        # 創建一個框架放置所有元素
+        main_frame = ttk.Frame(self.canvas, padding=10)
+        
+        # 在Canvas上創建一個視窗來包含main_frame
+        canvas_window = self.canvas.create_window((0, 0), window=main_frame, anchor="nw", tags="main_frame")
+        
+        # 綁定框架大小變化事件，更新Canvas滾動區域
+        def _configure_frame(event):
+            # 更新Canvas的滾動區域以匹配框架大小
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+            
+            # 調整Canvas視窗寬度以匹配Canvas寬度
+            canvas_width = event.width
+            self.canvas.itemconfig(canvas_window, width=canvas_width)
+        
+        main_frame.bind("<Configure>", _configure_frame)
+        
+        # 綁定Canvas大小變化事件，調整視窗寬度
+        def _configure_canvas(event):
+            self.canvas.itemconfig(canvas_window, width=event.width)
+        
+        self.canvas.bind("<Configure>", _configure_canvas)
+        
+        # 儲存滾輪事件綁定的識別符，以便後續解除綁定
+        self.wheel_bindings = []
+        
+        # 綁定滾輪事件
+        def _on_mousewheel(event):
+            # Windows系統
+            if sys.platform.startswith('win'):
+                self.canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+            # macOS系統
+            elif sys.platform.startswith('darwin'):
+                self.canvas.yview_scroll(int(-1*event.delta), "units")
+            # Linux系統
+            else:
+                if event.num == 4:
+                    self.canvas.yview_scroll(-1, "units")
+                elif event.num == 5:
+                    self.canvas.yview_scroll(1, "units")
+        
+        # 綁定與解除綁定滾輪事件的函數
+        def _bind_mousewheel():
+            if sys.platform.startswith('win'):
+                # Windows使用MouseWheel
+                binding_id = self.tab_data_processing.bind_all("<MouseWheel>", _on_mousewheel)
+                self.wheel_bindings.append(("<MouseWheel>", binding_id))
+            elif sys.platform.startswith('darwin'):
+                # macOS使用MouseWheel
+                binding_id = self.tab_data_processing.bind_all("<MouseWheel>", _on_mousewheel)
+                self.wheel_bindings.append(("<MouseWheel>", binding_id))
+            else:
+                # Linux使用Button-4和Button-5
+                binding_id1 = self.tab_data_processing.bind_all("<Button-4>", _on_mousewheel)
+                binding_id2 = self.tab_data_processing.bind_all("<Button-5>", _on_mousewheel)
+                self.wheel_bindings.extend([("<Button-4>", binding_id1), ("<Button-5>", binding_id2)])
+        
+        def _unbind_mousewheel(self):
+            for event_name, binding_id in self.wheel_bindings:
+                self.tab_data_processing.unbind(event_name, binding_id)
+            self.wheel_bindings.clear()
+        
+        # 綁定分頁可見性變化事件
+        def _on_tab_visibility_change(event):
+            if self.tab_control.index(self.tab_control.select()) == self.tab_control.index(self.tab_data_processing):
+                # 當數據處理分頁被選中時，綁定滾輪事件
+                _bind_mousewheel()
+            else:
+                # 當其他分頁被選中時，解除綁定
+                _unbind_mousewheel()
+        
+        # 初始綁定滾輪事件
+        _bind_mousewheel()
+        
+        # 綁定分頁切換事件
+        self.tab_control.bind("<<NotebookTabChanged>>", _on_tab_visibility_change)
+        
+        # 保存滾動位置的變數
+        self.scroll_position = tk.DoubleVar(value=0.0)
+        
+        # 在滾動時保存位置
+        def _on_scroll(*args):
+            self.scroll_position.set(self.canvas.yview()[0])
+        
+        # 創建垂直滾動條
+        scrollbar = ttk.Scrollbar(main_container, orient="vertical", command=self.canvas.yview)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 配置Canvas，同時設置跟蹤滾動位置
+        self.canvas.configure(
+            yscrollcommand=lambda first, last: (_on_scroll(), scrollbar.set(first, last))
+        )
+        self.canvas.pack(side="left", fill="both", expand=True)
+        
+        # 在分頁顯示時恢復滾動位置
+        def _restore_scroll_position():
+            self.canvas.yview_moveto(self.scroll_position.get())
+        
         # 創建一個專用資料來源框架
         data_source_frame = ttk.LabelFrame(main_frame, text="資料來源選擇", padding=10)
         data_source_frame.pack(fill="x", pady=5)
@@ -453,7 +564,7 @@ class CrossDomainSentimentAnalysisApp:
         ttk.Button(file_frame, text="選擇文件", command=self._select_file).pack(side="left")
         ttk.Label(file_frame, textvariable=self.file_path).pack(side="left", padx=10)
         ttk.Button(file_frame, text="開始導入數據", command=self._import_data).pack(side="right")
-
+    
         # ===步驟2: BERT提取語義表示===
         step2_frame = ttk.LabelFrame(main_frame, text="步驟 2: BERT提取語義表示", padding=10)
         step2_frame.pack(fill="x", pady=5)
@@ -474,7 +585,7 @@ class CrossDomainSentimentAnalysisApp:
         # 第一行參數
         params_row1 = ttk.Frame(lda_params_frame)
         params_row1.pack(fill="x", pady=2)
-
+    
         # 是否使用自動參數
         self.auto_params_var = tk.BooleanVar(value=True)
         auto_params_check = ttk.Checkbutton(
@@ -484,9 +595,6 @@ class CrossDomainSentimentAnalysisApp:
             command=self._toggle_lda_params
         )
         auto_params_check.pack(side="left", padx=5)
-        
-        # 調用自動參數切換函數設置初始狀態
-        self._toggle_lda_params()
         
         # 第二行參數
         params_row2 = ttk.Frame(lda_params_frame)
@@ -536,22 +644,98 @@ class CrossDomainSentimentAnalysisApp:
         # ===步驟4: 計算面向相關句子的平均向量===
         step4_frame = ttk.LabelFrame(main_frame, text="步驟 4: 計算面向相關句子的平均向量", padding=10)
         step4_frame.pack(fill="x", pady=5)
-        
         ttk.Label(step4_frame, text="為每個識別出的面向計算代表性向量").pack(anchor="w", pady=5)
+    
+        # 設置注意力機制選項
+        attention_frame = ttk.LabelFrame(step4_frame, text="注意力機制設定", padding=5)
+        attention_frame.pack(fill="x", pady=5)
+        # 單一注意力機制選擇區
+        single_attention_frame = ttk.Frame(attention_frame)
+        single_attention_frame.pack(fill="x", pady=5)
+    
+        ttk.Label(single_attention_frame, text="選擇注意力機制:").pack(side="left", padx=5)
+        self.attention_var = tk.StringVar(value="無")
+        attention_combo = ttk.Combobox(
+            single_attention_frame, 
+            textvariable=self.attention_var,
+            values=["無", "相似度注意力", "關鍵詞注意力", "自注意力", "組合注意力"],
+            state="readonly",
+            width=15
+        )
+        attention_combo.pack(side="left", padx=5)
+        attention_combo.current(0)
+    
+        # 組合注意力設定區
+        self.combine_frame = ttk.Frame(attention_frame)
         
+        # 相似度注意力權重
+        self.similarity_weight_var = tk.DoubleVar(value=0.33)
+        similarity_frame = ttk.Frame(self.combine_frame)
+        similarity_frame.pack(fill="x", pady=2)
+        ttk.Label(similarity_frame, text="相似度注意力權重:").pack(side="left", padx=5)
+        ttk.Scale(
+            similarity_frame, 
+            from_=0.0, to=1.0, 
+            variable=self.similarity_weight_var,
+            orient="horizontal",
+            length=200
+        ).pack(side="left", padx=5)
+        ttk.Label(similarity_frame, textvariable=self.similarity_weight_var).pack(side="left", padx=5)
+    
+        # 關鍵詞注意力權重
+        self.keyword_weight_var = tk.DoubleVar(value=0.33)
+        keyword_frame = ttk.Frame(self.combine_frame)
+        keyword_frame.pack(fill="x", pady=2)
+        ttk.Label(keyword_frame, text="關鍵詞注意力權重:").pack(side="left", padx=5)
+        ttk.Scale(
+            keyword_frame, 
+            from_=0.0, to=1.0, 
+            variable=self.keyword_weight_var,
+            orient="horizontal",
+            length=200
+        ).pack(side="left", padx=5)
+        ttk.Label(keyword_frame, textvariable=self.keyword_weight_var).pack(side="left", padx=5)
+    
+        # 自注意力權重
+        self.self_weight_var = tk.DoubleVar(value=0.34)
+        self_frame = ttk.Frame(self.combine_frame)
+        self_frame.pack(fill="x", pady=2)
+        ttk.Label(self_frame, text="自注意力權重:      ").pack(side="left", padx=5)
+        ttk.Scale(
+            self_frame, 
+            from_=0.0, to=1.0, 
+            variable=self.self_weight_var,
+            orient="horizontal",
+            length=200
+        ).pack(side="left", padx=5)
+        ttk.Label(self_frame, textvariable=self.self_weight_var).pack(side="left", padx=5)
+    
+        # 當選擇組合注意力時顯示權重設定區
+        def on_attention_selected(event):
+            if self.attention_var.get() == "組合注意力":
+                self.combine_frame.pack(fill="x", pady=5, after=single_attention_frame)
+            else:
+                self.combine_frame.pack_forget()
+    
+        attention_combo.bind("<<ComboboxSelected>>", on_attention_selected)
+    
         # 按鈕布局
         vector_frame = ttk.Frame(step4_frame)
         vector_frame.pack(fill="x", pady=5)
-        
         # 含按鈕的容器框架
         buttons_container = ttk.Frame(vector_frame)
         buttons_container.pack(side="right")
-        
         # 面向計算按鈕
         ttk.Button(buttons_container, text="執行計算", command=self._calculate_aspect_vectors).pack(pady=(0, 5))
         # 匯出按鈕
         ttk.Button(buttons_container, text="匯出平均向量", command=self._export_vectors).pack()
-    
+        
+        # 調用自動參數切換函數設置初始狀態
+        self._toggle_lda_params()
+        
+        # 在視窗關閉時解除綁定
+        self.root.bind("<Destroy>", lambda event: _unbind_mousewheel())
+
     def _setup_results_tab(self):
         """結果瀏覽分頁界面"""
         # 實作結果瀏覽分頁
@@ -1869,19 +2053,33 @@ class CrossDomainSentimentAnalysisApp:
             raise
     
     def _calculate_aspect_vectors(self):
-        """計算面向相關句子的平均向量"""
+        """計算面向相關句子的平均向量 - 支援多種注意力機制"""
         if not self.bert_embeddings_path or not self.topic_metadata_path:
             messagebox.showerror("錯誤", "請先完成BERT語義提取和LDA面向切割步驟!")
             return
             
-        # 開始向量計算任務
+        # 獲取所選注意力機制
+        attention_type = self.attention_var.get()
+        
+        # 開始向量計算任務，傳入注意力設定
+        attention_params = {
+            "type": attention_type,
+            "weights": {
+                "similarity": self.similarity_weight_var.get(),
+                "keyword": self.keyword_weight_var.get(),
+                "self": self.self_weight_var.get()
+            }
+        }
+        
         self.task_processor.start_task(
             self._calculate_aspect_vectors_task, 
             self.bert_embeddings_path, 
-            self.topic_metadata_path
+            self.topic_metadata_path,
+            self.topics_path,  # 添加LDA主題詞文件路徑
+            attention_params
         )
     
-    def _calculate_aspect_vectors_task(self, embeddings_path, topic_metadata_path):
+    def _calculate_aspect_vectors_task(self, embeddings_path, topic_metadata_path, topics_path=None, attention_params=None):
         """面向向量計算任務 - 函數版本 (含控制台輸出)"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("面向向量計算", auto_close=True)
@@ -1891,6 +2089,19 @@ class CrossDomainSentimentAnalysisApp:
         logger.info(f"開始面向向量計算")
         logger.info(f"嵌入文件: {embeddings_path}")
         logger.info(f"主題元數據: {topic_metadata_path}")
+        
+        if topics_path:
+            logger.info(f"主題詞文件: {topics_path}")
+        
+        if attention_params:
+            att_type = attention_params.get("type", "無")
+            logger.info(f"使用注意力機制: {att_type}")
+            
+            if att_type == "組合注意力" and "weights" in attention_params:
+                weights = attention_params["weights"]
+                logger.info(f"相似度注意力權重: {weights['similarity']}")
+                logger.info(f"關鍵詞注意力權重: {weights['keyword']}")
+                logger.info(f"自注意力權重: {weights['self']}")
         
         try:
             # 初始化向量計算器
@@ -1909,12 +2120,24 @@ class CrossDomainSentimentAnalysisApp:
                 else:
                     logger.error(message)
                 return message, percentage
-                
+                    
+            # 計算面向向量
+            calculation_params = {
+                "callback": progress_callback
+            }
+            
+            # 根據 AspectVectorCalculator.calculate_aspect_vectors 的實際參數名稱進行調整
+            if topics_path:
+                calculation_params["topic_keywords_path"] = topics_path  # 修改參數名稱
+            
+            if attention_params:
+                calculation_params["attention_params"] = attention_params  # 修改參數名稱
+            
             # 計算面向向量
             results = calculator.calculate_aspect_vectors(
                 embeddings_path,
                 topic_metadata_path,
-                callback=progress_callback
+                **calculation_params
             )
             
             # 獲取結果路徑
@@ -1950,7 +2173,8 @@ class CrossDomainSentimentAnalysisApp:
                 "tsne_plot_path": tsne_plot_path,
                 "topic_count": len(results.get('topics', [])),
                 "step": "aspect_vector",
-                "progress_updates": progress_updates
+                "progress_updates": progress_updates,
+                "attention_type": attention_params.get("type", "無") if attention_params else "無"
             }
         except Exception as e:
             # 記錄錯誤

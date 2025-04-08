@@ -54,143 +54,127 @@ class AspectVectorCalculator:
         if self.logger:
             self.logger.log(level, message)
     
-    def calculate_aspect_vectors(self, embeddings_path, topic_metadata_path, callback=None):
+    def calculate_aspect_vectors(self, embeddings_path, topic_metadata_path, topic_keywords_path=None, attention_params=None, callback=None):
         """
-        計算每個面向的代表性向量
+        計算面向向量 - 支援多種注意力機制
         
         Args:
             embeddings_path: BERT嵌入向量路徑
-            topic_metadata_path: 帶主題標籤的元數據路徑
+            topic_metadata_path: 主題元數據路徑
+            topic_keywords_path: 主題關鍵詞路徑（可選）
+            attention_params: 注意力機制參數
             callback: 進度回調函數
-            
-        Returns:
-            dict: 包含面向向量和相關結果的字典
         """
         try:
-            self.log(f"Starting aspect vector calculation")
-            self.log(f"Using embeddings from: {embeddings_path}")
-            self.log(f"Using topic metadata from: {topic_metadata_path}")
-            
-            # 讀取數據
-            if callback:
-                callback("Loading embeddings and topic metadata...", 10)
-            
-            # 讀取BERT嵌入向量
-            self.log(f"Reading embeddings from: {embeddings_path}")
+            # 加載BERT嵌入向量
             embeddings_data = np.load(embeddings_path)
             embeddings = embeddings_data['embeddings']
-            self.log(f"Loaded embeddings with shape: {embeddings.shape}")
             
-            # 讀取主題元數據
-            self.log(f"Reading topic metadata from: {topic_metadata_path}")
+            # 加載主題元數據
             df = pd.read_csv(topic_metadata_path)
             
-            # 確保元數據中有主題標籤
-            if 'main_topic' not in df.columns:
-                raise ValueError("主題元數據中缺少'main_topic'列，請先執行LDA面向切割")
-            
-            # 計算每個主題的平均向量
-            if callback:
-                callback("Calculating aspect vectors...", 40)
-            
-            topics = df['main_topic'].unique()
-            aspect_vectors = {}
-            aspect_vectors_array = np.zeros((len(topics), embeddings.shape[1]))
-            topic_doc_counts = {}
-            
-            for i, topic in enumerate(topics):
-                # 獲取屬於該主題的文檔索引
-                topic_indices = df.index[df['main_topic'] == topic].tolist()
-                topic_doc_counts[topic] = len(topic_indices)
-                
-                if not topic_indices:
-                    self.log(f"Warning: No documents found for {topic}", level=logging.WARNING)
-                    continue
-                
-                # 獲取該主題的嵌入向量
-                topic_embeddings = embeddings[topic_indices]
-                
-                # 計算平均向量
-                mean_vector = np.mean(topic_embeddings, axis=0)
-                aspect_vectors[topic] = mean_vector
-                aspect_vectors_array[i] = mean_vector
-                
-                self.log(f"Calculated vector for {topic} from {len(topic_indices)} documents")
-            
-            # 嘗試進行可視化（如果失敗，繼續處理）
-            tsne_plot_path = None
-            if callback:
-                callback("Generating aspect vector visualizations...", 70)
-            
-            try:
-                # 使用t-SNE降維並可視化
-                tsne_results = self._visualize_aspect_vectors(embeddings, df, topic_metadata_path)
-                tsne_plot_path = tsne_results.get('tsne_plot_path')
-            except Exception as e:
-                self.log(f"Warning: Failed to generate t-SNE visualization: {str(e)}", level=logging.WARNING)
-                self.log(traceback.format_exc(), level=logging.WARNING)
-                # 生成一個簡單的替代圖表
-                try:
-                    base_name = os.path.basename(topic_metadata_path)
-                    base_name_without_ext = os.path.splitext(base_name)[0].replace('_with_topics', '')
-                    tsne_plot_path = os.path.join(self.vis_dir, f"{base_name_without_ext}_topic_counts.png")
+            # 加載主題關鍵詞（如果提供）
+            topic_keywords = None
+            if topic_keywords_path and os.path.exists(topic_keywords_path):
+                with open(topic_keywords_path, 'r', encoding='utf-8') as f:
+                    topic_keywords = json.load(f)
                     
-                    # 統計每個主題的文檔數量
-                    topic_counts = pd.Series(topic_doc_counts)
-                    plt.figure(figsize=(10, 6))
-                    topic_counts.plot(kind='bar')
-                    plt.xlabel('主題')
-                    plt.ylabel('文檔數量')
-                    plt.title('各主題文檔數量統計')
-                    plt.tight_layout()
-                    plt.savefig(tsne_plot_path, dpi=300)
-                    plt.close()
-                    
-                    self.log(f"Generated alternative visualization: {tsne_plot_path}")
-                except Exception as viz_error:
-                    self.log(f"Warning: Failed to generate alternative visualization: {str(viz_error)}", level=logging.WARNING)
-                    tsne_plot_path = None
+            # 決定使用哪種注意力機制
+            attention_type = "none"
+            attention_weights = {}
             
-            # 保存面向向量
+            if attention_params:
+                attention_type = attention_params.get("type", "無")
+                attention_weights = attention_params.get("weights", {})
+            
+            # 初始化相應的注意力機制
+            from src.attention_mechanism import (
+                NoAttention, SimilarityAttention, 
+                KeywordGuidedAttention, SelfAttention, CombinedAttention
+            )
+            
+            if attention_type == "相似度注意力":
+                attention_mech = SimilarityAttention(self.logger)
+            elif attention_type == "關鍵詞注意力":
+                attention_mech = KeywordGuidedAttention(self.logger)
+            elif attention_type == "自注意力":
+                attention_mech = SelfAttention(self.logger)
+            elif attention_type == "組合注意力":
+                attention_mech = CombinedAttention(self.logger)
+            else:
+                attention_mech = NoAttention(self.logger)
+            
+            # 計算面向向量
             if callback:
-                callback("Saving aspect vectors...", 85)
+                callback("計算面向向量...", 50)
             
+            aspect_vectors, attention_data = attention_mech.compute_aspect_vectors(
+                embeddings, df, 
+                topic_keywords=topic_keywords,
+                weights=attention_weights
+            )
+            
+            # 評估注意力機制效能
+            if callback:
+                callback("評估注意力機制效能...", 70)
+            
+            metrics = attention_mech.evaluate(aspect_vectors, embeddings, df)
+            
+            # 保存面向向量和元數據
+            if callback:
+                callback("保存結果...", 80)
+            
+            # 生成輸出文件名
             base_name = os.path.basename(topic_metadata_path)
             base_name_without_ext = os.path.splitext(base_name)[0].replace('_with_topics', '')
             
-            # 保存面向向量（NumPy格式）
-            aspect_vectors_path = os.path.join(self.output_dir, f"{base_name_without_ext}_aspect_vectors.npz")
-            np.savez_compressed(aspect_vectors_path, aspect_vectors=aspect_vectors_array, topics=topics)
+            # 添加注意力類型到文件名
+            attention_suffix = "_" + attention_type.replace(" ", "_")
+            output_base_name = base_name_without_ext + attention_suffix
             
-            # 保存面向向量元數據（JSON格式）
+            # 保存面向向量
+            aspect_vectors_path = os.path.join(self.output_dir, f"{output_base_name}_aspect_vectors.npz")
+            
+            # 轉換為NumPy數組
+            aspect_vectors_array = np.zeros((len(aspect_vectors), embeddings.shape[1]))
+            topics = list(aspect_vectors.keys())
+            
+            for i, topic in enumerate(topics):
+                aspect_vectors_array[i] = aspect_vectors[topic]
+            
+            np.savez_compressed(
+                aspect_vectors_path, 
+                aspect_vectors=aspect_vectors_array, 
+                topics=topics,
+                attention_weights=attention_data["weights"]
+            )
+            
+            # 保存元數據
             aspect_metadata = {
-                'topics': list(topics),
-                'doc_counts': topic_doc_counts,
+                'topics': topics,
+                'attention_type': attention_type,
+                'attention_params': attention_weights,
+                'metrics': metrics,
                 'embedding_dim': embeddings.shape[1]
             }
             
-            aspect_metadata_path = os.path.join(self.output_dir, f"{base_name_without_ext}_aspect_metadata.json")
+            aspect_metadata_path = os.path.join(self.output_dir, f"{output_base_name}_aspect_metadata.json")
             with open(aspect_metadata_path, 'w', encoding='utf-8') as f:
                 json.dump(aspect_metadata, f, ensure_ascii=False, indent=2)
             
-            if callback:
-                callback("Aspect vector calculation complete", 100)
-            
             # 返回結果
-            return {
+            result = {
                 'aspect_vectors_path': aspect_vectors_path,
                 'aspect_metadata_path': aspect_metadata_path,
-                'tsne_plot_path': tsne_plot_path,
-                'topics': list(topics),
-                'topic_doc_counts': topic_doc_counts,
-                'embedding_dim': embeddings.shape[1]
+                'attention_type': attention_type,
+                'metrics': metrics,
+                'topics': topics
             }
             
+            return result
+            
         except Exception as e:
-            self.log(f"Error in aspect vector calculation: {str(e)}", level=logging.ERROR)
-            self.log(traceback.format_exc(), level=logging.ERROR)
-            if callback:
-                callback(f"Error: {str(e)}", -1)
+            self.logger.error(f"錯誤: {str(e)}")
             raise
     
     def _visualize_aspect_vectors(self, embeddings, df, metadata_path):
