@@ -1302,6 +1302,10 @@ class CrossDomainSentimentAnalysisApp:
         """LDA參數評估任務 - 函數版本 (含控制台輸出) - 固定主題數量為10"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA參數評估", auto_close=True)
+
+        # 設置環境變量
+        temp_dir = self._setup_temp_dir_env()
+        logger.info(f"使用臨時目錄: {temp_dir}")
         
         # 設置日誌器，同時輸出到控制台和日誌文件
         logger = ConsoleOutputManager.setup_console_logger('lda_param_evaluation', log_file)
@@ -1618,6 +1622,14 @@ class CrossDomainSentimentAnalysisApp:
         self.stage_var = tk.StringVar(value="準備就緒")
         self.stage_var.trace_add("write", update_percent)
     
+    def _setup_temp_dir_env(self):
+        """設置臨時目錄環境變數以避免編碼問題"""
+        import os
+        import tempfile
+        os.environ["JOBLIB_TEMP_FOLDER"] = tempfile.gettempdir()
+        os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # 禁用多處理
+        return tempfile.gettempdir()
+    
     # ================================================
     # 功能方法：不使用多線程，採用事件驅動方式
     # ================================================
@@ -1931,11 +1943,9 @@ class CrossDomainSentimentAnalysisApp:
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
 
-        # 設置環境變量以解決編碼問題
-        import os
-        import tempfile
-        os.environ["JOBLIB_TEMP_FOLDER"] = tempfile.gettempdir()
-        os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # 禁用多處理
+        # 設置環境變量
+        temp_dir = self._setup_temp_dir_env()
+        logger.info(f"使用臨時目錄: {temp_dir}")
         
         # 設置日誌器，同時輸出到控制台和日誌文件
         logger = ConsoleOutputManager.setup_console_logger('lda_topic', log_file)
