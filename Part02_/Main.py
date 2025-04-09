@@ -21,6 +21,13 @@ import numpy as np
 import time
 import seaborn as sns
 import matplotlib.pyplot as plt
+import os
+import tempfile
+# os.environ['CUDA_ARCH_PTR_ALIGNMENT'] = '512'
+# os.environ['TORCH_CUDA_ARCH_LIST'] = 'sm_90'
+# 設置 joblib 臨時目錄為僅包含 ASCII 字符的路徑
+temp_dir = tempfile.gettempdir()
+os.environ['JOBLIB_TEMP_FOLDER'] = os.path.join(temp_dir, 'joblib_tmp')
 
 # 確保matplotlib使用非互動模式
 plt.ioff()
@@ -43,6 +50,7 @@ class TaskProcessor:
     def __init__(self, root, status_var, progress_var, on_complete=None):
         self.root = root
         self.status_var = status_var
+        self.progress_var = progress_var
         self.on_complete = on_complete
         self.is_running = False
         self.current_step = 0
