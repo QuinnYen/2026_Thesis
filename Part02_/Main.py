@@ -22,12 +22,10 @@ import time
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
-import tempfile
+
 # os.environ['CUDA_ARCH_PTR_ALIGNMENT'] = '512'
 # os.environ['TORCH_CUDA_ARCH_LIST'] = 'sm_90'
-# 設置 joblib 臨時目錄為僅包含 ASCII 字符的路徑
-temp_dir = tempfile.gettempdir()
-os.environ['JOBLIB_TEMP_FOLDER'] = os.path.join(temp_dir, 'joblib_tmp')
+
 
 # 確保matplotlib使用非互動模式
 plt.ioff()
@@ -1932,6 +1930,12 @@ class CrossDomainSentimentAnalysisApp:
         """LDA面向切割任務 - 函數版本 (含控制台輸出) - 加入自訂參數支援並固定主題數量為10"""
         # 打開控制台窗口並獲取日誌文件路徑
         log_file, status_file = ConsoleOutputManager.open_console("LDA面向切割", auto_close=True)
+
+        # 設置環境變量以解決編碼問題
+        import os
+        import tempfile
+        os.environ["JOBLIB_TEMP_FOLDER"] = tempfile.gettempdir()
+        os.environ["JOBLIB_MULTIPROCESSING"] = "0"  # 禁用多處理
         
         # 設置日誌器，同時輸出到控制台和日誌文件
         logger = ConsoleOutputManager.setup_console_logger('lda_topic', log_file)

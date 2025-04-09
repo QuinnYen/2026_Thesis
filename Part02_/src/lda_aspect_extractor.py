@@ -16,6 +16,11 @@ import pickle
 import json
 import re
 import time
+import tempfile
+
+# 設置 joblib 臨時目錄為僅包含 ASCII 字符的路徑
+temp_dir = tempfile.gettempdir()
+os.environ['JOBLIB_TEMP_FOLDER'] = os.path.join(temp_dir, 'joblib_tmp')
 
 # 設置日誌
 logging.basicConfig(
@@ -134,7 +139,7 @@ class LDATopicExtractor:
                 'n_components': n_topics,
                 'random_state': 42,
                 'learning_method': 'online',
-                'n_jobs': -1  # 使用所有可用 CPU 核心
+                'n_jobs': 1  # 使用所有可用 CPU 核心
             }
             
             # 添加自訂參數（如果提供）
