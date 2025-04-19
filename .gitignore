@@ -68,6 +68,7 @@ venv.bak/
 *.pkl
 *.model
 *.bin
+models/
 
 # 日誌檔案
 *.log
