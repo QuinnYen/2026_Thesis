@@ -9,6 +9,7 @@ import numpy as np
 from datetime import datetime
 import traceback
 import threading
+import json
 from pathlib import Path
 
 from PyQt5.QtWidgets import (
@@ -56,16 +57,48 @@ class AnalysisTab(QWidget):
         # 保存引用
         self.config = config
         self.file_manager = file_manager
+
+        # 確保有日誌記錄器可用
+        try:
+            from utils.logger import get_logger
+            self.logger = get_logger("analysis_tab")
+        except Exception:
+            import logging
+            self.logger = logging.getLogger("analysis_tab")
+            self.logger.setLevel(logging.INFO)
+            
+        # 設置輸出目錄，同時處理config可能無效的情況
+        try:
+            if hasattr(self.config, 'get'):
+                paths_config = self.config.get("paths", {})
+                if isinstance(paths_config, dict):
+                    self.output_dir = paths_config.get("output_dir", "./output")
+                else:
+                    # 默認輸出目錄
+                    app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+                    self.output_dir = os.path.join(app_dir, "output")
+            else:
+                # 默認輸出目錄
+                app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+                self.output_dir = os.path.join(app_dir, "output")
+                
+            # 確保輸出目錄存在
+            os.makedirs(self.output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.error(f"設置輸出目錄時出錯: {str(e)}")
+            self.output_dir = "./output"  # 使用相對路徑作為最後的備用選項
+            os.makedirs(self.output_dir, exist_ok=True)
         
         # 初始化成員變數
-        self.data = None  # 原始數據
-        self.processed_data = None  # 預處理後的數據
-        self.bert_embeddings = None  # BERT嵌入
-        self.lda_model = None  # LDA模型
-        self.topics = None  # 主題詞
-        self.aspect_vectors = None  # 面向向量
-        self.is_processing = False  # 是否正在處理
-        self.current_dataset_name = ""  # 當前數據集名稱
+        self.data = None
+        self.processed_data = None
+        self.bert_embeddings = None
+        self.lda_model = None
+        self.topics = None
+        self.aspect_vectors = None
+        self.evaluation_results = None
+        self.is_processing = False
+        self.current_dataset_name = ""
         
         # 初始化處理模組
         self._init_modules()
@@ -801,76 +834,77 @@ class AnalysisTab(QWidget):
     
     def save_results(self):
         """保存分析結果"""
-        if self.aspect_vectors is None:
-            QMessageBox.warning(self, "結果未生成", "尚未生成分析結果，請先運行分析")
-            return
-            
         try:
-            # 安全地獲取配置值
-            results_dir = './output'  # 默認值
+            # 檢查是否有結果可以保存
+            if self.aspect_vectors is None:
+                QMessageBox.warning(self, "保存失敗", "沒有可保存的向量結果")
+                return
+    
+            # 確定文件名
+            default_name = "aspect_vectors_result"
+            default_path = os.path.join(self.output_dir, f"{default_name}.json")
             
-            # 嘗試不同的方式獲取配置值
-            try:
-                if isinstance(self.config, dict):
-                    results_dir = self.config.get("paths", {}).get("output_dir", "./output")
-                elif hasattr(self.config, "get"):
-                    # 嘗試直接獲取配置路徑
-                    try:
-                        paths = self.config.get("paths")
-                        if isinstance(paths, dict):
-                            results_dir = paths.get("output_dir", "./output")
-                        else:
-                            results_dir = "./output"
-                    except TypeError:
-                        # 如果上述方法失敗，使用默認路徑
-                        results_dir = "./output"
-                else:
-                    # 配置對象不可用，使用默認路徑
-                    results_dir = "./output"
-            except Exception as config_error:
-                logger.warning(f"讀取配置時出現錯誤，使用默認值: {str(config_error)}")
-                results_dir = "./output"
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "保存結果", default_path, "JSON文件 (*.json)"
+            )
             
-            # 確保結果目錄存在
-            os.makedirs(results_dir, exist_ok=True)
-            
-            # 生成結果文件名
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            result_file_name = f"result_{self.current_dataset_name}_{timestamp}.json"
-            result_file_path = os.path.join(results_dir, result_file_name)
-            
-            # 準備保存的結果數據
-            result_data = {
-                "dataset_name": self.current_dataset_name,
-                "timestamp": timestamp,
-                "parameters": self._get_analysis_params(),
-                "topics": self.topics,
-                "evaluation": self.evaluation_results,
-                "metadata": {
-                    "processed_rows": len(self.processed_data) if self.processed_data is not None else 0,
-                    "num_topics": len(self.topics) if self.topics else 0,
-                    "vector_shape": list(self.aspect_vectors.shape) if self.aspect_vectors is not None else []
-                }
+            if not file_path:
+                return
+                
+            # 準備要保存的數據
+            results = {
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "data_source": self.data_source_label.text() if hasattr(self, 'data_source_label') else "未知來源",
+                "attention_type": self.attention_type if hasattr(self, 'attention_type') else "未知類型",
             }
             
-            # 另存面向向量（單獨存為 NPZ 格式）
-            if self.aspect_vectors is not None:
-                vectors_file_name = f"vectors_{self.current_dataset_name}_{timestamp}.npz"
-                vectors_file_path = os.path.join(results_dir, vectors_file_name)
-                np.savez_compressed(vectors_file_path, aspect_vectors=self.aspect_vectors)
-                result_data["vectors_file"] = vectors_file_name
+            # 正確處理不同類型的 aspect_vectors
+            if isinstance(self.aspect_vectors, dict):
+                # 字典類型的 aspect_vectors
+                results["vector_type"] = "dictionary"
+                results["vector_shape"] = [len(self.aspect_vectors)]
+                if len(self.aspect_vectors) > 0:
+                    first_key = next(iter(self.aspect_vectors))
+                    first_vector = self.aspect_vectors[first_key]
+                    if hasattr(first_vector, "shape"):
+                        results["vector_shape"].append(first_vector.shape[0])
+                    elif isinstance(first_vector, (list, np.ndarray)):
+                        results["vector_shape"].append(len(first_vector))
+                        
+                # 將向量轉換為可序列化的格式
+                serialized_vectors = {}
+                for topic, vector in self.aspect_vectors.items():
+                    if isinstance(vector, np.ndarray):
+                        serialized_vectors[topic] = vector.tolist()
+                    else:
+                        serialized_vectors[topic] = vector
+                results["aspect_vectors"] = serialized_vectors
+            else:
+                # NumPy 陣列類型的 aspect_vectors
+                results["vector_type"] = "numpy_array"
+                results["vector_shape"] = list(self.aspect_vectors.shape) if self.aspect_vectors is not None else []
+                
+                # 將 NumPy 陣列轉換為列表
+                if self.aspect_vectors is not None:
+                    results["aspect_vectors"] = self.aspect_vectors.tolist()
+                else:
+                    results["aspect_vectors"] = []
             
-            # 保存結果數據
-            self.file_manager.write_json(result_file_path, result_data)
-            
-            # 成功提示
-            self.status_message.emit(f"結果已保存至 {result_file_path}", 5000)
-            QMessageBox.information(self, "保存成功", f"分析結果已成功保存")
+            # 如果有可用的指標，也保存它們
+            if hasattr(self, 'metrics') and self.metrics is not None:
+                results["metrics"] = self.metrics
+                
+            # 保存結果到JSON文件
+            with open(file_path, 'w', encoding='utf-8') as f:
+                json.dump(results, f, ensure_ascii=False, indent=2)
+                
+            self.logger.info(f"結果已保存至: {file_path}")
+            QMessageBox.information(self, "保存成功", f"結果已保存至:\n{file_path}")
             
         except Exception as e:
-            logger.error(f"保存結果出錯: {str(e)}")
-            logger.error(traceback.format_exc())
-            QMessageBox.critical(self, "保存出錯", f"保存分析結果時出錯:\n{str(e)}")
+            self.logger.error(f"保存結果出錯: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            QMessageBox.critical(self, "保存失敗", f"保存結果時出錯:\n{str(e)}")
     
     def export_report(self, file_path):
         """導出分析報告

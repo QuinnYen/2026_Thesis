@@ -114,7 +114,7 @@ class VisualizationTab(QWidget):
         # 主佈局
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(10, 10, 10, 10)
-        
+
         # 創建上部控制區
         control_layout = self._create_control_panel()
         main_layout.addLayout(control_layout)
@@ -540,15 +540,39 @@ class VisualizationTab(QWidget):
 
     def browse_result_file(self):
         """瀏覽選擇結果文件"""
+        # 安全獲取輸出目錄
+        output_dir = "./output"  # 默認值
+        
+        # 檢查配置對象是否存在並安全獲取路徑
+        if self.config is not None:
+            try:
+                if isinstance(self.config, dict):
+                    output_dir = self.config.get("paths", {}).get("output_dir", output_dir)
+                elif hasattr(self.config, "get"):
+                    paths = self.config.get("paths")
+                    if isinstance(paths, dict):
+                        output_dir = paths.get("output_dir", output_dir)
+                    else:
+                        output_dir = self.config.get("paths.output_dir", output_dir)
+            except Exception as e:
+                logger.warning(f"獲取輸出目錄時出錯: {str(e)}，使用默認值 {output_dir}")
+        
+        # 確保路徑存在
+        if not os.path.exists(output_dir):
+            output_dir = "."  # 如果目錄不存在，切換到當前目錄
+            
         file_path, _ = QFileDialog.getOpenFileName(
             self,
             "選擇結果文件",
-            self.config.get("paths", {}).get("output_dir", "./output"),
+            output_dir,
             "結果文件 (*.json);;所有文件 (*.*)"
         )
         
         if file_path:
+            logger.debug(f"已選擇結果檔案: {file_path}")
             self.load_results(file_path)
+        else:
+            logger.debug("用戶取消了檔案選擇")
 
     def load_selected_result(self):
         """載入選中的結果文件"""
@@ -576,6 +600,7 @@ class VisualizationTab(QWidget):
             
             # 讀取結果文件
             with open(file_path, 'r', encoding='utf-8') as f:
+                import json
                 result_data = json.load(f)
             
             # 設置結果文件路徑
@@ -583,45 +608,28 @@ class VisualizationTab(QWidget):
             
             # 解析結果數據
             self.current_dataset = result_data.get("dataset_name", "未知數據集")
-            self.topics = result_data.get("topics", {})
+            self.topics = result_data.get("topics", [])
+            self.aspect_vectors = result_data.get("aspect_vectors", {})
             self.evaluation_results = result_data.get("evaluation", {})
+            self.visualization_results = result_data.get("visualizations", {})
             
-            # 讀取面向向量（如果有）
-            vectors_file = result_data.get("vectors_file")
-            if vectors_file:
-                vectors_path = os.path.join(os.path.dirname(file_path), vectors_file)
-                if os.path.exists(vectors_path):
-                    npz_data = np.load(vectors_path)
-                    self.aspect_vectors = npz_data.get("aspect_vectors")
-            
-            # 更新主題選擇下拉框
+            # 更新UI
             self._update_topic_selector()
-            
-            # 更新樣本ID範圍
-            if self.aspect_vectors is not None:
-                self.sample_id_spin.setMaximum(len(self.aspect_vectors) - 1)
-            
-            # 更新UI狀態
             self._update_result_info()
+            
+            # 通知用戶
+            self.status_message.emit(f"已載入結果文件: {os.path.basename(file_path)}", 5000)
+            
+            # 啟用視覺化按鈕
             self.generate_btn.setEnabled(True)
             
-            # 清除現有的可視化
-            self.interactive_view.setHtml("<center><h3>請點擊「生成可視化」按鈕</h3></center>")
-            self.static_image_label.setText("尚未生成靜態可視化")
-            self.data_label.setText("尚未生成數據視圖")
-            
-            # 禁用保存按鈕
-            self.save_image_btn.setEnabled(False)
-            self.save_html_btn.setEnabled(False)
-            self.export_report_btn.setEnabled(True)
-            
-            # 提示信息
-            self.status_message.emit(f"已載入結果文件: {os.path.basename(file_path)}", 3000)
-            
+        except json.JSONDecodeError as e:
+            logger.error(f"JSON解析錯誤: {str(e)}")
+            QMessageBox.critical(self, "文件錯誤", f"無法解析結果文件，文件格式無效:\n{str(e)}")
         except Exception as e:
-            logger.error(f"載入結果文件出錯: {str(e)}")
+            logger.error(f"載入結果文件時出錯: {str(e)}")
             logger.error(traceback.format_exc())
-            QMessageBox.critical(self, "載入出錯", f"載入結果文件時出錯:\n{str(e)}")
+            QMessageBox.critical(self, "載入錯誤", f"載入結果文件時發生錯誤:\n{str(e)}")
 
     def _update_topic_selector(self):
         """更新主題選擇下拉框"""

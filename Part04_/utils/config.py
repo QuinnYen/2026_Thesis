@@ -181,10 +181,12 @@ class Config:
                 
             if key is None:
                 return self.config[section]
-                
-            if isinstance(self.config[section], dict) and key in self.config[section]:
-                return self.config[section][key]
-                
+            
+            # 修正: 先檢查 section 是否為字典
+            if isinstance(self.config[section], dict):
+                return self.config[section].get(key, default)
+            
+            # 如果 section 不是字典，返回默認值
             return default
         except Exception as e:
             self.logger.error(f"獲取配置項出錯: {str(e)}")

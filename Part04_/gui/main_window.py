@@ -42,24 +42,131 @@ class MainWindow(QMainWindow):
             config_file: 配置文件路徑，如果為None則使用默認路徑
         """
         super().__init__()
+
+        # 初始化記錄器
+        from utils.logger import get_logger
+        self.logger = get_logger("main_window")
         
-        # 初始化系統組件
-        self.config = Config(config_file or "config.json")
-        self.file_manager = FileManager(config=self.config.get("paths"))
+        # 載入配置
+        self.logger.info("正在載入配置...")
+        try:
+            from utils.config import Config
+            self.config = Config(config_file) if config_file else None
+            
+            # 如果配置加載失敗，創建一個默認配置
+            if self.config is None:
+                self.logger.warning("配置加載失敗，使用默認配置")
+                self.config = self._create_default_config()
+        except Exception as e:
+            self.logger.error(f"載入配置文件失敗: {str(e)}")
+            self.config = self._create_default_config()
+        
+        # 初始化文件管理器
+        try:
+            from utils.file_manager import FileManager
+            self.file_manager = FileManager(self.config)
+        except Exception as e:
+            self.logger.error(f"初始化文件管理器失敗: {str(e)}")
+            self.file_manager = None
+        
+        # 初始化設定
         self.settings = QSettings("ThesisResearch", "TextAnalysisTool")
         
-        # 設置窗口屬性
-        self.setWindowTitle("文本分析系統")
-        self.setMinimumSize(1024, 768)
-        
-        # 實例化UI組件
+        # 初始化UI
         self._init_ui()
-        self._setup_signals()
-        self._load_settings()
         
-        # 初始化完畢後顯示歡迎信息
-        self.show_status_message("系統已準備就緒", 3000)
-        logger.info("主窗口初始化完成")
+        # 設置窗口屬性
+        self._set_window_properties()
+        
+        # 連接信號和槽
+        self._connect_signals_slots()
+        
+        self.logger.info("主窗口初始化完成")
+        
+    # 設置窗口屬性
+    def _set_window_properties(self):
+        """設置窗口屬性"""
+        # 設置窗口標題
+        self.setWindowTitle("文本分析系統")
+        
+        # 設置窗口大小
+        self.resize(1200, 800)
+        
+        # 設置窗口圖標（如果可用）
+        try:
+            from PyQt5.QtGui import QIcon
+            icon_path = os.path.join(self.config.get("paths", "resources_dir", ""), "icon.png")
+            if os.path.exists(icon_path):
+                self.setWindowIcon(QIcon(icon_path))
+        except Exception as e:
+            logger.warning(f"設置窗口圖標失敗: {str(e)}")
+        
+        # 載入窗口設置
+        self._load_settings()
+
+    def _connect_signals_slots(self):
+        """連接信號和槽"""
+        # 連接自定義信號
+        self.status_message.connect(self.show_status_message)
+        self.progress_updated.connect(self.update_progress)
+        
+        # 連接標籤頁的信號
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'status_message'):
+            self.analysis_tab.status_message.connect(self.show_status_message)
+            
+        if hasattr(self, 'analysis_tab') and hasattr(self.analysis_tab, 'progress_updated'):
+            self.analysis_tab.progress_updated.connect(self.update_progress)
+            
+        if hasattr(self, 'visualization_tab') and hasattr(self.visualization_tab, 'status_message'):
+            self.visualization_tab.status_message.connect(self.show_status_message)
+            
+        if hasattr(self, 'settings_tab') and hasattr(self.settings_tab, 'settings_changed'):
+            self.settings_tab.settings_changed.connect(self.on_settings_changed)
+    
+    def _create_default_config(self):
+        """創建默認配置"""
+        # 獲取應用程式目錄
+        app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+        
+        # 創建默認配置
+        default_config = {
+            "paths": {
+                "app_dir": app_dir,
+                "output_dir": os.path.join(app_dir, "output"),
+                "resources_dir": os.path.join(app_dir, "resources"),
+                "logs_dir": os.path.join(app_dir, "output", "logs"),
+                "data_dir": os.path.join(app_dir, "data")
+            },
+            "gui": {
+                "theme": "default",
+                "language": "zh_TW"
+            },
+            "processing": {
+                "num_workers": 1,
+                "batch_size": 32
+            }
+        }
+        
+        # 確保目錄存在
+        for path_key, path_value in default_config["paths"].items():
+            if path_key.endswith("_dir"):
+                os.makedirs(path_value, exist_ok=True)
+        
+        # 創建一個類似於Config的對象
+        class SimpleConfig:
+            def get(self, section, key=None, default=None):
+                if section not in default_config:
+                    return default
+                    
+                if key is None:
+                    return default_config[section]
+                    
+                if isinstance(default_config[section], dict):
+                    return default_config[section].get(key, default)
+                    
+                return default
+        
+        return SimpleConfig()
 
     def _init_ui(self):
         """初始化UI組件"""

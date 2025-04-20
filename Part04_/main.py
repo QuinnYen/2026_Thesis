@@ -184,28 +184,46 @@ def show_error_dialog(exception_type, exception_value, exception_traceback):
     # 顯示錯誤對話框
     error_dialog.exec_()
 
-
-def show_splash_screen(app, resources_dir):
-    """顯示啟動畫面"""
+# d:/Project/2026_Thesis/Part04_/resources/logo.jpg
+def show_splash_screen(app, resources_dir, width=600, height=400):
+    """顯示啟動畫面
+    
+    Args:
+        app: QApplication 實例
+        resources_dir: 資源目錄路徑
+        width: 啟動畫面寬度 (預設: 600)
+        height: 啟動畫面高度 (預設: 400)
+        
+    Returns:
+        QSplashScreen: 啟動畫面實例
+    """
     # 尋找啟動畫面圖像
-    splash_image = os.path.join(resources_dir, "splash.png")
+    splash_image = os.path.join(resources_dir, "logo.jpg")
     if not os.path.exists(splash_image):
         # 如果找不到指定的啟動畫面，則使用空白的啟動畫面
-        pixmap = QPixmap(600, 400)
+        pixmap = QPixmap(width, height)
         pixmap.fill(Qt.white)
     else:
-        pixmap = QPixmap(splash_image)
+        original_pixmap = QPixmap(splash_image)
+        # 調整圖片大小
+        pixmap = original_pixmap.scaled(width, height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
     
     splash_screen = QSplashScreen(pixmap, Qt.WindowStaysOnTopHint)
     
     # 設置啟動畫面的字體和顯示內容
     splash_screen.setFont(QFont('Arial', 12))
     
+    # 計算螢幕中央位置
+    screen_geometry = app.desktop().screenGeometry()
+    x = (screen_geometry.width() - pixmap.width()) // 2
+    y = (screen_geometry.height() - pixmap.height()) // 2
+    
+    # 移動到螢幕中央
+    splash_screen.move(x, y)
+    
     # 顯示啟動畫面
     splash_screen.show()
-    splash_screen.showMessage("正在初始化應用程式...", 
-                            Qt.AlignBottom | Qt.AlignCenter, 
-                            Qt.black)
+    splash_screen.showMessage("正在初始化應用程式...", Qt.AlignBottom | Qt.AlignCenter, Qt.black)
     app.processEvents()
     
     return splash_screen
