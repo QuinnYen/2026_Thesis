@@ -51,7 +51,13 @@ class VisualizationTab(QWidget):
         # 保存引用
         self.config = config
         self.file_manager = file_manager
-        
+
+        # 設置 logger
+        self.logger = logger
+
+        # 默認輸出目錄
+        self.output_dir = "./visualizations"
+
         # 檢查並確保 NLTK 資源已就緒
         self._ensure_nltk_resources()
         
@@ -403,8 +409,10 @@ class VisualizationTab(QWidget):
         self.data_container = QWidget()
         self.data_layout = QVBoxLayout(self.data_container)
         
-        self.data_label = QLabel("尚未生成數據視圖")
-        self.data_label.setAlignment(Qt.AlignCenter)
+        from PyQt5.QtWidgets import QTextBrowser
+        self.data_label = QTextBrowser()
+        self.data_label.setOpenExternalLinks(True)
+        self.data_label.setHtml("<center><h3>尚未生成數據視圖</h3></center>")
         self.data_layout.addWidget(self.data_label)
         self.data_layout.addStretch()
         
@@ -457,7 +465,7 @@ class VisualizationTab(QWidget):
             # 嘗試不同的方式獲取配置值
             try:
                 if isinstance(self.config, dict):
-                    results_dir = self.config.get("paths", {}).get("output_dir", "./output")
+                    results_dir = self.config.get("paths", {}).get("output_dir", "./Part04_/output")
                 elif hasattr(self.config, "get"):
                     # 嘗試直接獲取配置路徑
                     try:
@@ -676,7 +684,221 @@ class VisualizationTab(QWidget):
             self.viz_options_stack.setCurrentIndex(4)
         elif button_id == 6:  # 評估指標
             self.viz_options_stack.setCurrentIndex(5)
+    
+    # ===Create=================================
+    # 使用 scikit-learn 的 t-SNE 實現進行降維
+    def plot_tsne(self, embeddings, labels, title="t-SNE Visualization", point_size=30, output_dir=None):
+        """使用 t-SNE 繪製降維視覺化
+        
+        Args:
+            embeddings: 嵌入向量列表
+            labels: 標籤列表
+            title: 標題
+            point_size: 點大小
+            output_dir: 輸出目錄
 
+        Returns:
+            str: 圖片文件路徑
+        """
+        try:
+            import matplotlib
+            matplotlib.use('Agg')
+            import matplotlib.pyplot as plt
+            from sklearn.manifold import TSNE
+            import os
+            import numpy as np
+            from datetime import datetime
+            
+            # 設置輸出目錄
+            if output_dir is None:
+                output_dir = self.output_dir
+                
+            os.makedirs(output_dir, exist_ok=True)
+            # 將輸入轉換為NumPy數組
+            embeddings_array = np.array(embeddings, dtype=np.float32)
+            
+            # 確保數據維度正確
+            if len(embeddings_array.shape) == 1:
+                self.logger.warning("輸入向量為一維，嘗試重塑為二維")
+                # 如果是一維數組，重塑為一個樣本的二維數組
+                embeddings_array = embeddings_array.reshape(1, -1)
+            
+            # 應用t-SNE降維
+            tsne = TSNE(n_components=2, perplexity=min(30, len(embeddings_array)-1), 
+                max_iter=1000, random_state=42)
+            tsne_result = tsne.fit_transform(embeddings_array)
+            
+            # 創建圖表
+            plt.figure(figsize=(12, 8))
+            
+            # 獲取唯一標籤並分配顏色
+            unique_labels = list(set(labels))
+            colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_labels)))
+            
+            # 繪製散點圖
+            for i, label in enumerate(unique_labels):
+                mask = [l == label for l in labels]
+                plt.scatter(tsne_result[mask, 0], tsne_result[mask, 1], 
+                        c=[colors[i]], label=label, s=point_size)
+            
+            # 添加標題和圖例
+            plt.title(title, fontsize=18)
+            plt.legend(loc='best')
+            
+            # 去除坐標軸刻度
+            plt.xticks([])
+            plt.yticks([])
+            
+            # 添加網格
+            plt.grid(True, linestyle='--', alpha=0.7)
+            
+            # 保存圖片
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"tsne_{timestamp}.png"
+            img_path = os.path.join(output_dir, filename)
+            plt.tight_layout()
+            plt.savefig(img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            return img_path
+            
+        except Exception as e:
+            self.logger.error(f"t-SNE 視覺化生成出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            
+            # 返回空路徑
+            return None
+        
+    def create_vector_clustering(self, vectors, algorithm="K-Means", n_clusters=5, interactive=True, output_dir=None):
+        """創建向量聚類可視化
+        
+        Args:
+            vectors: 面向向量字典或列表
+            algorithm: 聚類算法，可以是 "K-Means", "DBSCAN", 或 "層次聚類"
+            n_clusters: 聚類數量
+            interactive: 是否創建互動式視覺化
+            output_dir: 輸出目錄
+            
+        Returns:
+            tuple: (html_content, img_path, data_html)
+        """
+        try:
+            self.logger.info(f"生成向量聚類可視化: {algorithm}")
+            
+            # 設置輸出目錄
+            if output_dir:
+                old_output_dir = self.output_dir
+                self.output_dir = output_dir
+                os.makedirs(self.output_dir, exist_ok=True)
+                
+            # 準備數據
+            from sklearn.cluster import KMeans, DBSCAN, AgglomerativeClustering
+            import pandas as pd
+            
+            # 轉換向量格式
+            if isinstance(vectors, dict):
+                # 如果是字典，轉換為列表
+                vector_ids = list(vectors.keys())
+                vectors_list = list(vectors.values())
+            elif isinstance(vectors, list):
+                vectors_list = vectors
+                vector_ids = [f"向量{i}" for i in range(len(vectors_list))]
+            else:
+                raise ValueError("向量必須是字典或列表")
+                
+            # 進行聚類
+            labels = None
+            if algorithm == "K-Means":
+                clusterer = KMeans(n_clusters=n_clusters, random_state=42)
+                labels = clusterer.fit_predict(vectors_list)
+            elif algorithm == "DBSCAN":
+                clusterer = DBSCAN(eps=0.5, min_samples=5)
+                labels = clusterer.fit_predict(vectors_list)
+            elif algorithm == "層次聚類":
+                clusterer = AgglomerativeClustering(n_clusters=n_clusters)
+                labels = clusterer.fit_predict(vectors_list)
+            else:
+                raise ValueError(f"不支持的聚類算法: {algorithm}")
+                
+            # 創建標籤列表
+            label_strings = [f"群集 {label}" for label in labels]
+            
+            # 使用 t-SNE 進行降維和可視化
+            img_path = self.plot_tsne(
+                embeddings=vectors_list,
+                labels=label_strings,
+                title=f"{algorithm} 聚類結果 (n_clusters={n_clusters})",
+                point_size=40
+            )
+            
+            # 創建數據表格
+            data_df = pd.DataFrame({
+                "向量ID": vector_ids,
+                "聚類標籤": label_strings
+            })
+            
+            # 生成 HTML 內容
+            html_content = ""
+            if interactive:
+                try:
+                    import plotly.express as px
+                    import numpy as np
+                    
+                    # 使用 t-SNE 降維
+                    from sklearn.manifold import TSNE
+                    
+                    # 將向量轉換為NumPy數組（修復關鍵部分）
+                    vectors_array = np.array(vectors_list, dtype=np.float32)
+                    
+                    # 確保數據維度正確
+                    if len(vectors_array.shape) == 1:
+                        self.logger.warning("輸入向量為一維，嘗試重塑為二維")
+                        vectors_array = vectors_array.reshape(1, -1)
+                        
+                    tsne = TSNE(n_components=2, perplexity=min(30, len(vectors_array)-1), 
+                            n_iter=1000, random_state=42)
+                    tsne_result = tsne.fit_transform(vectors_array)
+                    
+                    # 創建互動式視覺化
+                    df = pd.DataFrame({
+                        'x': tsne_result[:, 0],
+                        'y': tsne_result[:, 1],
+                        'cluster': label_strings,
+                        'vector_id': vector_ids
+                    })
+                    
+                    # 創建 plotly 圖表
+                    fig = px.scatter(
+                        df, x='x', y='y', color='cluster',
+                        title=f"{algorithm} 聚類結果 (n_clusters={n_clusters})",
+                        hover_data=['vector_id', 'cluster']
+                    )
+                    
+                    html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
+                    
+                except ImportError:
+                    self.logger.warning("未安裝 plotly，無法創建互動式視覺化")
+                    html_content = f"<h2>{algorithm} 聚類結果</h2><img src='{img_path}' width='100%'>"
+            else:
+                html_content = f"<h2>{algorithm} 聚類結果</h2><img src='{img_path}' width='100%'>"
+                
+            # 生成數據視圖 HTML
+            data_html = data_df.to_html(index=False)
+            
+            # 恢復輸出目錄
+            if output_dir:
+                self.output_dir = old_output_dir
+                
+            return html_content, img_path, data_html
+            
+        except Exception as e:
+            self.logger.error(f"生成向量聚類可視化時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
+    
+    # ===Generate=======================================
     def generate_visualization(self):
         """生成可視化"""
         if not self.current_dataset:
@@ -766,13 +988,42 @@ class VisualizationTab(QWidget):
         # 設置標題
         self.viz_title_label.setText("向量聚類可視化")
         
+        # 安全地獲取輸出目錄
+        output_dir = "./visualizations"  # 默認值
+        if self.config is not None:
+            try:
+                # 嘗試不同方式獲取配置
+                if isinstance(self.config, dict):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict):
+                        vis_dir = paths.get("visualizations_dir")
+                        if vis_dir:
+                            output_dir = vis_dir
+                elif hasattr(self.config, "get"):
+                    # 配置對象有 get 方法，嘗試使用它
+                    try:
+                        paths = self.config.get("paths", {})
+                        if isinstance(paths, dict):
+                            output_dir = paths.get("visualizations_dir", output_dir)
+                    except Exception as e:
+                        self.logger.warning(f"獲取可視化目錄配置出錯: {str(e)}，使用默認目錄 {output_dir}")
+            except Exception as e:
+                self.logger.warning(f"讀取配置時出錯: {str(e)}，使用默認目錄 {output_dir}")
+        
+        # 確保輸出目錄存在
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.warning(f"創建目錄時出錯: {str(e)}")
+            output_dir = "./"  # 回退到當前目錄
+        
         # 生成可視化
-        html_content, img_path, data_html = self.visualizer.create_vector_clustering(
+        html_content, img_path, data_html = self.create_vector_clustering(
             vectors=self.aspect_vectors,
             algorithm=algorithm,
             n_clusters=n_clusters,
             interactive=interactive,
-            output_dir=self.config.get("paths", {}).get("visualizations_dir", "./visualizations")
+            output_dir=output_dir
         )
         
         # 保存結果
