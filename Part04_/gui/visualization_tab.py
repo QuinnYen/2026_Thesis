@@ -465,23 +465,23 @@ class VisualizationTab(QWidget):
             # 嘗試不同的方式獲取配置值
             try:
                 if isinstance(self.config, dict):
-                    results_dir = self.config.get("paths", {}).get("output_dir", "./Part04_/output")
+                    results_dir = self.config.get("paths", {}).get("output_dir", "./Part04_/0_output")
                 elif hasattr(self.config, "get"):
                     # 嘗試直接獲取配置路徑
                     try:
                         paths = self.config.get("paths")
                         if isinstance(paths, dict):
-                            results_dir = paths.get("output_dir", "./output")
+                            results_dir = paths.get("output_dir", "./Part04_/0_output")
                         else:
-                            results_dir = self.config.get(("paths", "output_dir"), "./output")
+                            results_dir = self.config.get(("paths", "output_dir"), "./Part04_/0_output")
                     except TypeError:
                         # 如果上述方法失敗，嘗試一次直接訪問完整路徑
-                        results_dir = self.config.get("paths.output_dir", "./output")
+                        results_dir = self.config.get("paths.output_dir", "./Part04_/0_output")
                 else:
-                    results_dir = "./output"  # 默認值
+                    results_dir = "./Part04_/0_output"  # 默認值
             except Exception as config_error:
                 logger.warning(f"讀取配置時出現錯誤，使用默認值: {str(config_error)}")
-                results_dir = "./output"
+                results_dir = "./Part04_/0_output"
             
             if not os.path.exists(results_dir):
                 return results

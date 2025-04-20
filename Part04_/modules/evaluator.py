@@ -39,7 +39,7 @@ class AttentionEvaluator:
         self.logger = logger
         
         # 設置默認配置
-        self.output_dir = self.config.get('output_dir', './output/evaluation')
+        self.output_dir = self.config.get('output_dir', './Part04_/0_output/evaluation')
         self.enable_visualizations = self.config.get('visualizations', True)
         self.report_format = self.config.get('report_format', 'html')
         

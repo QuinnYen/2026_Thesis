@@ -28,91 +28,137 @@ logger = get_logger("file_manager")
 class FileManager:
     """提供檔案管理功能的類"""
     
-    def __init__(self, base_dir=None, config=None):
-        """初始化文件管理器
+    def __init__(self, config=None):
+        """初始化檔案管理器
         
         Args:
-            base_dir: 基礎目錄路徑，如果為None則使用當前工作目錄
-            config: 配置參數字典，可包含以下鍵:
-                - data_dir: 數據目錄
-                - results_dir: 結果目錄
-                - logs_dir: 日誌目錄
-                - models_dir: 模型目錄
-                - exports_dir: 導出目錄
-                - create_dirs: 是否自動創建不存在的目錄
-                - backup_files: 是否在覆蓋文件前創建備份
+            config: 配置字典或配置管理器對象
         """
         self.config = config or {}
+        
+        # 設置logger
         self.logger = logger
         
-        # 設置基礎目錄
-        self.base_dir = base_dir or os.getcwd()
+        # 從配置中提取路徑設置
+        self._init_paths()
         
-        # 設置各種目錄
-        self.data_dir = self._resolve_path(self.config.get('data_dir', 'data'))
-        self.results_dir = self._resolve_path(self.config.get('results_dir', 'results'))
-        self.logs_dir = self._resolve_path(self.config.get('logs_dir', 'logs'))
-        self.models_dir = self._resolve_path(self.config.get('models_dir', 'models'))
-        self.exports_dir = self._resolve_path(self.config.get('exports_dir', 'exports'))
-        self.visualizations_dir = self._resolve_path(self.config.get('visualizations_dir', 
-                                                                     os.path.join(self.results_dir, 'visualizations')))
-        
-        # 其他配置參數
-        self.create_dirs = self.config.get('create_dirs', True)
-        self.backup_files = self.config.get('backup_files', True)
-        
-        # 自動創建目錄
-        if self.create_dirs:
-            self._ensure_directories_exist()
+        # 確保所需目錄存在
+        self._ensure_directories()
     
-    def _resolve_path(self, path):
-        """解析相對路徑為絕對路徑
+    def _init_paths(self):
+        """初始化檔案路徑"""
+        # 安全地從不同類型的配置對象中獲取路徑
+        paths_config = None
         
-        Args:
-            path: 相對或絕對路徑
+        if isinstance(self.config, dict) and "paths" in self.config:
+            paths_config = self.config["paths"]
+        elif hasattr(self.config, "get"):
+            try:
+                paths_config = self.config.get("paths")
+            except:
+                pass
             
-        Returns:
-            str: 解析後的絕對路徑
-        """
-        if os.path.isabs(path):
-            return path
+        # 如果無法獲取配置，使用默認值
+        if not paths_config:
+            paths_config = {}
+            
+        # 尋找 Part04_ 目錄的絕對路徑
+        part04_dir = self._find_part04_directory()
+        if part04_dir:
+            base_dir = part04_dir
         else:
-            # 嘗試找出Part04_目錄
-            part04_dir = None
+            base_dir = "./Part04_"
             
-            # 1. 檢查當前工作目錄
+        # 設置統一的輸出根目錄 
+        output_root = os.path.join(base_dir, "0_output")
+        
+        # 設置各個目錄路徑
+        self.data_dir = paths_config.get("data_dir", os.path.join(base_dir, "..", "ReviewsDataBase"))
+        self.output_dir = paths_config.get("output_dir", output_root)
+        self.log_dir = paths_config.get("log_dir", os.path.join(output_root, "logs"))
+        self.model_dir = paths_config.get("model_dir", os.path.join(output_root, "models"))
+        self.export_dir = paths_config.get("export_dir", os.path.join(output_root, "exports"))
+        
+        # 結果目錄
+        self.results_dir = paths_config.get("results_dir", os.path.join(output_root, "results"))
+        self.embeddings_dir = paths_config.get("embeddings_dir", os.path.join(output_root, "embeddings"))
+        self.topics_dir = paths_config.get("topics_dir", os.path.join(output_root, "topics"))
+        self.vectors_dir = paths_config.get("vectors_dir", os.path.join(output_root, "vectors"))
+        self.evaluation_dir = paths_config.get("evaluation_dir", os.path.join(output_root, "evaluation"))
+        
+        # 可視化目錄
+        self.visualizations_dir = paths_config.get("visualizations_dir", os.path.join(output_root, "visualizations"))
+        
+        # 暫存目錄
+        self.temp_dir = paths_config.get("temp_dir", os.path.join(output_root, "temp"))
+        
+        # 資源目錄
+        self.resources_dir = paths_config.get("resources_dir", os.path.join(base_dir, "resources"))
+
+    def _find_part04_directory(self):
+        """尋找 Part04_ 目錄的絕對路徑
+        
+        Returns:
+            str: Part04_ 目錄的絕對路徑，如果找不到則返回 None
+        """
+        try:
+            # 方法1：檢查當前工作目錄
             current_dir = os.path.abspath(os.curdir)
-            if os.path.basename(current_dir) == 'Part04_':
-                part04_dir = current_dir
-            elif 'Part04_' in current_dir:
-                # 可能在Part04_的子目錄中
-                parts = current_dir.split(os.sep)
-                if 'Part04_' in parts:
-                    idx = parts.index('Part04_')
-                    part04_dir = os.sep.join(parts[:idx+1])
-                    
-            # 2. 檢查模組路徑
-            if not part04_dir:
-                script_dir = os.path.dirname(os.path.abspath(__file__))
-                if os.path.basename(script_dir) == 'utils' and 'Part04_' in script_dir:
-                    # utils目錄的上一級應該是Part04_
-                    part04_dir = os.path.dirname(script_dir)
+            if os.path.basename(current_dir) == "Part04_":
+                return current_dir
                 
-            # 3. 如果找到Part04_目錄，使用它作為基礎目錄
-            if part04_dir:
-                self.base_dir = part04_dir
+            # 方法2：檢查當前工作目錄的父目錄
+            parent_dir = os.path.dirname(current_dir)
+            if os.path.basename(parent_dir) == "Part04_":
+                return parent_dir
                 
-            return os.path.join(self.base_dir, path)
-    
-    def _ensure_directories_exist(self):
+            # 方法3：檢查當前工作目錄下是否有 Part04_ 子目錄
+            potential_path = os.path.join(current_dir, "Part04_")
+            if os.path.exists(potential_path) and os.path.isdir(potential_path):
+                return potential_path
+                
+            # 方法4：檢查當前檔案所在目錄
+            if __file__:
+                current_file_dir = os.path.dirname(os.path.abspath(__file__))
+                # 如果是在 utils 目錄中
+                if os.path.basename(current_file_dir) == "utils":
+                    potential_path = os.path.dirname(current_file_dir)
+                    if os.path.basename(potential_path) == "Part04_":
+                        return potential_path
+            
+            # 方法5：搜索 D:\Project 目錄
+            project_dir = "D:\\Project"
+            if os.path.exists(project_dir):
+                for item in os.listdir(project_dir):
+                    if item == "2026_Thesis":
+                        thesis_dir = os.path.join(project_dir, item)
+                        part04_dir = os.path.join(thesis_dir, "Part04_")
+                        if os.path.exists(part04_dir) and os.path.isdir(part04_dir):
+                            return part04_dir
+            
+            # 如果以上方法都失敗，返回 None
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"尋找 Part04_ 目錄時出錯: {str(e)}")
+            return None
+
+    def _ensure_directories(self):
         """確保所有必要的目錄存在"""
         directories = [
             self.data_dir,
+            self.output_dir,
+            self.log_dir,
+            self.model_dir,
+            self.export_dir,
             self.results_dir,
-            self.logs_dir,
-            self.models_dir,
-            self.exports_dir,
-            self.visualizations_dir
+            self.embeddings_dir,
+            self.topics_dir,
+            self.vectors_dir,
+            self.evaluation_dir,
+            self.visualizations_dir,
+            self.temp_dir,
+            self.resources_dir
         ]
         
         for directory in directories:
@@ -145,6 +191,167 @@ class FileManager:
             self.logger.warning(f"備份文件 {file_path} 失敗: {str(e)}")
             return None
 
+    def migrate_output_directories(self):
+        """遷移輸出目錄結構，將根目錄下的output檔案移動到Part04_/0_output目錄
+        
+        將舊的輸出目錄結構遷移到新的統一目錄結構中，確保所有資料都在正確位置。
+        此方法會執行以下操作：
+        1. 找到根目錄下的output資料夾
+        2. 找到Part04_下的logs資料夾
+        3. 將上述資料夾中的檔案移動到Part04_/0_output的對應子目錄
+        
+        Returns:
+            dict: 遷移統計信息
+        """
+        try:
+            migration_stats = {
+                "migrated_files": 0, 
+                "migrated_folders": 0, 
+                "errors": 0,
+                "details": []
+            }
+            
+            # 尋找根目錄下的output資料夾
+            root_output_dir = None
+            thesis_dir = os.path.abspath(os.path.join(self._find_part04_directory() or ".", ".."))
+            
+            if os.path.exists(thesis_dir):
+                potential_output = os.path.join(thesis_dir, "output")
+                if os.path.exists(potential_output) and os.path.isdir(potential_output):
+                    root_output_dir = potential_output
+                    migration_stats["details"].append(f"找到根目錄下的output資料夾: {root_output_dir}")
+                    
+            # 尋找Part04_下的獨立logs資料夾
+            part04_dir = self._find_part04_directory()
+            if part04_dir:
+                part04_logs = os.path.join(part04_dir, "logs")
+                if os.path.exists(part04_logs) and os.path.isdir(part04_logs):
+                    migration_stats["details"].append(f"找到Part04_下的logs資料夾: {part04_logs}")
+            else:
+                part04_logs = None
+                
+            # 如果找不到任何需要遷移的資料夾，跳過
+            if not root_output_dir and not part04_logs:
+                migration_stats["details"].append("未找到需要遷移的資料夾")
+                return migration_stats
+                
+            # 1. 遷移根目錄下的output資料夾
+            if root_output_dir:
+                # 遷移logs檔案
+                root_logs = os.path.join(root_output_dir, "logs")
+                if os.path.exists(root_logs) and os.path.isdir(root_logs):
+                    self._migrate_directory_contents(root_logs, self.log_dir, migration_stats)
+                    
+                # 遷移models檔案
+                root_models = os.path.join(root_output_dir, "models")
+                if os.path.exists(root_models) and os.path.isdir(root_models):
+                    self._migrate_directory_contents(root_models, self.model_dir, migration_stats)
+                    
+                # 遷移embeddings檔案
+                root_embeddings = os.path.join(root_output_dir, "embeddings")
+                if os.path.exists(root_embeddings) and os.path.isdir(root_embeddings):
+                    self._migrate_directory_contents(root_embeddings, self.embeddings_dir, migration_stats)
+                    
+                # 遷移vectors檔案
+                root_vectors = os.path.join(root_output_dir, "vectors")
+                if os.path.exists(root_vectors) and os.path.isdir(root_vectors):
+                    self._migrate_directory_contents(root_vectors, self.vectors_dir, migration_stats)
+                    
+                # 遷移topics檔案
+                root_topics = os.path.join(root_output_dir, "topics")
+                if os.path.exists(root_topics) and os.path.isdir(root_topics):
+                    self._migrate_directory_contents(root_topics, self.topics_dir, migration_stats)
+                    
+                # 遷移visualizations檔案
+                root_vis = os.path.join(root_output_dir, "visualizations")
+                if os.path.exists(root_vis) and os.path.isdir(root_vis):
+                    self._migrate_directory_contents(root_vis, self.visualizations_dir, migration_stats)
+
+                # 遷移其他檔案
+                for item in os.listdir(root_output_dir):
+                    item_path = os.path.join(root_output_dir, item)
+                    if os.path.isfile(item_path):
+                        try:
+                            # 其他檔案直接移至0_output根目錄
+                            target_path = os.path.join(self.output_dir, item)
+                            # 避免覆蓋已存在的檔案
+                            if os.path.exists(target_path):
+                                base, ext = os.path.splitext(item)
+                                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                target_path = os.path.join(self.output_dir, f"{base}_{timestamp}{ext}")
+                                
+                            shutil.move(item_path, target_path)
+                            migration_stats["migrated_files"] += 1
+                            migration_stats["details"].append(f"已遷移檔案: {item_path} → {target_path}")
+                        except Exception as e:
+                            migration_stats["errors"] += 1
+                            migration_stats["details"].append(f"遷移檔案失敗 {item_path}: {str(e)}")
+            
+            # 2. 遷移Part04_下的logs資料夾
+            if part04_logs:
+                self._migrate_directory_contents(part04_logs, self.log_dir, migration_stats)
+                
+            # 記錄遷移結果
+            self.logger.info(f"目錄遷移完成: 成功遷移 {migration_stats['migrated_files']} 個檔案, "
+                           f"{migration_stats['migrated_folders']} 個資料夾, "
+                           f"遇到 {migration_stats['errors']} 個錯誤")
+                
+            return migration_stats
+            
+        except Exception as e:
+            self.logger.error(f"遷移輸出目錄時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            migration_stats["errors"] += 1
+            migration_stats["details"].append(f"遷移過程出錯: {str(e)}")
+            return migration_stats
+    
+    def _migrate_directory_contents(self, source_dir, target_dir, stats):
+        """遷移目錄中的所有內容到目標目錄
+        
+        Args:
+            source_dir: 來源目錄
+            target_dir: 目標目錄
+            stats: 統計字典
+        """
+        try:
+            # 確保目標目錄存在
+            os.makedirs(target_dir, exist_ok=True)
+            
+            for item in os.listdir(source_dir):
+                source_item = os.path.join(source_dir, item)
+                target_item = os.path.join(target_dir, item)
+                
+                try:
+                    # 處理資料夾
+                    if os.path.isdir(source_item):
+                        if not os.path.exists(target_item):
+                            shutil.copytree(source_item, target_item)
+                        else:
+                            # 如果目標資料夾已存在，遞迴地遷移其內容
+                            self._migrate_directory_contents(source_item, target_item, stats)
+                        stats["migrated_folders"] += 1
+                    # 處理檔案
+                    else:
+                        # 避免覆蓋已存在的檔案
+                        if os.path.exists(target_item):
+                            base, ext = os.path.splitext(item)
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            target_item = os.path.join(target_dir, f"{base}_{timestamp}{ext}")
+                            
+                        shutil.copy2(source_item, target_item)
+                        stats["migrated_files"] += 1
+                except Exception as e:
+                    stats["errors"] += 1
+                    stats["details"].append(f"遷移 {source_item} 失敗: {str(e)}")
+                    
+            # 記錄成功遷移的目錄
+            stats["details"].append(f"已遷移目錄: {source_dir} → {target_dir}")
+            
+        except Exception as e:
+            stats["errors"] += 1
+            stats["details"].append(f"遷移目錄 {source_dir} 失敗: {str(e)}")
+
     def read_file(self, file_path, encoding='utf-8'):
         """讀取文本文件
         
@@ -156,7 +363,6 @@ class FileManager:
             str: 文件內容，讀取失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
             with open(file_path, 'r', encoding=encoding) as f:
                 content = f.read()
             self.logger.debug(f"已讀取文件: {file_path}")
@@ -178,13 +384,11 @@ class FileManager:
             bool: 寫入是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果是覆寫模式且啟用了備份功能，則進行備份
-            if mode == 'w' and self.backup_files and os.path.exists(file_path):
+            if mode == 'w' and os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             with open(file_path, mode, encoding=encoding) as f:
@@ -207,7 +411,6 @@ class FileManager:
             dict: 解析後的JSON數據，讀取失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
             with open(file_path, 'r', encoding=encoding) as f:
                 data = json.load(f)
             self.logger.debug(f"已讀取JSON文件: {file_path}")
@@ -229,13 +432,11 @@ class FileManager:
             bool: 寫入是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果啟用了備份功能且文件已存在，則進行備份
-            if self.backup_files and os.path.exists(file_path):
+            if os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             with open(file_path, 'w', encoding=encoding) as f:
@@ -259,7 +460,6 @@ class FileManager:
             pandas.DataFrame: 讀取的數據框，失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
             df = pd.read_csv(file_path, encoding=encoding, **kwargs)
             self.logger.debug(f"已讀取CSV文件: {file_path}，共{len(df)}行")
             return df
@@ -281,13 +481,11 @@ class FileManager:
             bool: 寫入是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果啟用了備份功能且文件已存在，則進行備份
-            if self.backup_files and os.path.exists(file_path):
+            if os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             df.to_csv(file_path, encoding=encoding, index=index, **kwargs)
@@ -310,7 +508,6 @@ class FileManager:
             pandas.DataFrame: 讀取的數據框，失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
             df = pd.read_excel(file_path, sheet_name=sheet_name, **kwargs)
             self.logger.debug(f"已讀取Excel文件: {file_path}，表格: {sheet_name}，共{len(df)}行")
             return df
@@ -332,13 +529,11 @@ class FileManager:
             bool: 寫入是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果啟用了備份功能且文件已存在，則進行備份
-            if self.backup_files and os.path.exists(file_path):
+            if os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             df.to_excel(file_path, sheet_name=sheet_name, index=index, **kwargs)
@@ -360,13 +555,11 @@ class FileManager:
             bool: 保存是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果啟用了備份功能且文件已存在，則進行備份
-            if self.backup_files and os.path.exists(file_path):
+            if os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             np.save(file_path, arr)
@@ -387,8 +580,6 @@ class FileManager:
             numpy.ndarray: 加載的數組，失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 如果文件沒有.npy後綴，自動添加
             if not file_path.endswith('.npy'):
                 file_path += '.npy'
@@ -412,13 +603,11 @@ class FileManager:
             bool: 保存是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果啟用了備份功能且文件已存在，則進行備份
-            if self.backup_files and os.path.exists(file_path):
+            if os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             np.savez_compressed(file_path, **arrays)
@@ -440,8 +629,6 @@ class FileManager:
             dict: 數組字典，失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 如果文件沒有.npz後綴，自動添加
             if not file_path.endswith('.npz'):
                 file_path += '.npz'
@@ -469,13 +656,11 @@ class FileManager:
             bool: 保存是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 確保目錄存在
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             
             # 如果啟用了備份功能且文件已存在，則進行備份
-            if self.backup_files and os.path.exists(file_path):
+            if os.path.exists(file_path):
                 self._create_backup(file_path)
                 
             with open(file_path, 'wb') as f:
@@ -497,8 +682,6 @@ class FileManager:
             object: 加載的Python對象，失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             with open(file_path, 'rb') as f:
                 obj = pickle.load(f)
                 
@@ -520,8 +703,6 @@ class FileManager:
             list: 文件路徑列表
         """
         try:
-            directory = self._resolve_path(directory)
-            
             if not os.path.exists(directory):
                 self.logger.warning(f"目錄不存在: {directory}")
                 return []
@@ -552,8 +733,6 @@ class FileManager:
             bool: 目錄是否存在或創建成功
         """
         try:
-            directory = self._resolve_path(directory)
-            
             if not os.path.exists(directory):
                 os.makedirs(directory)
                 self.logger.debug(f"已創建目錄: {directory}")
@@ -573,16 +752,13 @@ class FileManager:
             bool: 複製是否成功
         """
         try:
-            source = self._resolve_path(source)
-            destination = self._resolve_path(destination)
-            
             # 確保目標目錄存在
             dest_dir = os.path.dirname(destination)
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir)
                 
             # 如果目標文件已存在且啟用了備份功能，則進行備份
-            if os.path.exists(destination) and self.backup_files:
+            if os.path.exists(destination):
                 self._create_backup(destination)
                 
             shutil.copy2(source, destination)
@@ -604,16 +780,13 @@ class FileManager:
             bool: 移動是否成功
         """
         try:
-            source = self._resolve_path(source)
-            destination = self._resolve_path(destination)
-            
             # 確保目標目錄存在
             dest_dir = os.path.dirname(destination)
             if not os.path.exists(dest_dir):
                 os.makedirs(dest_dir)
                 
             # 如果目標文件已存在且啟用了備份功能，則進行備份
-            if os.path.exists(destination) and self.backup_files:
+            if os.path.exists(destination):
                 self._create_backup(destination)
                 
             shutil.move(source, destination)
@@ -635,14 +808,12 @@ class FileManager:
             bool: 刪除是否成功
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             if not os.path.exists(file_path):
                 self.logger.warning(f"要刪除的文件不存在: {file_path}")
                 return False
                 
             # 如果啟用了備份功能，則進行備份
-            if backup and self.backup_files:
+            if backup:
                 self._create_backup(file_path)
                 
             os.remove(file_path)
@@ -663,8 +834,6 @@ class FileManager:
             dict: 包含文件信息的字典，失敗則返回None
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             if not os.path.exists(file_path):
                 self.logger.warning(f"文件不存在: {file_path}")
                 return None
@@ -720,25 +889,21 @@ class FileManager:
             bool: 創建是否成功
         """
         try:
-            output_path = self._resolve_path(output_path)
-            
             # 確保輸出目錄存在
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
             
             # 如果文件已存在且啟用了備份功能，則進行備份
-            if os.path.exists(output_path) and self.backup_files:
+            if os.path.exists(output_path):
                 self._create_backup(output_path)
                 
             with zipfile.ZipFile(output_path, 'w', compression) as zipf:
                 for file in file_paths:
-                    file_path = self._resolve_path(file)
-                    
-                    if os.path.exists(file_path):
+                    if os.path.exists(file):
                         # 使用相對路徑添加到ZIP中
-                        arc_name = os.path.basename(file_path)
-                        zipf.write(file_path, arc_name)
+                        arc_name = os.path.basename(file)
+                        zipf.write(file, arc_name)
                     else:
-                        self.logger.warning(f"要添加到ZIP的文件不存在: {file_path}")
+                        self.logger.warning(f"要添加到ZIP的文件不存在: {file}")
             
             self.logger.debug(f"已創建ZIP文件: {output_path}，包含 {len(file_paths)} 個文件")
             return True
@@ -757,12 +922,8 @@ class FileManager:
             bool: 解壓是否成功
         """
         try:
-            zip_path = self._resolve_path(zip_path)
-            
             if extract_to is None:
                 extract_to = os.path.dirname(zip_path)
-            else:
-                extract_to = self._resolve_path(extract_to)
                 
             # 確保解壓目錄存在
             os.makedirs(extract_to, exist_ok=True)
@@ -820,9 +981,9 @@ class FileManager:
             stats = {
                 'data_files': len(self.list_files(self.data_dir, recursive=True)),
                 'result_files': len(self.list_files(self.results_dir, recursive=True)),
-                'log_files': len(self.list_files(self.logs_dir, recursive=True)),
-                'model_files': len(self.list_files(self.models_dir, recursive=True)),
-                'export_files': len(self.list_files(self.exports_dir, recursive=True)),
+                'log_files': len(self.list_files(self.log_dir, recursive=True)),
+                'model_files': len(self.list_files(self.model_dir, recursive=True)),
+                'export_files': len(self.list_files(self.export_dir, recursive=True)),
                 'visualization_files': len(self.list_files(self.visualizations_dir, recursive=True)),
                 'data_size': self._get_dir_size(self.data_dir),
                 'results_size': self._get_dir_size(self.results_dir),
@@ -850,8 +1011,6 @@ class FileManager:
         total_size = 0
         
         try:
-            directory = self._resolve_path(directory)
-            
             if not os.path.exists(directory):
                 return 0
                 
@@ -878,8 +1037,6 @@ class FileManager:
             bool: 文件是否有變化
         """
         try:
-            file_path = self._resolve_path(file_path)
-            
             # 初始延遲
             if initial_delay > 0:
                 time.sleep(initial_delay)
@@ -930,8 +1087,6 @@ class FileManager:
             bool: 監控是否成功完成
         """
         try:
-            directory = self._resolve_path(directory)
-            
             if not os.path.exists(directory):
                 self.logger.warning(f"要監控的目錄不存在: {directory}")
                 return False
@@ -1021,7 +1176,6 @@ class FileManager:
         """
         try:
             import fnmatch
-            directory = self._resolve_path(directory)
             
             if not os.path.exists(directory):
                 self.logger.warning(f"搜索目錄不存在: {directory}")
@@ -1101,7 +1255,6 @@ class FileManager:
         """
         try:
             import fnmatch
-            directory = self._resolve_path(directory)
             
             if not os.path.exists(directory):
                 self.logger.warning(f"要清理的目錄不存在: {directory}")
@@ -1171,26 +1324,26 @@ if __name__ == "__main__":
     file_mgr = FileManager()
     
     # 測試基本功能
-    print("Base directory:", file_mgr.base_dir)
+    print("Base directory:", file_mgr.output_dir)
     
     # 測試寫入文本文件
     test_content = "This is a test file.\n測試中文內容。"
-    result = file_mgr.write_file("test_output.txt", test_content)
+    result = file_mgr.write_file(f"{file_mgr.output_dir}/test_output.txt", test_content)
     print(f"Write file result: {result}")
     
     # 測試讀取文本文件
-    content = file_mgr.read_file("test_output.txt")
+    content = file_mgr.read_file(f"{file_mgr.output_dir}/test_output.txt")
     print(f"Read file content: {content}")
     
     # 測試寫入JSON文件
     test_data = {"name": "測試", "value": 123, "items": [1, 2, 3]}
-    result = file_mgr.write_json("test_output.json", test_data)
+    result = file_mgr.write_json(f"{file_mgr.output_dir}/test_output.json", test_data)
     print(f"Write JSON result: {result}")
     
     # 測試讀取JSON文件
-    json_data = file_mgr.read_json("test_output.json")
+    json_data = file_mgr.read_json(f"{file_mgr.output_dir}/test_output.json")
     print(f"Read JSON data: {json_data}")
     
     # 測試獲取文件信息
-    file_info = file_mgr.get_file_info("test_output.txt")
+    file_info = file_mgr.get_file_info(f"{file_mgr.output_dir}/test_output.txt")
     print(f"File info: {file_info}")

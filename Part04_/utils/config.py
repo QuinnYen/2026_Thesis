@@ -107,11 +107,11 @@ class Config:
                 },
                 "paths": {
                     "data_dir": os.path.join(app_dir, "data"),
-                    "output_dir": os.path.join(app_dir, "output"),
-                    "logs_dir": os.path.join(app_dir, "logs"),
+                    "output_dir": os.path.join(app_dir, "0_output"),
+                    "logs_dir": os.path.join(app_dir, "0_output", "logs"),
                     "resources_dir": os.path.join(app_dir, "resources"),
-                    "models_dir": os.path.join(app_dir, "models"),
-                    "visualizations_dir": os.path.join(app_dir, "output", "visualizations")
+                    "models_dir": os.path.join(app_dir, "0_output", "models"),
+                    "visualizations_dir": os.path.join(app_dir, "0_output", "visualizations")
                 },
                 "data_processing": {
                     "encoding": "utf-8",
@@ -145,7 +145,7 @@ class Config:
                     "report_format": "html"
                 },
                 "visualization": {
-                    "output_dir": os.path.join(app_dir, "output", "visualizations"),
+                    "output_dir": os.path.join(app_dir, "0_output", "visualizations"),
                     "dpi": 300,
                     "figsize": [12, 8],
                     "cmap": "viridis",

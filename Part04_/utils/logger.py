@@ -23,7 +23,7 @@ class Logger:
     # 默認日誌格式
     DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     
-    def __init__(self, name="cross_domain_sentiment", log_dir="./logs", level="INFO"):
+    def __init__(self, name="cross_domain_sentiment", log_dir="./Part04_/0_output/logs", level="INFO"):
         """初始化日誌管理器
         
         Args:
@@ -168,12 +168,12 @@ def set_level(level):
     """
     default_logger.set_level(level)
 
-def setup_logger(name="cross_domain_sentiment", log_dir="./logs", level="INFO"):
+def setup_logger(name="cross_domain_sentiment", log_dir="./Part04_/0_output/logs", level="INFO"):
     """設置全局日誌器
     
     Args:
         name: 日誌名稱
-        log_dir: 日誌目錄，默認為Part04_資料夾下的logs目錄
+        log_dir: 日誌目錄，默認為Part04_資料夾下的0_output/logs目錄
         level: 日誌級別
         
     Returns:
@@ -201,7 +201,7 @@ def setup_logger(name="cross_domain_sentiment", log_dir="./logs", level="INFO"):
     # 如果找到Part04_目錄，則使用它
     if part04_dir and os.path.isdir(part04_dir):
         # 確保使用絕對路徑
-        log_dir = os.path.join(part04_dir, 'logs')
+        log_dir = os.path.join(part04_dir, '0_output/logs')
     
     # 創建新的日誌管理器
     global default_logger
