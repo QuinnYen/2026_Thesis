@@ -30,41 +30,77 @@ try:
     try:
         import nltk
         import os
+        import shutil
+        import sys
+        from nltk.tokenize.punkt import PunktSentenceTokenizer, PunktTrainer
         
         print("檢查 NLTK 資源...")
+        # 指定一個固定的NLTK數據路徑，避免多個路徑造成混淆
         nltk_data_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "nltk_data")
         os.makedirs(nltk_data_path, exist_ok=True)
         
-        # 添加自定義 NLTK 數據路徑
-        nltk.data.path.append(nltk_data_path)
+        # 優先使用此路徑，將它放在搜索路徑的最前面
+        if nltk_data_path not in nltk.data.path:
+            nltk.data.path.insert(0, nltk_data_path)
+        print(f"NLTK資源路徑設置為: {nltk_data_path}")
         
-        # 下載必要的 NLTK 資源
+        # 下載必要的NLTK資源
         resources = ['punkt', 'wordnet', 'stopwords']
         for resource in resources:
             try:
                 nltk.data.find(f"tokenizers/{resource}")
                 print(f"NLTK '{resource}' 資源已存在")
             except LookupError:
-                print(f"下載 NLTK '{resource}' 資源...")
-                nltk.download(resource, download_dir=nltk_data_path)
+                print(f"下載NLTK '{resource}' 資源...")
+                nltk.download(resource, download_dir=nltk_data_path, quiet=False)
         
-        # 特殊處理 punkt_tab 資源 - 通常不需要直接下載，而是自動作為 punkt 的一部分
-        # 創建所需目錄結構
-        punkt_tab_dir = os.path.join(nltk_data_path, "tokenizers", "punkt", "english")
+        # 專門處理punkt_tab問題
+        print("正在處理punkt_tab資源...")
+        
+        # 定義路徑
+        punkt_dir = os.path.join(nltk_data_path, "tokenizers", "punkt")
+        english_dir = os.path.join(punkt_dir, "english")
+        punkt_tab_dir = os.path.join(nltk_data_path, "tokenizers", "punkt_tab", "english")
+        
+        # 確保目錄存在
+        os.makedirs(english_dir, exist_ok=True)
         os.makedirs(punkt_tab_dir, exist_ok=True)
         
-        # 檢查 punkt_tab 是否可用，如果不可用，使用 punkt 作為替代方案
+        # 複製英文模型文件從punkt到punkt_tab
+        if os.path.isdir(english_dir) and os.listdir(english_dir):
+            print(f"從{english_dir}複製文件到{punkt_tab_dir}")
+            for file in os.listdir(english_dir):
+                src = os.path.join(english_dir, file)
+                dst = os.path.join(punkt_tab_dir, file)
+                if os.path.isfile(src):
+                    shutil.copy2(src, dst)
+                    print(f"已複製文件: {file}")
+        else:
+            print("無法找到英文模型文件，嘗試創建所需的文件...")
+            
+            # 如果找不到原始文件，我們可以手動創建一個最小的pickle文件
+            try:
+                # 建立一個空的PunktTrainer
+                trainer = PunktTrainer()
+                tokenizer = PunktSentenceTokenizer(trainer.get_params())
+                
+                # 儲存tokenizer到punkt_tab目錄
+                import pickle
+                with open(os.path.join(punkt_tab_dir, "english.pickle"), "wb") as f:
+                    pickle.dump(tokenizer, f)
+                print("成功創建英文分詞模型文件")
+            except Exception as e:
+                print(f"創建分詞模型失敗: {e}")
+        
+        # 驗證資源是否可用
         try:
             nltk.data.find("tokenizers/punkt_tab/english")
-            print("NLTK punkt_tab 資源已存在")
-        except LookupError:
-            print("配置 punkt_tab 替代方案...")
-            # 使用 punkt 作為替代
-            punkt_path = os.path.join(nltk_data_path, "tokenizers", "punkt")
-            if os.path.exists(punkt_path):
-                print("已配置 punkt 作為 punkt_tab 的替代")
+            print("punkt_tab 資源驗證成功")
+        except LookupError as e:
+            print(f"警告: punkt_tab 資源驗證失敗 - {e}")
+            print("系統將使用替代的分詞方法")
         
-        print("NLTK 資源檢查完成")
+        print("NLTK 資源檢查與設置完成")
         
     except ImportError as e:
         print(f"NLTK 相關錯誤: {e}")

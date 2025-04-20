@@ -59,23 +59,61 @@ class DataProcessor:
     
     def _ensure_nltk_resources(self):
         """確保NLTK所需資源已下載"""
+        # 指定NLTK數據目錄路徑
+        nltk_data_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "nltk_data")
+        os.makedirs(nltk_data_path, exist_ok=True)
+        
+        # 將此路徑添加到NLTK搜索路徑的最前面
+        if nltk_data_path not in nltk.data.path:
+            nltk.data.path.insert(0, nltk_data_path)
+            self.logger.info(f"已將 {nltk_data_path} 添加到NLTK搜索路徑")
+        
+        # 需要下載的資源
         resources = [
             ('punkt', 'tokenizers/punkt'),
             ('stopwords', 'corpora/stopwords'),
             ('wordnet', 'corpora/wordnet')
         ]
         
+        # 確保每個資源都已下載
         for resource_name, resource_path in resources:
             try:
                 # 嘗試查找資源
                 nltk.data.find(resource_path)
                 self.logger.debug(f"已找到NLTK資源: {resource_name}")
             except LookupError:
-                # 如果找不到，則下載
+                # 如果找不到，則下載到指定目錄
                 self.logger.info(f"正在下載NLTK資源: {resource_name}")
                 try:
-                    nltk.download(resource_name, quiet=True)
+                    nltk.download(resource_name, download_dir=nltk_data_path, quiet=False)
                     self.logger.info(f"NLTK資源 {resource_name} 下載完成")
+                    
+                    # 特殊處理punkt資源，確保punkt_tab目錄存在
+                    if resource_name == 'punkt':
+                        punkt_dir = os.path.join(nltk_data_path, "tokenizers", "punkt")
+                        if os.path.exists(punkt_dir):
+                            # 確保english資料夾存在
+                            english_dir = os.path.join(punkt_dir, "english")
+                            os.makedirs(english_dir, exist_ok=True)
+                            
+                            # 建立punkt_tab目錄並複製相關檔案
+                            punkt_tab_dir = os.path.join(nltk_data_path, "tokenizers", "punkt_tab", "english")
+                            os.makedirs(os.path.dirname(punkt_tab_dir), exist_ok=True)
+                            
+                            if not os.path.exists(punkt_tab_dir):
+                                os.makedirs(punkt_tab_dir, exist_ok=True)
+                                self.logger.info(f"已建立punkt_tab目錄: {punkt_tab_dir}")
+                                
+                                # 複製相關檔案
+                                punkt_english_files = os.listdir(english_dir) if os.path.exists(english_dir) else []
+                                for file in punkt_english_files:
+                                    src = os.path.join(english_dir, file)
+                                    dst = os.path.join(punkt_tab_dir, file)
+                                    if os.path.isfile(src):
+                                        import shutil
+                                        shutil.copy2(src, dst)
+                                        self.logger.info(f"已複製檔案: {file}")
+                                        
                 except Exception as e:
                     self.logger.error(f"下載NLTK資源 {resource_name} 時發生錯誤: {str(e)}")
     
@@ -266,21 +304,68 @@ class DataProcessor:
         Returns:
             list: 處理後的詞列表
         """
+        if not text or not isinstance(text, str):
+            return []
+            
         try:
-            # 分詞
-            tokens = word_tokenize(text.lower())
+            # 優先使用不依賴punkt_tab的tokenization方法
+            try:
+                # 直接使用punkt而非punkt_tab
+                from nltk.tokenize import word_tokenize as nltk_word_tokenize
+                tokens = nltk_word_tokenize(text.lower())
+                self.logger.debug("成功使用NLTK基本分詞")
+            except Exception as e:
+                self.logger.debug(f"基本分詞失敗，嘗試替代方法: {str(e)}")
+                
+                # 嘗試使用其他NLTK分詞器
+                try:
+                    from nltk.tokenize import RegexpTokenizer
+                    tokenizer = RegexpTokenizer(r'\w+')
+                    tokens = tokenizer.tokenize(text.lower())
+                    self.logger.debug("成功使用NLTK正則表達式分詞器")
+                except Exception as e2:
+                    self.logger.warning(f"NLTK分詞完全失敗: {str(e2)}，使用基本正則表達式")
+                    tokens = re.findall(r'\b\w+\b', text.lower())
+            
+            # 初始化停用詞集合（如果尚未初始化）
+            if not hasattr(self, 'stop_words') or not self.stop_words:
+                try:
+                    self.stop_words = set(stopwords.words('english'))
+                except:
+                    # 如果無法獲取NLTK停用詞，使用基本停用詞列表
+                    self.stop_words = {'a', 'an', 'the', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 
+                                     'at', 'from', 'by', 'for', 'with', 'about', 'to', 'in', 'on'}
+                    self.logger.warning("使用基本停用詞列表替代NLTK停用詞")
+            
+            # 初始化詞形還原器（如果尚未初始化）
+            if not hasattr(self, 'lemmatizer'):
+                try:
+                    self.lemmatizer = WordNetLemmatizer()
+                except:
+                    # 如果無法創建詞形還原器，設為None
+                    self.lemmatizer = None
+                    self.logger.warning("無法創建WordNetLemmatizer，將跳過詞形還原")
             
             # 移除停用詞和詞形還原
             filtered_tokens = []
             for word in tokens:
                 if word.isalpha() and word not in self.stop_words:
-                    lemmatized = self.lemmatizer.lemmatize(word)
-                    filtered_tokens.append(lemmatized)
+                    try:
+                        if self.lemmatizer:
+                            lemmatized = self.lemmatizer.lemmatize(word)
+                            filtered_tokens.append(lemmatized)
+                        else:
+                            filtered_tokens.append(word)
+                    except Exception as lemma_err:
+                        # 如果詞形還原失敗，使用原始詞
+                        self.logger.debug(f"詞形還原失敗: {str(lemma_err)}")
+                        filtered_tokens.append(word)
             
             return filtered_tokens
         except Exception as e:
             self.logger.error(f"分詞和詞形還原時出錯: {str(e)}")
-            return []
+            # 返回簡單分詞結果作為後備
+            return re.findall(r'\b\w+\b', text.lower())
     
     def save_processed_data(self, df, output_path):
         """保存處理後的數據

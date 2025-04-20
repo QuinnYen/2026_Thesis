@@ -417,7 +417,7 @@ class AnalysisTab(QWidget):
             self,
             "導入數據檔案",
             "",
-            "文本檔案 (*.csv *.txt);;所有文件 (*.*)"
+            "文本檔案 (*.csv *.txt *.json);;所有文件 (*.*)"
         )
         
         if not file_path:
@@ -430,11 +430,23 @@ class AnalysisTab(QWidget):
             # 提取文件名作為數據集名稱
             file_name = Path(file_path).stem
             
+            # 獲取數據目錄 - 使用安全方式
+            try:
+                # 方法1：直接從配置對象獲取路徑字符串
+                if isinstance(self.config, dict):
+                    data_dir = self.config.get("paths", {}).get("data_dir", "./data")
+                elif hasattr(self.config, "config") and isinstance(self.config.config, dict):
+                    data_dir = self.config.config.get("paths", {}).get("data_dir", "./data")
+                else:
+                    data_dir = "./data"
+            except Exception:
+                data_dir = "./data"
+            
+            # 確保目錄存在
+            os.makedirs(data_dir, exist_ok=True)
+            
             # 保存到數據目錄
-            output_path = os.path.join(
-                self.config.get("paths", {}).get("data_dir", "./data"),
-                f"{file_name}.csv"
-            )
+            output_path = os.path.join(data_dir, f"{file_name}.csv")
             
             # 確保目錄存在
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -454,7 +466,12 @@ class AnalysisTab(QWidget):
             self.status_message.emit(f"已導入數據集 {file_name}", 3000)
             
         except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            # 使用全局logger而不是self.logger
+            logger = get_logger("analysis_tab")
             logger.error(f"導入數據出錯: {str(e)}")
+            logger.error(error_details)
             QMessageBox.critical(self, "導入出錯", f"導入數據時出錯:\n{str(e)}")
     
     def load_selected_data(self):
@@ -700,20 +717,43 @@ class AnalysisTab(QWidget):
         vectors_html = "<style>table {border-collapse: collapse; width: 100%;} th, td {border: 1px solid #dddddd; text-align: left; padding: 8px;} th {background-color: #f2f2f2;} tr:nth-child(even) {background-color: #f9f9f9;}</style>"
         vectors_html += "<h3>面向向量概述</h3>"
         
-        # 顯示面向向量基本信息
-        shape = self.aspect_vectors.shape
-        vectors_html += f"<p>向量維度: {shape}</p>"
-        vectors_html += f"<p>向量數量: {shape[0]}</p>"
-        
-        # 顯示前5個面向向量的範例
-        vectors_html += "<h4>前5個面向向量示例:</h4>"
-        vectors_html += "<table><tr><th>向量索引</th><th>向量值(前10維)</th></tr>"
-        
-        for i in range(min(5, shape[0])):
-            vector_preview = ", ".join(f"{val:.4f}" for val in self.aspect_vectors[i][:10])
-            if shape[1] > 10:
-                vector_preview += "..."
-            vectors_html += f"<tr><td>{i}</td><td>{vector_preview}</td></tr>"
+        # 檢查 aspect_vectors 是字典還是 NumPy 數組
+        if isinstance(self.aspect_vectors, dict):
+            # 處理字典格式的 aspect_vectors
+            topics = list(self.aspect_vectors.keys())
+            vectors_count = len(topics)
+            if vectors_count > 0:
+                vector_dim = len(next(iter(self.aspect_vectors.values())))
+                vectors_html += f"<p>向量維度: ({vectors_count}, {vector_dim})</p>"
+                vectors_html += f"<p>向量數量: {vectors_count}</p>"
+                
+                # 顯示前5個面向向量的範例
+                vectors_html += "<h4>前5個面向向量示例:</h4>"
+                vectors_html += "<table><tr><th>主題</th><th>向量值(前10維)</th></tr>"
+                
+                for i, topic in enumerate(topics[:5]):
+                    vector = self.aspect_vectors[topic]
+                    vector_preview = ", ".join(f"{val:.4f}" for val in vector[:10])
+                    if len(vector) > 10:
+                        vector_preview += "..."
+                    vectors_html += f"<tr><td>{topic}</td><td>{vector_preview}</td></tr>"
+            else:
+                vectors_html += "<p>未找到面向向量</p>"
+        else:
+            # 處理 NumPy 數組格式的 aspect_vectors
+            shape = self.aspect_vectors.shape
+            vectors_html += f"<p>向量維度: {shape}</p>"
+            vectors_html += f"<p>向量數量: {shape[0]}</p>"
+            
+            # 顯示前5個面向向量的範例
+            vectors_html += "<h4>前5個面向向量示例:</h4>"
+            vectors_html += "<table><tr><th>向量索引</th><th>向量值(前10維)</th></tr>"
+            
+            for i in range(min(5, shape[0])):
+                vector_preview = ", ".join(f"{val:.4f}" for val in self.aspect_vectors[i][:10])
+                if shape[1] > 10:
+                    vector_preview += "..."
+                vectors_html += f"<tr><td>{i}</td><td>{vector_preview}</td></tr>"
             
         vectors_html += "</table>"
         
@@ -766,8 +806,32 @@ class AnalysisTab(QWidget):
             return
             
         try:
-            # 檢查結果目錄
-            results_dir = self.config.get("paths", {}).get("output_dir", "./output")
+            # 安全地獲取配置值
+            results_dir = './output'  # 默認值
+            
+            # 嘗試不同的方式獲取配置值
+            try:
+                if isinstance(self.config, dict):
+                    results_dir = self.config.get("paths", {}).get("output_dir", "./output")
+                elif hasattr(self.config, "get"):
+                    # 嘗試直接獲取配置路徑
+                    try:
+                        paths = self.config.get("paths")
+                        if isinstance(paths, dict):
+                            results_dir = paths.get("output_dir", "./output")
+                        else:
+                            results_dir = "./output"
+                    except TypeError:
+                        # 如果上述方法失敗，使用默認路徑
+                        results_dir = "./output"
+                else:
+                    # 配置對象不可用，使用默認路徑
+                    results_dir = "./output"
+            except Exception as config_error:
+                logger.warning(f"讀取配置時出現錯誤，使用默認值: {str(config_error)}")
+                results_dir = "./output"
+            
+            # 確保結果目錄存在
             os.makedirs(results_dir, exist_ok=True)
             
             # 生成結果文件名
@@ -954,24 +1018,86 @@ class AnalysisThread(QThread):
             results['lda_model'] = lda_model
             results['topics'] = topics
             
+            # 獲取文檔主題分佈 (這部分是新增的，用於獲取doc_main_topics)
+            if lda_model is not None:
+                # 準備文檔-主題分佈所需的向量化文本
+                if hasattr(modeler, 'vectorizer') and hasattr(modeler, 'feature_names'):
+                    vectorizer = modeler.vectorizer
+                    X = vectorizer.transform(processed_texts)
+                    doc_topic_dist = lda_model.transform(X)
+                    # 獲取每個文檔的主要主題索引
+                    doc_main_topics = np.argmax(doc_topic_dist, axis=1)
+                else:
+                    # 如果無法獲取向量化器，則將所有文檔分配到主題0
+                    self.logger.warning("無法獲取LDA模型的向量化器，將所有文檔分配到主題0")
+                    doc_main_topics = np.zeros(len(processed_texts), dtype=int)
+            else:
+                # LDA模型訓練失敗，將所有文檔分配到主題0
+                self.logger.warning("LDA模型訓練失敗，將所有文檔分配到主題0")
+                doc_main_topics = np.zeros(len(processed_texts), dtype=int)
+            
             # 4. 面向向量計算
             self.status_updated.emit("正在進行面向向量計算...")
             self.logger.info("開始面向向量計算")
             
             calculator = self.modules['aspect_calculator']
             
-            # 設置啟用的注意力機制
-            calculator.enabled_mechanisms = self.params['attention_mechanisms']
+            # 定義進度回調函數
+            def _aspect_progress_callback(message_or_processed, percentage_or_total=None):
+                """面向向量計算進度回調
+                
+                這個回調函數兼容兩種不同的參數格式:
+                1. (message, percentage) - 用於來自aspect_calculator的回調
+                2. (processed, total) - 用於舊版本的回調格式
+                """
+                # 檢查是否為(message, percentage)格式
+                if isinstance(message_or_processed, str):
+                    # 是字符串，表示是message參數
+                    message = message_or_processed
+                    percentage = percentage_or_total or 0
+                    
+                    # 將百分比轉換為進度值
+                    processed = int(percentage)
+                    total = 100
+                    
+                    # 更新進度條
+                    self.progress_updated.emit(processed, total, "面向向量計算")
+                    
+                    # 更新狀態訊息
+                    self.status_updated.emit(message)
+                else:
+                    # 是數字，表示是processed參數
+                    processed = message_or_processed
+                    total = percentage_or_total or 100
+                    
+                    # 更新進度條
+                    self.progress_updated.emit(processed, total, "面向向量計算")
+                    
+                    # 每20個向量更新一次狀態
+                    if processed % 20 == 0 or processed == total:
+                        self.status_updated.emit(f"計算面向向量: {processed}/{total}")
             
-            # 計算面向向量
-            aspect_vectors = calculator.calculate_aspect_vectors(
-                bert_embeddings=bert_embeddings,
-                texts=processed_texts,
+            # 使用新的參數格式調用
+            aspect_result = calculator.calculate_aspect_vectors(
+                embeddings=bert_embeddings,
+                metadata=pd.DataFrame({
+                    'main_topic': [f"Topic_{topic_idx+1}" for topic_idx in doc_main_topics],
+                    'text': processed_texts
+                }),
                 topics=topics,
-                progress_callback=self._aspect_progress_callback
+                progress_callback=_aspect_progress_callback
             )
             
-            results['aspect_vectors'] = aspect_vectors
+            # 從返回結果中獲取面向向量
+            if aspect_result and 'aspect_vectors' in aspect_result:
+                aspect_vectors = aspect_result['aspect_vectors']
+                results['aspect_vectors'] = aspect_vectors
+            else:
+                self.logger.error("無法獲取面向向量結果")
+                if self.should_stop:
+                    return
+                else:
+                    raise ValueError("面向向量計算失敗")
             
             # 5. 評估模型
             self.status_updated.emit("正在評估模型...")
@@ -999,14 +1125,13 @@ class AnalysisThread(QThread):
             self.error_occurred.emit(str(e))
     
     def _lda_progress_callback(self, iteration, total, perplexity=None):
-        """LDA進度回調"""
         message = f"LDA迭代: {iteration}/{total}"
         if perplexity is not None:
-            message += f", 困惑度: {perplexity:.2f}"
-        
+            if isinstance(perplexity, (float, int)):
+                message += f", 困惑度: {perplexity:.2f}"
+            else:
+                message += f", 困惑度: {perplexity}"
         self.progress_updated.emit(iteration, total, "LDA訓練")
-        
-        # 每10次迭代更新一次狀態
         if iteration % 10 == 0 or iteration == total:
             self.status_updated.emit(message)
     

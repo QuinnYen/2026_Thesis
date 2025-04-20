@@ -54,63 +54,124 @@ class AspectCalculator:
         self.vis_dir = os.path.join(self.output_dir, 'visualizations')
         os.makedirs(self.vis_dir, exist_ok=True)
     
-    def calculate_aspect_vectors(self, embeddings_path, metadata_path, topics_path=None, progress_callback=None):
+    def calculate_aspect_vectors(self, embeddings_path=None, metadata_path=None, topics_path=None, 
+                          embeddings=None, metadata=None, topics=None, progress_callback=None):
         """計算面向向量
+        
+        支援兩種輸入方式：
+        1. 文件路徑：提供embeddings_path和metadata_path
+        2. 直接輸入：提供embeddings和metadata
         
         Args:
             embeddings_path: BERT嵌入向量文件路徑
             metadata_path: 包含主題標籤的元數據文件路徑
             topics_path: 主題詞文件路徑，用於關鍵詞注意力
+            embeddings: 直接提供的嵌入向量數組
+            metadata: 直接提供的元數據DataFrame
+            topics: 直接提供的主題詞字典
             progress_callback: 進度回調函數
-            
+                
         Returns:
             dict: 包含結果的字典
         """
         try:
             start_time = time.time()
             self.logger.info(f"開始計算面向向量")
-            self.logger.info(f"使用嵌入向量: {embeddings_path}")
-            self.logger.info(f"使用元數據: {metadata_path}")
-            if topics_path:
-                self.logger.info(f"使用主題詞: {topics_path}")
             
-            # 加載嵌入向量
-            self.logger.info(f"正在加載嵌入向量...")
-            if progress_callback:
-                progress_callback("加載嵌入向量...", 10)
-                
-            try:
-                embeddings_data = np.load(embeddings_path)
-                embeddings = embeddings_data['embeddings']
-                self.logger.info(f"加載了 {embeddings.shape[0]} 個嵌入向量，維度為 {embeddings.shape[1]}")
-            except Exception as e:
-                self.logger.error(f"加載嵌入向量時出錯: {str(e)}")
+            # 檢查輸入方式
+            use_direct_input = embeddings is not None and metadata is not None
+            use_file_input = embeddings_path is not None and metadata_path is not None
+            
+            if not (use_direct_input or use_file_input):
+                self.logger.error("必須提供嵌入向量和元數據（直接提供或通過文件路徑）")
                 return None
             
-            # 加載元數據
-            self.logger.info(f"正在加載元數據...")
-            if progress_callback:
-                progress_callback("加載元數據...", 20)
+            # 根據輸入方式加載數據
+            if use_file_input:
+                self.logger.info(f"使用文件輸入方式")
+                self.logger.info(f"使用嵌入向量: {embeddings_path}")
+                self.logger.info(f"使用元數據: {metadata_path}")
+                if topics_path:
+                    self.logger.info(f"使用主題詞: {topics_path}")
                 
-            try:
-                metadata = pd.read_csv(metadata_path)
-                self.logger.info(f"加載了 {len(metadata)} 條元數據記錄")
+                # 加載嵌入向量
+                self.logger.info(f"正在加載嵌入向量...")
+                if progress_callback:
+                    progress_callback("加載嵌入向量...", 10)
+                    
+                try:
+                    embeddings_data = np.load(embeddings_path)
+                    if 'embeddings' in embeddings_data:
+                        embeddings = embeddings_data['embeddings']
+                    else:
+                        # 嘗試獲取第一個數組
+                        for key in embeddings_data:
+                            embeddings = embeddings_data[key]
+                            break
+                    self.logger.info(f"加載了 {embeddings.shape[0]} 個嵌入向量，維度為 {embeddings.shape[1]}")
+                except Exception as e:
+                    self.logger.error(f"加載嵌入向量時出錯: {str(e)}")
+                    return None
+                
+                # 加載元數據
+                self.logger.info(f"正在加載元數據...")
+                if progress_callback:
+                    progress_callback("加載元數據...", 20)
+                    
+                try:
+                    metadata = pd.read_csv(metadata_path)
+                    self.logger.info(f"加載了 {len(metadata)} 條元數據記錄")
+                    
+                    # 檢查主題列
+                    if 'main_topic' not in metadata.columns:
+                        self.logger.error(f"元數據中找不到 'main_topic' 列")
+                        return None
+                        
+                    # 檢查主題數
+                    topics_list = metadata['main_topic'].unique()
+                    self.logger.info(f"識別出 {len(topics_list)} 個主題")
+                except Exception as e:
+                    self.logger.error(f"加載元數據時出錯: {str(e)}")
+                    return None
+            else:
+                self.logger.info(f"使用直接輸入方式")
+                self.logger.info(f"嵌入向量形狀: {embeddings.shape}")
+                self.logger.info(f"元數據記錄數: {len(metadata)}")
                 
                 # 檢查主題列
+                if not isinstance(metadata, pd.DataFrame):
+                    try:
+                        metadata = pd.DataFrame(metadata)
+                    except:
+                        self.logger.error("無法將元數據轉換為DataFrame")
+                        return None
+                
+                # 處理主題列情況
                 if 'main_topic' not in metadata.columns:
-                    self.logger.error(f"元數據中找不到 'main_topic' 列")
-                    return None
-                    
+                    # 如果沒有main_topic列但有topics參數，使用topics生成main_topic列
+                    if topics is not None and isinstance(topics, dict):
+                        # 假設metadata和embeddings順序一致，為每個樣本分配主題
+                        # 這裡實際情況可能需要更複雜的邏輯
+                        if 'topic' in metadata.columns:
+                            metadata['main_topic'] = metadata['topic']
+                        else:
+                            self.logger.error("元數據中找不到主題信息")
+                            return None
+                    else:
+                        self.logger.error("元數據中找不到'main_topic'列，且未提供topics")
+                        return None
+                
                 # 檢查主題數
-                topics = metadata['main_topic'].unique()
-                self.logger.info(f"識別出 {len(topics)} 個主題")
-            except Exception as e:
-                self.logger.error(f"加載元數據時出錯: {str(e)}")
-                return None
+                topics_list = metadata['main_topic'].unique()
+                self.logger.info(f"識別出 {len(topics_list)} 個主題")
             
-            # 獲取基礎文件名
-            base_name = os.path.basename(metadata_path)
-            base_name_without_ext = os.path.splitext(base_name)[0].replace('_with_topics', '')
+            # 獲取基礎文件名（用於輸出）或使用時間戳
+            if metadata_path:
+                base_name = os.path.basename(metadata_path)
+                base_name_without_ext = os.path.splitext(base_name)[0].replace('_with_topics', '')
+            else:
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                base_name_without_ext = f"direct_input_{timestamp}"
             
             # 為每種注意力機制計算面向向量
             all_results = {}
@@ -132,10 +193,25 @@ class AspectCalculator:
                 # 設置權重（僅對組合注意力有效）
                 weights = self.attention_weights if attention_type == 'combined' else None
                 
+                # 取得要傳給apply_attention_mechanism的topics信息
+                topics_info = topics_path
+                if topics is not None and topics_path is None:
+                    # 如果提供了直接的topics字典但沒有topics_path
+                    # 在這種情況下需要將topics保存到臨時文件或適配接口
+                    try:
+                        import tempfile
+                        import json
+                        with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.json') as temp:
+                            json.dump(topics, temp)
+                            topics_info = temp.name
+                    except:
+                        # 如果無法保存臨時文件，則不提供topics信息
+                        topics_info = None
+                
                 # 應用注意力機制
                 result = apply_attention_mechanism(
                     attention_type, embeddings, metadata, 
-                    topics_path=topics_path, weights=weights
+                    topics_path=topics_info, weights=weights
                 )
                 
                 # 保存結果
@@ -153,72 +229,81 @@ class AspectCalculator:
                     'metrics': metrics
                 }
                 
-                # 保存面向向量
-                output_path = os.path.join(
-                    self.output_dir, 
-                    f"{base_name_without_ext}_{attention_type}_aspect_vectors.npz"
-                )
-                
-                # 轉換為NumPy數組以便保存
-                aspect_vectors_array = np.zeros((len(aspect_vectors), embeddings.shape[1]))
-                aspect_topics = list(aspect_vectors.keys())
-                
-                for j, topic in enumerate(aspect_topics):
-                    aspect_vectors_array[j] = aspect_vectors[topic]
-                
-                np.savez_compressed(
-                    output_path, 
-                    aspect_vectors=aspect_vectors_array, 
-                    topics=aspect_topics
-                )
-                
-                # 保存元數據
-                metadata_output = {
-                    'attention_type': attention_type,
-                    'metrics': metrics,
-                    'topics': aspect_topics
-                }
-                
-                metadata_path = os.path.join(
-                    self.output_dir, 
-                    f"{base_name_without_ext}_{attention_type}_aspect_metadata.json"
-                )
-                
-                with open(metadata_path, 'w', encoding='utf-8') as f:
-                    json.dump(metadata_output, f, ensure_ascii=False, indent=2)
-                
-                all_results[attention_type] = {
-                    'vectors_path': output_path,
-                    'metadata_path': metadata_path,
-                    'metrics': metrics
-                }
-                
-                # 創建可視化
-                if progress_callback:
-                    progress_callback(f"為 {attention_type} 注意力機制創建可視化...", progress_end - 5)
-                
-                # 可視化: t-SNE降維
-                vis_path = self._visualize_tsne(
-                    embeddings, metadata, aspect_vectors,
-                    f"{base_name_without_ext}_{attention_type}"
-                )
-                
-                if vis_path:
-                    all_results[attention_type]['visualization'] = vis_path
+                # 如果使用文件輸入方式，保存結果到文件
+                if use_file_input:
+                    # 保存面向向量
+                    output_path = os.path.join(
+                        self.output_dir, 
+                        f"{base_name_without_ext}_{attention_type}_aspect_vectors.npz"
+                    )
+                    
+                    # 轉換為NumPy數組以便保存
+                    aspect_vectors_array = np.zeros((len(aspect_vectors), embeddings.shape[1]))
+                    aspect_topics = list(aspect_vectors.keys())
+                    
+                    for j, topic in enumerate(aspect_topics):
+                        aspect_vectors_array[j] = aspect_vectors[topic]
+                    
+                    np.savez_compressed(
+                        output_path, 
+                        aspect_vectors=aspect_vectors_array, 
+                        topics=aspect_topics
+                    )
+                    
+                    # 保存元數據
+                    metadata_output = {
+                        'attention_type': attention_type,
+                        'metrics': metrics,
+                        'topics': aspect_topics
+                    }
+                    
+                    metadata_path = os.path.join(
+                        self.output_dir, 
+                        f"{base_name_without_ext}_{attention_type}_aspect_metadata.json"
+                    )
+                    
+                    with open(metadata_path, 'w', encoding='utf-8') as f:
+                        json.dump(metadata_output, f, ensure_ascii=False, indent=2)
+                    
+                    all_results[attention_type] = {
+                        'vectors_path': output_path,
+                        'metadata_path': metadata_path,
+                        'metrics': metrics
+                    }
+                    
+                    # 創建可視化
+                    if progress_callback:
+                        progress_callback(f"為 {attention_type} 注意力機制創建可視化...", progress_end - 5)
+                    
+                    # 可視化: t-SNE降維
+                    vis_path = self._visualize_tsne(
+                        embeddings, metadata, aspect_vectors,
+                        f"{base_name_without_ext}_{attention_type}"
+                    )
+                    
+                    if vis_path:
+                        all_results[attention_type]['visualization'] = vis_path
+                else:
+                    # 如果使用直接輸入方式，不保存文件，直接添加結果
+                    all_results[attention_type] = {
+                        'aspect_vectors': aspect_vectors,
+                        'metrics': metrics
+                    }
             
             # 創建比較可視化
             if progress_callback:
                 progress_callback("創建注意力機制比較可視化...", 80)
                 
             # 比較不同注意力機制的評估指標
-            comparison_path = self._create_comparison_visualization(
-                attention_results, f"{base_name_without_ext}_comparison"
-            )
-            
-            if comparison_path:
-                all_results['comparison'] = {
-                    'visualization': comparison_path
-                }
+            if use_file_input:
+                comparison_path = self._create_comparison_visualization(
+                    attention_results, f"{base_name_without_ext}_comparison"
+                )
+                
+                if comparison_path:
+                    all_results['comparison'] = {
+                        'visualization': comparison_path
+                    }
             
             # 找到最佳注意力機制
             best_attention = self._find_best_attention(attention_results)
@@ -233,10 +318,13 @@ class AspectCalculator:
             if progress_callback:
                 progress_callback("面向向量計算完成", 100)
                 
+            # 基於最佳注意力機制的結果
+            best_vectors = attention_results[best_attention['type']]['aspect_vectors']
+            
             return {
                 'all_results': all_results,
                 'best_attention': best_attention,
-                'comparison_visualization': comparison_path
+                'aspect_vectors': best_vectors  # 直接提供最佳注意力機制的面向向量
             }
             
         except Exception as e:

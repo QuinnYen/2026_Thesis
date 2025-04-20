@@ -140,27 +140,29 @@ class LDAModeler:
                 max_iter=self.max_iter,
                 learning_method='online',
                 random_state=self.random_state,
-                n_jobs=-1  # 使用所有可用CPU核心
+                verbose=1,       # 啟用詳細輸出，但不使用callback
+                n_jobs=-1        # 使用所有可用CPU核心
             )
             
-            # 訓練模型，並在訓練過程中更新進度
-            last_iter = 2
-            
-            def callback_fn(model):
-                nonlocal last_iter
-                current_iter = model.n_iter_ if hasattr(model, 'n_iter_') else last_iter + 1
-                last_iter = current_iter
+            # 不使用callback，直接訓練模型
+            # 如果需要進度更新，可以手動實現
+            if progress_callback:
+                # 初始通知
+                progress_callback(2, self.max_iter, f"LDA迭代 0/{self.max_iter}")
                 
-                if progress_callback:
-                    progress_callback(current_iter, self.max_iter, f"LDA迭代 {current_iter}/{self.max_iter}")
-                return False  # 繼續迭代
-            
-            # 設置回調函數
-            if hasattr(lda_model, 'set_params'):
-                lda_model.set_params(verbose=1, callback=callback_fn)
-            
-            # 訓練模型
-            lda_model.fit(X)
+                # 分批訓練，手動更新進度
+                for i in range(self.max_iter):
+                    if i == 0:
+                        lda_model.fit_transform(X)
+                    else:
+                        lda_model.partial_fit(X)
+                        
+                    # 更新進度
+                    progress_callback(i + 3, self.max_iter, f"LDA迭代 {i+1}/{self.max_iter}")
+            else:
+                # 正常訓練
+                lda_model.fit(X)
+                
             self.logger.info(f"LDA模型訓練完成")
             
             # 獲取主題-詞語分布，並正規化

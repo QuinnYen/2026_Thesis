@@ -1,180 +1,257 @@
 """
-配置管理模組 - 負責系統配置的讀取、保存和管理
+配置管理模組 - 負責管理應用程式的配置與設定
 """
+
 import os
 import json
 import logging
+from pathlib import Path
+import copy
+
+# 導入系統日誌模組
+from utils.logger import get_logger
+
+# 獲取logger
+logger = get_logger("config")
 
 class Config:
-    """配置管理類"""
+    """配置管理類，處理應用程式的配置讀取、保存和訪問"""
     
-    # 默認配置
-    DEFAULT_CONFIG = {
-        # 路徑配置
-        "paths": {
-            "data_dir": "./data",
-            "output_dir": "./output",
-            "model_dir": "./models",
-            "log_dir": "./logs",
-        },
-        
-        # BERT模型配置
-        "bert": {
-            "model_name": "bert-base-uncased",
-            "max_length": 128,
-            "batch_size": 16,
-            "use_gpu": True,
-        },
-        
-        # LDA模型配置
-        "lda": {
-            "n_topics": 10,
-            "alpha": 0.1,
-            "beta": 0.01,
-            "max_iter": 50,
-            "random_state": 42,
-        },
-        
-        # 注意力機制配置
-        "attention": {
-            "enabled_mechanisms": ["similarity", "keyword", "self", "combined"],
-            "weights": {
-                "similarity": 0.33,
-                "keyword": 0.33,
-                "self": 0.34,
-            }
-        },
-        
-        # 評估指標配置
-        "evaluation": {
-            "metrics": ["coherence", "separation", "combined"],
-            "coherence_weight": 0.5,
-            "separation_weight": 0.5,
-        },
-        
-        # 可視化配置
-        "visualization": {
-            "dpi": 300,
-            "format": "png",
-            "color_scheme": "viridis",
-        },
-        
-        # 數據集配置
-        "datasets": {
-            "imdb": {
-                "name": "IMDB電影評論",
-                "type": "movie",
-                "language": "english",
-            },
-            "amazon": {
-                "name": "Amazon產品評論",
-                "type": "product",
-                "language": "english",
-            },
-            "yelp": {
-                "name": "Yelp餐廳評論",
-                "type": "restaurant",
-                "language": "english",
-            }
-        },
-        
-        # 系統配置
-        "system": {
-            "log_level": "INFO",
-            "multi_processing": True,
-            "num_workers": 4,
-        }
-    }
-    
-    def __init__(self, config_file="config.json"):
+    def __init__(self, config_path=None):
         """初始化配置管理器
         
         Args:
-            config_file: 配置文件路徑
+            config_path: 配置文件路徑，若為None則使用預設路徑
         """
-        self.config_file = config_file
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.logger = logger
+        self.config = {}
+        self.config_path = config_path
         
-        # 嘗試載入配置文件
-        if os.path.exists(config_file):
-            self.load()
-        else:
-            # 如果配置文件不存在，則創建目錄並保存默認配置
-            os.makedirs(os.path.dirname(os.path.abspath(config_file)), exist_ok=True)
-            self.save()
+        # 如果未指定配置文件路徑，使用預設路徑
+        if self.config_path is None:
+            self.config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
+                                         "utils", "settings", "config.json")
+        
+        # 載入配置
+        self.load()
+        
+    def load(self, path=None):
+        """從指定路徑載入配置
+        
+        Args:
+            path: 配置文件路徑，若為None則使用初始化時設定的路徑
+            
+        Returns:
+            bool: 是否成功載入配置
+        """
+        if path is not None:
+            self.config_path = path
+            
+        try:
+            # 檢查配置文件是否存在
+            if not os.path.exists(self.config_path):
+                self.logger.warning(f"配置文件不存在: {self.config_path}，將創建默認配置")
+                self._create_default_config()
+                return True
+                
+            # 讀取配置文件
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+                
+            self.logger.info(f"成功載入配置: {self.config_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"載入配置出錯: {str(e)}")
+            self._create_default_config()
+            return False
+            
+    def save(self, path=None):
+        """保存配置到指定路徑
+        
+        Args:
+            path: 配置文件路徑，若為None則使用當前配置路徑
+            
+        Returns:
+            bool: 是否成功保存配置
+        """
+        try:
+            save_path = path if path is not None else self.config_path
+            
+            # 確保目錄存在
+            os.makedirs(os.path.dirname(save_path), exist_ok=True)
+            
+            # 保存配置
+            with open(save_path, 'w', encoding='utf-8') as f:
+                json.dump(self.config, f, ensure_ascii=False, indent=2)
+                
+            self.logger.info(f"成功保存配置: {save_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"保存配置出錯: {str(e)}")
+            return False
     
-    def get(self, section, key=None):
+    def _create_default_config(self):
+        """創建默認配置"""
+        try:
+            # 應用程式路徑
+            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            # 設置預設配置
+            self.config = {
+                "app": {
+                    "name": "跨領域情感分析系統",
+                    "version": "0.1.0",
+                    "language": "zh_TW"
+                },
+                "paths": {
+                    "data_dir": os.path.join(app_dir, "data"),
+                    "output_dir": os.path.join(app_dir, "output"),
+                    "logs_dir": os.path.join(app_dir, "logs"),
+                    "resources_dir": os.path.join(app_dir, "resources"),
+                    "models_dir": os.path.join(app_dir, "models"),
+                    "visualizations_dir": os.path.join(app_dir, "output", "visualizations")
+                },
+                "data_processing": {
+                    "encoding": "utf-8",
+                    "max_sample_size": 5000,
+                    "random_seed": 42,
+                    "clean_html": True,
+                    "remove_stopwords": True,
+                    "lemmatize": True
+                },
+                "bert": {
+                    "model_name": "bert-base-uncased",
+                    "max_length": 128,
+                    "batch_size": 16,
+                    "use_gpu": True
+                },
+                "lda": {
+                    "n_topics": 10,
+                    "max_iter": 50,
+                    "random_state": 42,
+                    "n_top_words": 15
+                },
+                "attention": {
+                    "enabled_mechanisms": ["no", "similarity", "keyword", "self", "combined"],
+                    "similarity_temperature": 0.1,
+                    "keyword_weight": 0.5
+                },
+                "evaluation": {
+                    "coherence_weight": 0.5,
+                    "separation_weight": 0.5,
+                    "visualizations": True,
+                    "report_format": "html"
+                },
+                "visualization": {
+                    "output_dir": os.path.join(app_dir, "output", "visualizations"),
+                    "dpi": 300,
+                    "figsize": [12, 8],
+                    "cmap": "viridis",
+                    "show_values": True
+                }
+            }
+            
+            # 確保目錄存在
+            for path_key, path_value in self.config["paths"].items():
+                os.makedirs(path_value, exist_ok=True)
+                
+            # 保存默認配置
+            self.save()
+            self.logger.info("已創建默認配置")
+            
+        except Exception as e:
+            self.logger.error(f"創建默認配置出錯: {str(e)}")
+    
+    def get(self, section, key=None, default=None):
         """獲取配置項
         
         Args:
-            section: 配置段名稱
-            key: 配置項名稱，如果為None則返回整個段
+            section: 配置區段
+            key: 配置鍵名，若為None則返回整個區段
+            default: 默認值，若配置項不存在則返回此值
             
         Returns:
-            配置值
+            配置值或默認值
         """
-        if key is None:
-            return self.config.get(section, {})
-        
-        # 檢查 section 是否存在於配置中
-        section_data = self.config.get(section, {})
-        if isinstance(section_data, dict):
-            # 如果 section_data 是字典，則直接獲取 key 對應的值
-            return section_data.get(key)
-        else:
-            # 如果 section_data 不是字典，則返回 None 或者默認值
-            return None
+        try:
+            if section not in self.config:
+                return default
+                
+            if key is None:
+                return self.config[section]
+                
+            if isinstance(self.config[section], dict) and key in self.config[section]:
+                return self.config[section][key]
+                
+            return default
+        except Exception as e:
+            self.logger.error(f"獲取配置項出錯: {str(e)}")
+            return default
     
     def set(self, section, key, value):
         """設置配置項
         
         Args:
-            section: 配置段名稱
-            key: 配置項名稱
+            section: 配置區段
+            key: 配置鍵名
             value: 配置值
+            
+        Returns:
+            bool: 是否成功設置配置項
         """
-        if section not in self.config:
-            self.config[section] = {}
-        self.config[section][key] = value
-    
-    def load(self):
-        """從文件載入配置"""
         try:
-            with open(self.config_file, 'r', encoding='utf-8') as f:
-                loaded_config = json.load(f)
-                # 使用遞迴更新，保留默認配置中存在但加載的配置中不存在的項
-                self._recursive_update(self.config, loaded_config)
-            logging.info(f"配置已從 {self.config_file} 載入")
+            # 確保區段存在
+            if section not in self.config:
+                self.config[section] = {}
+                
+            # 設置配置項
+            self.config[section][key] = value
+            
+            return True
         except Exception as e:
-            logging.error(f"載入配置文件時出錯: {str(e)}")
+            self.logger.error(f"設置配置項出錯: {str(e)}")
+            return False
     
-    def save(self):
-        """保存配置到文件"""
-        try:
-            with open(self.config_file, 'w', encoding='utf-8') as f:
-                json.dump(self.config, f, ensure_ascii=False, indent=4)
-            logging.info(f"配置已保存到 {self.config_file}")
-        except Exception as e:
-            logging.error(f"保存配置文件時出錯: {str(e)}")
-    
-    def _recursive_update(self, d, u):
-        """遞迴更新字典
+    def update_section(self, section, values):
+        """更新配置區段
         
         Args:
-            d: 目標字典
-            u: 源字典
+            section: 配置區段
+            values: 要更新的鍵值對字典
+            
+        Returns:
+            bool: 是否成功更新配置區段
         """
-        for k, v in u.items():
-            if isinstance(v, dict) and k in d and isinstance(d[k], dict):
-                self._recursive_update(d[k], v)
-            else:
-                d[k] = v
-    
-    def reset_to_default(self):
-        """重置為默認配置"""
-        self.config = self.DEFAULT_CONFIG.copy()
-        self.save()
+        try:
+            # 確保區段存在
+            if section not in self.config:
+                self.config[section] = {}
+                
+            # 更新區段
+            self.config[section].update(values)
+            
+            return True
+        except Exception as e:
+            self.logger.error(f"更新配置區段出錯: {str(e)}")
+            return False
     
     def get_all(self):
-        """獲取所有配置"""
-        return self.config
+        """獲取所有配置
+        
+        Returns:
+            dict: 所有配置的深複製
+        """
+        return copy.deepcopy(self.config)
+    
+    def __getitem__(self, key):
+        """支持字典訪問語法獲取配置區段
+        
+        Args:
+            key: 配置區段名
+            
+        Returns:
+            dict: 配置區段
+        """
+        return self.config.get(key, {})

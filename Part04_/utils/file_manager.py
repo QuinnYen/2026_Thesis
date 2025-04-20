@@ -77,6 +77,31 @@ class FileManager:
         if os.path.isabs(path):
             return path
         else:
+            # 嘗試找出Part04_目錄
+            part04_dir = None
+            
+            # 1. 檢查當前工作目錄
+            current_dir = os.path.abspath(os.curdir)
+            if os.path.basename(current_dir) == 'Part04_':
+                part04_dir = current_dir
+            elif 'Part04_' in current_dir:
+                # 可能在Part04_的子目錄中
+                parts = current_dir.split(os.sep)
+                if 'Part04_' in parts:
+                    idx = parts.index('Part04_')
+                    part04_dir = os.sep.join(parts[:idx+1])
+                    
+            # 2. 檢查模組路徑
+            if not part04_dir:
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                if os.path.basename(script_dir) == 'utils' and 'Part04_' in script_dir:
+                    # utils目錄的上一級應該是Part04_
+                    part04_dir = os.path.dirname(script_dir)
+                
+            # 3. 如果找到Part04_目錄，使用它作為基礎目錄
+            if part04_dir:
+                self.base_dir = part04_dir
+                
             return os.path.join(self.base_dir, path)
     
     def _ensure_directories_exist(self):

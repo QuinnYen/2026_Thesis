@@ -52,6 +52,9 @@ class VisualizationTab(QWidget):
         self.config = config
         self.file_manager = file_manager
         
+        # 檢查並確保 NLTK 資源已就緒
+        self._ensure_nltk_resources()
+        
         # 初始化成員變數
         self.current_dataset = None  # 當前數據集
         self.topics = None  # 主題詞
@@ -68,6 +71,43 @@ class VisualizationTab(QWidget):
         
         # 初始化完畢後發送狀態訊息
         self.status_message.emit("可視化頁面已準備就緒", 3000)
+    
+    def _ensure_nltk_resources(self):
+        """確保必要的 NLTK 資源可用"""
+        try:
+            import nltk
+            import os
+            
+            # 設定 NLTK 數據目錄
+            current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            nltk_data_path = os.path.join(current_dir, "nltk_data")
+            
+            # 確保路徑在 NLTK 搜尋路徑中
+            if nltk_data_path not in nltk.data.path:
+                nltk.data.path.append(nltk_data_path)
+                
+            # 檢查必要的資源
+            required_resources = ['punkt', 'stopwords', 'wordnet']
+            missing_resources = []
+            
+            for resource in required_resources:
+                try:
+                    nltk.data.find(f'{resource}')
+                except LookupError:
+                    missing_resources.append(resource)
+            
+            # 如果有缺少的資源，嘗試下載
+            if missing_resources:
+                for resource in missing_resources:
+                    try:
+                        nltk.download(resource, download_dir=nltk_data_path, quiet=True)
+                    except Exception as e:
+                        print(f"下載 NLTK 資源 {resource} 時出錯: {str(e)}")
+        
+        except ImportError as e:
+            print(f"無法導入 NLTK: {str(e)}")
+        except Exception as e:
+            print(f"NLTK 資源處理時出錯: {str(e)}")
     
     def _init_ui(self):
         """初始化UI界面"""
@@ -411,7 +451,30 @@ class VisualizationTab(QWidget):
         
         try:
             # 從結果目錄中獲取
-            results_dir = self.config.get("paths", {}).get("output_dir", "./output")
+            # 安全地從不同類型的配置對象中獲取路徑
+            results_dir = None
+            
+            # 嘗試不同的方式獲取配置值
+            try:
+                if isinstance(self.config, dict):
+                    results_dir = self.config.get("paths", {}).get("output_dir", "./output")
+                elif hasattr(self.config, "get"):
+                    # 嘗試直接獲取配置路徑
+                    try:
+                        paths = self.config.get("paths")
+                        if isinstance(paths, dict):
+                            results_dir = paths.get("output_dir", "./output")
+                        else:
+                            results_dir = self.config.get(("paths", "output_dir"), "./output")
+                    except TypeError:
+                        # 如果上述方法失敗，嘗試一次直接訪問完整路徑
+                        results_dir = self.config.get("paths.output_dir", "./output")
+                else:
+                    results_dir = "./output"  # 默認值
+            except Exception as config_error:
+                logger.warning(f"讀取配置時出現錯誤，使用默認值: {str(config_error)}")
+                results_dir = "./output"
+            
             if not os.path.exists(results_dir):
                 return results
                 
@@ -448,6 +511,7 @@ class VisualizationTab(QWidget):
                         })
         except Exception as e:
             logger.error(f"獲取結果文件列表出錯: {str(e)}")
+            logger.error(traceback.format_exc())
         
         # 按時間戳排序，最新的在前面
         results.sort(key=lambda x: x["timestamp"], reverse=True)

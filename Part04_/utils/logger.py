@@ -169,17 +169,42 @@ def set_level(level):
     default_logger.set_level(level)
 
 def setup_logger(name="cross_domain_sentiment", log_dir="./logs", level="INFO"):
-    """設置並獲取日誌器
-    
-    此函數創建一個新的Logger實例，並返回其logger對象
+    """設置全局日誌器
     
     Args:
-        name: 日誌器名稱
-        log_dir: 日誌目錄
+        name: 日誌名稱
+        log_dir: 日誌目錄，默認為Part04_資料夾下的logs目錄
         level: 日誌級別
         
     Returns:
-        logging.Logger: 設置好的日誌器實例
+        Logger: 日誌管理器實例
     """
-    logger_manager = Logger(name, log_dir, level)
-    return logger_manager.get_logger()
+    # 獲取Part04_目錄的絕對路徑
+    part04_dir = None
+    
+    # 嘗試找到Part04_目錄
+    current_dir = os.path.abspath(os.curdir)
+    if os.path.basename(current_dir) == 'Part04_':
+        part04_dir = current_dir
+    elif 'Part04_' in current_dir:
+        # 如果當前在Part04_的子目錄中
+        part04_dir = os.path.abspath(os.path.join(current_dir, '..'))
+    else:
+        # 嘗試查找腳本的位置
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        if os.path.basename(script_dir) == 'Part04_':
+            part04_dir = script_dir
+        elif 'Part04_' in script_dir:
+            # 假設我們在utils子目錄下
+            part04_dir = os.path.abspath(os.path.join(script_dir, '..'))
+    
+    # 如果找到Part04_目錄，則使用它
+    if part04_dir and os.path.isdir(part04_dir):
+        # 確保使用絕對路徑
+        log_dir = os.path.join(part04_dir, 'logs')
+    
+    # 創建新的日誌管理器
+    global default_logger
+    default_logger = Logger(name, log_dir, level)
+    
+    return default_logger

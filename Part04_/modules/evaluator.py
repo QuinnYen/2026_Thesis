@@ -15,6 +15,7 @@ import logging
 import time
 import io
 from datetime import datetime
+from sklearn.metrics.pairwise import cosine_similarity
 
 # 導入系統模組
 from utils.logger import get_logger
@@ -49,6 +50,214 @@ class AttentionEvaluator:
         self.vis_dir = os.path.join(self.output_dir, 'visualizations')
         os.makedirs(self.vis_dir, exist_ok=True)
     
+    def evaluate_model(self, topics=None, vectors=None, texts=None):
+        """評估模型效能
+        
+        這是一個與「evaluate_attention_mechanisms」方法相容的簡化版評估方法，
+        適用於直接提供主題詞、面向向量和文本的情況。
+
+        Args:
+            topics: 主題詞字典，格式為{topic_id: [word1, word2, ...]}
+            vectors: 面向向量數組，形狀為[n_topics, vector_dim]
+            texts: 處理後的文本列表
+            
+        Returns:
+            dict: 包含評估指標的字典
+        """
+        self.logger.info("開始評估模型效能")
+        
+        # 初始化結果
+        evaluation_results = {
+            'topic_coherence': 0.0,
+            'topic_separation': 0.0,
+            'combined_score': 0.0,
+            'details': {}
+        }
+        
+        try:
+            # 檢查輸入
+            if topics is None and vectors is None:
+                self.logger.error("沒有提供評估所需的主題詞或面向向量")
+                return evaluation_results
+            
+            # 計算主題一致性
+            if topics is not None and texts is not None:
+                self.logger.info("計算主題一致性")
+                topic_coherence = self._calculate_topic_coherence(topics, texts)
+                evaluation_results['topic_coherence'] = topic_coherence
+                evaluation_results['details']['topic_coherence'] = topic_coherence
+            
+            # 計算主題分離度
+            if vectors is not None:
+                self.logger.info("計算主題分離度")
+                topic_separation = self._calculate_topic_separation(vectors)
+                evaluation_results['topic_separation'] = topic_separation
+                evaluation_results['details']['topic_separation'] = topic_separation
+            
+            # 計算綜合得分
+            coherence_weight = self.config.get('evaluation', {}).get('coherence_weight', 0.5)
+            separation_weight = self.config.get('evaluation', {}).get('separation_weight', 0.5)
+            
+            combined_score = (
+                coherence_weight * evaluation_results['topic_coherence'] +
+                separation_weight * evaluation_results['topic_separation']
+            )
+            
+            evaluation_results['combined_score'] = combined_score
+            evaluation_results['details']['coherence_weight'] = coherence_weight
+            evaluation_results['details']['separation_weight'] = separation_weight
+            
+            self.logger.info(f"評估完成: 一致性 = {evaluation_results['topic_coherence']:.4f}, "
+                           f"分離度 = {evaluation_results['topic_separation']:.4f}, "
+                           f"綜合得分 = {evaluation_results['combined_score']:.4f}")
+            
+            return evaluation_results
+            
+        except Exception as e:
+            self.logger.error(f"評估模型時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return evaluation_results
+    
+    def _calculate_topic_coherence(self, topics, texts):
+        """計算主題一致性
+        
+        使用標準化逐點互信息(NPMI)計算主題一致性
+        
+        Args:
+            topics: 主題詞字典，格式為{topic_id: [word1, word2, ...]}
+            texts: 處理後的文本列表
+            
+        Returns:
+            float: 主題一致性得分 (0-1之間)
+        """
+        try:
+            # 簡單實現：計算每個主題中關鍵詞的共現頻率
+            # 實際應用中可能需要更複雜的算法，如NPMI或UCI
+            
+            # 將文本轉換為詞列表
+            tokenized_texts = []
+            for text in texts:
+                if isinstance(text, str):
+                    tokenized_texts.append(text.lower().split())
+                elif isinstance(text, list):
+                    tokenized_texts.append([w.lower() for w in text])
+            
+            # 計算每個主題的一致性
+            topic_scores = []
+            for topic_id, words in topics.items():
+                # 只使用前10個關鍵詞
+                top_words = [w.lower() for w in words[:10]]
+                
+                # 計算關鍵詞對的共現頻率
+                pairs_score = 0
+                pair_count = 0
+                
+                for i in range(len(top_words)):
+                    for j in range(i+1, len(top_words)):
+                        word_i, word_j = top_words[i], top_words[j]
+                        
+                        # 計算單詞共現次數
+                        cooccur_count = sum(1 for doc in tokenized_texts 
+                                         if word_i in doc and word_j in doc)
+                        
+                        # 計算單詞出現次數
+                        word_i_count = sum(1 for doc in tokenized_texts if word_i in doc)
+                        word_j_count = sum(1 for doc in tokenized_texts if word_j in doc)
+                        
+                        # 確保避免除以零
+                        if word_i_count > 0 and word_j_count > 0 and cooccur_count > 0:
+                            # 計算簡化的NPMI
+                            prob_i = word_i_count / len(tokenized_texts)
+                            prob_j = word_j_count / len(tokenized_texts)
+                            prob_ij = cooccur_count / len(tokenized_texts)
+                            
+                            if prob_ij > 0 and prob_i > 0 and prob_j > 0:
+                                pmi = np.log(prob_ij / (prob_i * prob_j))
+                                npmi = pmi / -np.log(prob_ij)  # 正規化為[-1,1]區間
+                                npmi = (npmi + 1) / 2  # 轉換為[0,1]區間
+                                
+                                pairs_score += npmi
+                                pair_count += 1
+                
+                # 計算主題的平均分數
+                if pair_count > 0:
+                    topic_scores.append(pairs_score / pair_count)
+            
+            # 計算所有主題的平均一致性
+            if topic_scores:
+                return np.mean(topic_scores)
+            else:
+                return 0.0
+            
+        except Exception as e:
+            self.logger.error(f"計算主題一致性時出錯: {str(e)}")
+            return 0.0
+    
+    def _calculate_topic_separation(self, vectors):
+        """計算主題分離度
+        
+        使用向量間的平均餘弦距離計算主題分離度
+        
+        Args:
+            vectors: 面向向量數組，形狀為[n_topics, vector_dim]
+            
+        Returns:
+            float: 主題分離度得分 (0-1之間)
+        """
+        try:
+            # 確保輸入是numpy數組
+            vectors = np.asarray(vectors)
+            
+            if len(vectors) <= 1:
+                return 0.0
+            
+            # 計算向量間的餘弦相似度
+            similarities = cosine_similarity(vectors)
+            
+            # 移除對角線上的元素（自身與自身的相似度）
+            n = similarities.shape[0]
+            mask = ~np.eye(n, dtype=bool)
+            similarities = similarities[mask].reshape(n, -1)
+            
+            # 計算餘弦距離（1 - 相似度）
+            distances = 1 - similarities
+            
+            # 計算平均分離度
+            mean_distance = np.mean(distances)
+            
+            return mean_distance
+            
+        except Exception as e:
+            self.logger.error(f"計算主題分離度時出錯: {str(e)}")
+            return 0.0
+    
+    def update_config(self, new_config):
+        """更新評估器配置
+        
+        Args:
+            new_config: 新的配置參數字典
+        """
+        if not new_config:
+            return
+            
+        self.logger.info("更新評估器配置")
+        
+        # 更新配置
+        if isinstance(new_config, dict):
+            self.config.update(new_config)
+            
+            # 重新設置相關配置
+            self.output_dir = self.config.get('output_dir', self.output_dir)
+            self.enable_visualizations = self.config.get('visualizations', self.enable_visualizations)
+            self.report_format = self.config.get('report_format', self.report_format)
+            
+            # 確保目錄存在
+            os.makedirs(self.output_dir, exist_ok=True)
+            os.makedirs(self.vis_dir, exist_ok=True)
+        else:
+            self.logger.warning(f"無效的配置格式: {type(new_config)}")
+            
     def evaluate_attention_mechanisms(self, result_paths, progress_callback=None):
         """評估多種注意力機制的效能
         
