@@ -141,7 +141,7 @@ class LDAModeler:
                 learning_method='online',
                 random_state=self.random_state,
                 verbose=1,       # 啟用詳細輸出，但不使用callback
-                n_jobs=-1        # 使用所有可用CPU核心
+                n_jobs=1        # 使用所有可用CPU核心
             )
             
             # 不使用callback，直接訓練模型
@@ -283,7 +283,7 @@ class LDAModeler:
                 max_iter=self.max_iter,
                 learning_method='online',
                 random_state=self.random_state,
-                n_jobs=-1  # 使用所有可用CPU核心
+                n_jobs=1  # 使用所有可用CPU核心
             )
             
             # 訓練模型

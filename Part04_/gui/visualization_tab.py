@@ -615,11 +615,33 @@ class VisualizationTab(QWidget):
             self.result_file_path = file_path
             
             # 解析結果數據
-            self.current_dataset = result_data.get("dataset_name", "未知數據集")
-            self.topics = result_data.get("topics", [])
-            self.aspect_vectors = result_data.get("aspect_vectors", {})
-            self.evaluation_results = result_data.get("evaluation", {})
-            self.visualization_results = result_data.get("visualizations", {})
+            base_name = os.path.basename(file_path)
+            
+            # 處理不同格式的結果文件
+            if "aspect_vectors" in result_data and isinstance(result_data["aspect_vectors"], dict):
+                # 處理向量結果文件格式
+                self.current_dataset = result_data.get("data_source", os.path.splitext(base_name)[0])
+                self.aspect_vectors = result_data["aspect_vectors"]
+                
+                # 如果文件中沒有topics，生成模擬的topics數據從aspect_vectors的鍵中
+                if not result_data.get("topics"):
+                    self.topics = {}
+                    for topic_id in self.aspect_vectors.keys():
+                        # 從Topic_X提取X作為主題ID
+                        topic_num = topic_id.split('_')[-1] if '_' in topic_id else topic_id
+                        # 創建包含主題ID的臨時主題詞列表
+                        self.topics[topic_id] = [f"主題{topic_num}_關鍵詞1", f"主題{topic_num}_關鍵詞2", f"主題{topic_num}_關鍵詞3"]
+                else:
+                    self.topics = result_data.get("topics", {})
+                
+                self.evaluation_results = result_data.get("evaluation", {})
+            else:
+                # 處理標準結果文件格式
+                self.current_dataset = result_data.get("dataset_name", os.path.splitext(base_name)[0])
+                self.topics = result_data.get("topics", {})
+                self.aspect_vectors = result_data.get("aspect_vectors", {})
+                self.evaluation_results = result_data.get("evaluation", {})
+                self.visualization_results = result_data.get("visualizations", {})
             
             # 更新UI
             self._update_topic_selector()
@@ -632,12 +654,12 @@ class VisualizationTab(QWidget):
             self.generate_btn.setEnabled(True)
             
         except json.JSONDecodeError as e:
-            logger.error(f"JSON解析錯誤: {str(e)}")
-            QMessageBox.critical(self, "文件錯誤", f"無法解析結果文件，文件格式無效:\n{str(e)}")
+            logger.error(f"解析JSON文件時出錯: {str(e)}")
+            QMessageBox.critical(self, "載入出錯", f"解析結果文件時出錯:\n{str(e)}")
         except Exception as e:
             logger.error(f"載入結果文件時出錯: {str(e)}")
             logger.error(traceback.format_exc())
-            QMessageBox.critical(self, "載入錯誤", f"載入結果文件時發生錯誤:\n{str(e)}")
+            QMessageBox.critical(self, "載入出錯", f"載入結果文件時出錯:\n{str(e)}")
 
     def _update_topic_selector(self):
         """更新主題選擇下拉框"""
@@ -954,6 +976,33 @@ class VisualizationTab(QWidget):
         # 設置標題
         self.viz_title_label.setText("主題分佈可視化")
         
+        # 安全地獲取輸出目錄
+        output_dir = "./visualizations"  # 默認值
+        
+        # 檢查配置對象是否存在
+        if self.config is not None:
+            try:
+                # 嘗試獲取可視化輸出目錄
+                if isinstance(self.config, dict):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict):
+                        output_dir = paths.get("visualizations_dir", output_dir)
+                elif hasattr(self.config, "get"):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict):
+                        output_dir = paths.get("visualizations_dir", output_dir)
+            except Exception as e:
+                self.logger.warning(f"獲取配置時出錯: {str(e)}，使用默認輸出目錄: {output_dir}")
+        else:
+            self.logger.warning("配置對象為None，使用默認輸出目錄")
+        
+        # 確保輸出目錄存在
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.warning(f"創建目錄時出錯: {str(e)}")
+            output_dir = "./"  # 回退到當前目錄
+        
         # 生成可視化
         html_content, img_path, data_html = self.visualizer.create_topic_distribution(
             topics=self.topics,
@@ -961,7 +1010,7 @@ class VisualizationTab(QWidget):
             show_labels=show_labels,
             interactive=interactive,
             use_3d=use_3d,
-            output_dir=self.config.get("paths", {}).get("visualizations_dir", "./visualizations")
+            output_dir=output_dir
         )
         
         # 保存結果

@@ -742,6 +742,216 @@ class Visualizer:
             self.logger.error(f"不支持的可視化類型: {vis_type}")
             return None
 
+    def create_topic_distribution(self, topics, vectors, show_labels=True, interactive=True, use_3d=False, output_dir=None):
+        """生成主題分佈可視化
+        
+        Args:
+            topics: 主題詞字典，格式 {topic_id: [word1, word2, ...]}
+            vectors: 面向向量字典，格式 {topic_id: vector}
+            show_labels: 是否顯示主題標籤
+            interactive: 是否生成互動式圖表
+            use_3d: 是否使用3D視圖
+            output_dir: 輸出目錄
+            
+        Returns:
+            tuple: (html_content, img_path, data_html)
+        """
+        try:
+            self.logger.info("生成主題分佈可視化")
+            
+            # 如果提供了輸出目錄，則臨時更改輸出位置
+            old_output_dir = None
+            if output_dir:
+                old_output_dir = self.output_dir
+                self.output_dir = output_dir
+                os.makedirs(self.output_dir, exist_ok=True)
+            
+            # 準備數據
+            vectors_list = list(vectors.values())
+            topic_ids = list(vectors.keys())
+            
+            # 創建主題標籤
+            if show_labels:
+                # 從主題詞創建簡短標籤
+                labels = []
+                for topic_id in topic_ids:
+                    if topic_id in topics:
+                        # 獲取前3個關鍵詞作為標籤
+                        keywords = topics[topic_id][:3]
+                        label = f"主題 {topic_id}: {', '.join(keywords)}"
+                    else:
+                        label = f"主題 {topic_id}"
+                    labels.append(label)
+            else:
+                labels = [f"主題 {t_id}" for t_id in topic_ids]
+            
+            # 創建數據表格HTML
+            import pandas as pd
+            df = pd.DataFrame({
+                "主題ID": topic_ids,
+                "標籤": labels,
+                "向量維度": [len(vec) for vec in vectors_list]
+            })
+            
+            data_html = df.to_html(index=False)
+            
+            # 將向量降維可視化
+            html_content = ""
+            img_path = None
+            
+            if use_3d and len(vectors_list) > 2:
+                # 3D可視化需要至少3個向量
+                try:
+                    from sklearn.manifold import TSNE
+                    import plotly.express as px
+                    import numpy as np
+                    
+                    # 降維到3D
+                    tsne_3d = TSNE(n_components=3, perplexity=min(30, len(vectors_list)-1), 
+                             random_state=42, n_iter=1000)
+                    vectors_array = np.array(vectors_list)
+                    embeddings_3d = tsne_3d.fit_transform(vectors_array)
+                    
+                    if interactive:
+                        # 創建互動式3D圖
+                        df_3d = pd.DataFrame({
+                            'x': embeddings_3d[:, 0],
+                            'y': embeddings_3d[:, 1],
+                            'z': embeddings_3d[:, 2],
+                            'label': labels,
+                            'topic_id': topic_ids
+                        })
+                        
+                        fig = px.scatter_3d(
+                            df_3d, x='x', y='y', z='z',
+                            text='label', color='topic_id',
+                            title='主題分佈 (3D)'
+                        )
+                        
+                        html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
+                    
+                    # 同時生成靜態圖像
+                    import matplotlib.pyplot as plt
+                    from mpl_toolkits.mplot3d import Axes3D
+                    
+                    fig = plt.figure(figsize=self.figsize)
+                    ax = fig.add_subplot(111, projection='3d')
+                    
+                    # 繪製散點圖
+                    scatter = ax.scatter(
+                        embeddings_3d[:, 0], 
+                        embeddings_3d[:, 1], 
+                        embeddings_3d[:, 2],
+                        s=100, alpha=0.8
+                    )
+                    
+                    # 添加標籤
+                    if show_labels:
+                        for i, label in enumerate(labels):
+                            ax.text(
+                                embeddings_3d[i, 0], 
+                                embeddings_3d[i, 1], 
+                                embeddings_3d[i, 2],
+                                label, fontsize=8
+                            )
+                    
+                    ax.set_title('主題分佈 (3D)')
+                    
+                    # 保存圖片
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    img_filename = f"topic_distribution_3d_{timestamp}.png"
+                    img_path = os.path.join(self.output_dir, img_filename)
+                    plt.savefig(img_path, dpi=self.dpi)
+                    plt.close()
+                    
+                except Exception as e:
+                    self.logger.warning(f"3D可視化生成失敗，回退到2D: {str(e)}")
+                    use_3d = False
+            
+            if not use_3d or img_path is None:
+                # 2D可視化
+                try:
+                    from sklearn.manifold import TSNE
+                    import numpy as np
+                    
+                    # 降維到2D
+                    tsne = TSNE(n_components=2, perplexity=min(30, len(vectors_list)-1), 
+                           random_state=42, n_iter=1000)
+                    vectors_array = np.array(vectors_list)
+                    embeddings_2d = tsne.fit_transform(vectors_array)
+                    
+                    if interactive:
+                        # 創建互動式2D圖
+                        try:
+                            import plotly.express as px
+                            import pandas as pd
+                            
+                            df_2d = pd.DataFrame({
+                                'x': embeddings_2d[:, 0],
+                                'y': embeddings_2d[:, 1],
+                                'label': labels,
+                                'topic_id': topic_ids
+                            })
+                            
+                            fig = px.scatter(
+                                df_2d, x='x', y='y',
+                                text='label', hover_data=['topic_id'],
+                                title='主題分佈 (2D)'
+                            )
+                            
+                            html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
+                            
+                        except ImportError:
+                            self.logger.warning("未安裝plotly，無法生成互動式圖表")
+                    
+                    # 生成靜態圖像
+                    import matplotlib.pyplot as plt
+                    
+                    plt.figure(figsize=self.figsize)
+                    plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], s=100, alpha=0.8)
+                    
+                    # 添加標籤
+                    if show_labels:
+                        for i, label in enumerate(labels):
+                            plt.annotate(
+                                label,
+                                (embeddings_2d[i, 0], embeddings_2d[i, 1]),
+                                fontsize=9,
+                                alpha=0.8
+                            )
+                    
+                    plt.title('主題分佈 (2D)')
+                    plt.grid(True, linestyle='--', alpha=0.7)
+                    plt.tight_layout()
+                    
+                    # 保存圖片
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    img_filename = f"topic_distribution_2d_{timestamp}.png"
+                    img_path = os.path.join(self.output_dir, img_filename)
+                    plt.savefig(img_path, dpi=self.dpi)
+                    plt.close()
+                    
+                except Exception as e:
+                    self.logger.error(f"2D可視化生成失敗: {str(e)}")
+                    import traceback
+                    self.logger.error(traceback.format_exc())
+            
+            # 如果互動式圖表生成失敗，但靜態圖片成功，則創建簡單HTML
+            if not html_content and img_path:
+                html_content = f"<h2>主題分佈</h2><img src='{img_path}' width='100%'>"
+                
+            # 恢復原始輸出目錄
+            if old_output_dir:
+                self.output_dir = old_output_dir
+                
+            return html_content, img_path, data_html
+            
+        except Exception as e:
+            self.logger.error(f"生成主題分佈可視化時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
+
 
 # 測試代碼
 if __name__ == "__main__":

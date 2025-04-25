@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QComboBox, QTabWidget, QTableView, QHeaderView, QFileDialog,
     QSpinBox, QDoubleSpinBox, QCheckBox, QGroupBox, QTextEdit,
     QProgressBar, QSplitter, QScrollArea, QMessageBox, QGridLayout,
-    QRadioButton, QButtonGroup, QSlider
+    QRadioButton, QButtonGroup, QSlider, QInputDialog, QApplication
 )
 from PyQt5.QtGui import QFont, QTextCursor, QStandardItemModel, QStandardItem
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QTimer, QSize
@@ -72,21 +72,21 @@ class AnalysisTab(QWidget):
             if hasattr(self.config, 'get'):
                 paths_config = self.config.get("paths", {})
                 if isinstance(paths_config, dict):
-                    self.output_dir = paths_config.get("output_dir", "./output")
+                    self.output_dir = paths_config.get("output_dir", "./0_output")
                 else:
                     # 默認輸出目錄
                     app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-                    self.output_dir = os.path.join(app_dir, "output")
+                    self.output_dir = os.path.join(app_dir, "0_output")
             else:
                 # 默認輸出目錄
                 app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-                self.output_dir = os.path.join(app_dir, "output")
+                self.output_dir = os.path.join(app_dir, "0_output")
                 
             # 確保輸出目錄存在
             os.makedirs(self.output_dir, exist_ok=True)
         except Exception as e:
             self.logger.error(f"設置輸出目錄時出錯: {str(e)}")
-            self.output_dir = "./output"  # 使用相對路徑作為最後的備用選項
+            self.output_dir = "./0_output"  # 使用相對路徑作為最後的備用選項
             os.makedirs(self.output_dir, exist_ok=True)
         
         # 初始化成員變數
@@ -199,6 +199,12 @@ class AnalysisTab(QWidget):
         dataset_selector_layout.addWidget(refresh_btn)
         dataset_selector_layout.addWidget(import_btn)
         dataset_layout.addLayout(dataset_selector_layout)
+        
+        # 添加Yelp數據合併按鈕
+        yelp_btn = QPushButton("Yelp合併導入")
+        yelp_btn.clicked.connect(self.import_yelp_data)
+        yelp_btn.setToolTip("合併Yelp的business和review數據文件")
+        dataset_layout.addWidget(yelp_btn)
         
         # 添加數據集信息標籤
         self.dataset_info_label = QLabel("當前資料集: 未載入")
@@ -373,13 +379,34 @@ class AnalysisTab(QWidget):
         
         try:
             # 從處理後的數據目錄中獲取
-            processed_dir = Path(self.config.get("paths", {}).get("data_dir", "./data"))
+            data_dir = "./data"  # 默認值
+            
+            # 安全地獲取配置
+            if self.config is not None:
+                if isinstance(self.config, dict):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict):
+                        data_dir = paths.get("data_dir", "./data")
+                elif hasattr(self.config, 'get'):
+                    try:
+                        paths = self.config.get("paths", {})
+                        if isinstance(paths, dict):
+                            data_dir = paths.get("data_dir", "./data")
+                    except (TypeError, AttributeError):
+                        logger.warning("無法從config獲取paths配置，使用默認data_dir")
+            
+            # 確保目錄存在
+            processed_dir = Path(data_dir)
+            os.makedirs(processed_dir, exist_ok=True)
+            
+            # 獲取CSV文件
             if processed_dir.exists():
                 for file in processed_dir.glob("*.csv"):
                     datasets.append(file.stem)
+                    
         except Exception as e:
             logger.error(f"獲取數據集列表出錯: {str(e)}")
-        
+            
         return datasets
     
     def _update_ui_state(self):
@@ -457,8 +484,44 @@ class AnalysisTab(QWidget):
             return
             
         try:
-            # 讀取文件
-            data = pd.read_csv(file_path, encoding='utf-8')
+            # 檢查是否為Yelp數據
+            file_name = Path(file_path).stem
+            is_yelp = "yelp_business" in file_name or "yelp_review" in file_name
+            
+            # 根據文件擴展名選擇讀取方式
+            file_ext = Path(file_path).suffix.lower()
+            
+            if is_yelp and file_ext == '.json':
+                # 如果是Yelp文件，詢問用戶是否要合併處理
+                reply = QMessageBox.question(
+                    self, 
+                    "Yelp數據",
+                    "檢測到Yelp格式數據，是否需要合併business和review文件?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    self.import_yelp_data()
+                    return
+            
+            # 標準數據文件處理流程
+            if file_ext == '.csv':
+                # 使用on_bad_lines='skip'參數忽略解析錯誤的行
+                data = pd.read_csv(file_path, encoding='utf-8', on_bad_lines='skip')
+            elif file_ext == '.json':
+                try:
+                    # 嘗試常規JSON讀取
+                    data = pd.read_json(file_path)
+                except:
+                    # 嘗試逐行讀取JSON (JSONL格式)
+                    data = pd.read_json(file_path, lines=True)
+            elif file_ext == '.txt':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                data = pd.DataFrame({'text': lines})
+            else:
+                raise ValueError(f"不支持的文件類型: {file_ext}")
             
             # 提取文件名作為數據集名稱
             file_name = Path(file_path).stem
@@ -501,11 +564,144 @@ class AnalysisTab(QWidget):
         except Exception as e:
             import traceback
             error_details = traceback.format_exc()
-            # 使用全局logger而不是self.logger
             logger = get_logger("analysis_tab")
             logger.error(f"導入數據出錯: {str(e)}")
             logger.error(error_details)
             QMessageBox.critical(self, "導入出錯", f"導入數據時出錯:\n{str(e)}")
+            
+    def import_yelp_data(self):
+        """專用的Yelp數據導入方法"""
+        progress = None
+        try:
+            # 提示用戶選擇business文件
+            business_file, _ = QFileDialog.getOpenFileName(
+                self,
+                "選擇Yelp business檔案",
+                "",
+                "JSON檔案 (*.json);;所有檔案 (*.*)"
+            )
+            
+            if not business_file:
+                return
+            
+            # 提示用戶選擇review文件
+            review_file, _ = QFileDialog.getOpenFileName(
+                self,
+                "選擇Yelp review檔案",
+                str(Path(business_file).parent),  # 使用business文件所在的目錄作為起始目錄
+                "JSON檔案 (*.json);;所有檔案 (*.*)"
+            )
+            
+            if not review_file:
+                return
+            
+            # 創建進度對話框
+            progress = QMessageBox()
+            progress.setWindowTitle("處理中")
+            progress.setText("正在處理Yelp數據，這可能需要一些時間...")
+            progress.setStandardButtons(QMessageBox.NoButton)
+            progress.show()
+            QApplication.processEvents()
+            
+            # 使用YelpProcessor處理數據
+            from modules.data_processor import YelpProcessor
+            
+            # 設置輸出目錄 - 安全地處理config為None的情況
+            data_dir = "./data"  # 預設值
+            try:
+                if self.config is None:
+                    pass  # 使用預設值
+                elif isinstance(self.config, dict):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict):
+                        data_dir = paths.get("data_dir", "./data")
+                elif hasattr(self.config, 'get'):
+                    try:
+                        paths = self.config.get("paths", {})
+                        if isinstance(paths, dict):
+                            data_dir = paths.get("data_dir", "./data")
+                    except:
+                        pass  # 使用預設值
+            except:
+                pass  # 使用預設值
+                
+            # 確保目錄存在
+            os.makedirs(data_dir, exist_ok=True)
+            
+            # 生成輸出文件名
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_file = os.path.join(data_dir, f"yelp_merged_{timestamp}.csv")
+            
+            # 取得樣本大小
+            sample_size, ok = QInputDialog.getInt(
+                self, "樣本大小", "請輸入需要的樣本數量:", 5000, 100, 100000, 100
+            )
+            if not ok:
+                if progress:
+                    progress.close()
+                return
+            
+            # 創建處理器並處理數據
+            processor = YelpProcessor()
+            df = processor.process_yelp_files(
+                business_path=business_file,
+                review_path=review_file,
+                output_path=output_file,
+                sample_size=sample_size
+            )
+            
+            # 關閉處理對話框
+            if progress:
+                progress.close()
+                progress = None
+            
+            # 安全地更新數據集列表
+            QApplication.processEvents()  # 確保UI更新
+            try:
+                self.refresh_dataset_list()
+            except Exception as e:
+                logger.warning(f"刷新數據集列表失敗: {str(e)}")
+            
+            # 安全地嘗試選擇新導入的數據集
+            dataset_name = Path(output_file).stem
+            try:
+                index = self.dataset_combo.findText(dataset_name)
+                if index >= 0:
+                    self.dataset_combo.setCurrentIndex(index)
+            except Exception as e:
+                logger.warning(f"選擇新導入的數據集失敗: {str(e)}")
+            
+            # 安全地載入數據
+            try:
+                self.load_data(output_file)
+            except Exception as e:
+                logger.warning(f"載入新數據失敗: {str(e)}")
+                # 顯示備用消息
+                QMessageBox.information(
+                    self, 
+                    "處理完成", 
+                    f"Yelp數據已成功合併處理，共 {len(df) if df is not None else '未知'} 筆資料\n"
+                    f"儲存位置: {output_file}"
+                )
+            
+            # 顯示成功消息
+            self.status_message.emit(f"已處理並導入Yelp合併數據 ({len(df) if df is not None else '未知'} 筆資料)", 5000)
+            
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            logger = get_logger("analysis_tab")
+            logger.error(f"處理Yelp數據出錯: {str(e)}")
+            logger.error(error_details)
+            
+            # 確保進度對話框關閉
+            if progress:
+                try:
+                    progress.close()
+                except:
+                    pass
+                    
+            QMessageBox.critical(self, "處理出錯", f"處理Yelp數據時出錯:\n{str(e)}")
     
     def load_selected_data(self):
         """載入選中的數據集"""
@@ -542,8 +738,8 @@ class AnalysisTab(QWidget):
             self.aspect_vector_view.clear()
             self.eval_result_view.clear()
             
-            # 讀取數據
-            self.data = pd.read_csv(file_path)
+            # 讀取數據 - 添加on_bad_lines='skip'參數解決欄位不一致問題
+            self.data = pd.read_csv(file_path, on_bad_lines='skip')
             
             # 設置數據集名稱
             self.current_dataset_name = Path(file_path).stem

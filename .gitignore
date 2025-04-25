@@ -80,3 +80,7 @@ data_preprocessed/
 
 # 評論資料夾
 ReviewsDataBase/
+
+# 輸出資料夾
+output/
+0_output/

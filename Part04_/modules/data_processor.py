@@ -488,6 +488,8 @@ class YelpProcessor(DataProcessor):
         # 處理評分列
         if 'stars' in df.columns:
             df['rating'] = pd.to_numeric(df['stars'], errors='coerce')
+        elif 'review_stars' in df.columns:
+            df['rating'] = pd.to_numeric(df['review_stars'], errors='coerce')
         
         # 處理商家ID
         if 'business_id' in df.columns:
@@ -506,6 +508,163 @@ class YelpProcessor(DataProcessor):
         df['data_source'] = 'yelp'
         
         return df
+        
+    def process_yelp_files(self, business_path, review_path, output_path=None, sample_size=5000):
+        """處理Yelp數據文件，合併business和review數據
+        
+        Args:
+            business_path: Yelp business文件路徑
+            review_path: Yelp review文件路徑
+            output_path: 輸出文件路徑，如果為None則自動生成
+            sample_size: 抽樣數量，用於處理大型數據集
+            
+        Returns:
+            pd.DataFrame: 處理後的數據
+        """
+        import random
+        import time
+        
+        self.logger.info("===== Yelp數據合併處理開始 =====")
+        self.logger.info(f"Business文件: {business_path}")
+        self.logger.info(f"Review文件: {review_path}")
+        self.logger.info(f"抽樣數量: {sample_size}")
+        
+        # 設定隨機種子確保結果可重現
+        random.seed(42)
+        
+        # 記錄開始時間
+        start_time = time.time()
+        
+        # 第一步：讀取商家數據，只保留餐廳類別
+        self.logger.info("正在讀取餐廳信息...")
+        restaurants = {}
+        restaurant_count = 0
+        
+        try:
+            with open(business_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    business = json.loads(line)
+                    # 只保留餐廳類別的商家
+                    if business.get('categories') and 'Restaurants' in business['categories']:
+                        # 提取需要的欄位
+                        restaurants[business['business_id']] = {
+                            'name': business.get('name', ''),
+                            'city': business.get('city', ''),
+                            'state': business.get('state', ''),
+                            'stars': business.get('stars', 0),
+                            'categories': business.get('categories', '')
+                        }
+                        restaurant_count += 1
+            
+            self.logger.info(f"已識別 {restaurant_count} 家餐廳")
+            
+            # 第二步：讀取評論數據並抽樣
+            self.logger.info("開始處理評論數據...")
+            sampled_reviews = []
+            processed_count = 0
+            eligible_count = 0
+            
+            with open(review_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    try:
+                        review = json.loads(line)
+                        business_id = review['business_id']
+                        
+                        # 檢查評論是否屬於餐廳
+                        if business_id in restaurants:
+                            eligible_count += 1
+                            
+                            # 使用水塘抽樣算法確保均勻抽樣
+                            if len(sampled_reviews) < sample_size:
+                                # 直接添加，直到達到樣本大小
+                                business = restaurants[business_id]
+                                merged_review = {
+                                    'business_id': business_id,
+                                    'business_name': business['name'],
+                                    'text': review.get('text', ''),
+                                    'review_stars': review.get('stars', 0),
+                                    'business_stars': business['stars'],
+                                    'city': business['city'],
+                                    'state': business['state'],
+                                    'categories': business['categories'],
+                                    'date': review.get('date', '')
+                                }
+                                sampled_reviews.append(merged_review)
+                            else:
+                                # 水塘抽樣：以 sample_size/已處理數量 的概率替換現有樣本
+                                j = random.randint(0, eligible_count - 1)
+                                if j < sample_size:
+                                    business = restaurants[business_id]
+                                    merged_review = {
+                                        'business_id': business_id,
+                                        'business_name': business['name'],
+                                        'text': review.get('text', ''),
+                                        'review_stars': review.get('stars', 0),
+                                        'business_stars': business['stars'],
+                                        'city': business['city'],
+                                        'state': business['state'],
+                                        'categories': business['categories'],
+                                        'date': review.get('date', '')
+                                    }
+                                    sampled_reviews[j] = merged_review
+                            
+                        # 更新處理計數
+                        processed_count += 1
+                        if processed_count % 10000 == 0:
+                            self.logger.info(f"已處理 {processed_count} 條評論，找到 {eligible_count} 條餐廳評論")
+                            
+                            # 如果已經找到足夠的樣本且處理了至少sample_size*10的評論，提前結束
+                            if eligible_count >= sample_size * 10 and len(sampled_reviews) == sample_size:
+                                self.logger.info(f"已收集足夠樣本，提前結束處理")
+                                break
+                            
+                    except Exception as e:
+                        self.logger.warning(f"處理評論時出錯: {str(e)}")
+                        continue
+            
+            # 確保我們不超過所需的樣本數
+            if len(sampled_reviews) > sample_size:
+                sampled_reviews = sampled_reviews[:sample_size]
+                
+            self.logger.info(f"共處理了 {processed_count} 條評論")
+            self.logger.info(f"其中有 {eligible_count} 條餐廳評論")
+            self.logger.info(f"成功抽樣 {len(sampled_reviews)} 條評論")
+            
+            # 第三步：將抽樣的評論轉換為DataFrame
+            df = pd.DataFrame(sampled_reviews)
+            
+            # 添加清洗後的文本列
+            self.logger.info("正在進行文本清洗...")
+            df['clean_text'] = df['text'].apply(self._clean_text)
+            
+            # 如果提供了輸出路徑，則保存為CSV
+            if output_path:
+                output_dir = os.path.dirname(output_path)
+                if output_dir and not os.path.exists(output_dir):
+                    os.makedirs(output_dir)
+                
+                self.logger.info(f"正在保存處理結果到 {output_path}")
+                df.to_csv(output_path, index=False)
+            
+            # 計算處理時間
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            minutes, seconds = divmod(elapsed_time, 60)
+            
+            # 記錄處理完成信息
+            self.logger.info(f"===== 處理完成! 用時: {int(minutes)}分{int(seconds)}秒 =====")
+            self.logger.info(f"總共處理了 {restaurant_count} 家餐廳")
+            self.logger.info(f"從 {eligible_count} 條餐廳評論中抽樣了 {len(sampled_reviews)} 條")
+            if output_path:
+                self.logger.info(f"結果已保存至: {output_path}")
+            
+            return df
+            
+        except Exception as e:
+            self.logger.error(f"Yelp數據處理失敗: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            raise
 
 
 def create_processor(data_source, config=None):
