@@ -324,7 +324,8 @@ class AspectCalculator:
             return {
                 'all_results': all_results,
                 'best_attention': best_attention,
-                'aspect_vectors': best_vectors  # 直接提供最佳注意力機制的面向向量
+                'aspect_vectors': best_vectors,  # 直接提供最佳注意力機制的面向向量
+                'attention_type': best_attention['type']  # 明確添加注意力類型到返回值中
             }
             
         except Exception as e:

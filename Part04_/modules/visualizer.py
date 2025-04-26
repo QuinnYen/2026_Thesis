@@ -118,7 +118,7 @@ class Visualizer:
         self.logger = logger
         
         # 設置默認配置
-        self.output_dir = self.config.get('output_dir', './output/visualizations')
+        self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '0_output', 'visualizations'))
         self.dpi = self.config.get('dpi', 300)
         self.figsize = self.config.get('figsize', (12, 8))
         self.cmap = self.config.get('cmap', 'viridis')
@@ -581,56 +581,57 @@ class Visualizer:
             str: 生成的圖片路徑
         """
         try:
-            self.logger.info(f"生成t-SNE可視化")
+            self.logger.info(f"生成t-SNE視覺化: {title}")
             
-            # 確定困惑度參數不大於樣本數
-            perplexity = min(perplexity, len(embeddings) - 1)
+            # 使用 scikit-learn 的 t-SNE 進行降維
+            from sklearn.manifold import TSNE
+            from datetime import datetime
             
-            # 使用t-SNE降維
-            tsne = TSNE(n_components=2, perplexity=perplexity, 
-                       n_iter=n_iter, random_state=42)
-            tsne_result = tsne.fit_transform(embeddings)
-            
-            # 創建圖表
+            # 設置輸出目錄
             if figsize is None:
                 figsize = self.figsize
+                
+            # 將輸入轉換為NumPy數組
+            embeddings_array = np.array(embeddings)
+            
+            # 確保數據維度正確
+            if len(embeddings_array.shape) == 1:
+                self.logger.warning("輸入向量為一維，嘗試重塑為二維")
+                # 如果是一維數組，重塑為一個樣本的二維數組
+                embeddings_array = embeddings_array.reshape(1, -1)
+            
+            # 應用t-SNE降維
+            tsne = TSNE(n_components=2, perplexity=min(perplexity, len(embeddings_array)-1), 
+                  n_iter=n_iter, random_state=42)
+            tsne_result = tsne.fit_transform(embeddings_array)
+            
+            # 創建圖表
             plt.figure(figsize=figsize)
             
-            # 獲取唯一標籤
-            unique_labels = sorted(list(set(labels)))
-            
-            # 建立標籤與顏色的映射
-            label_to_color = {label: i for i, label in enumerate(unique_labels)}
-            
-            # 獲取每個點的顏色
-            colors = [label_to_color[label] for label in labels]
+            # 獲取唯一標籤並分配顏色
+            unique_labels = list(set(labels))
+            colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_labels)))
             
             # 繪製散點圖
-            scatter = plt.scatter(
-                tsne_result[:, 0], tsne_result[:, 1],
-                c=colors,
-                cmap=self.cmap,
-                s=point_size,
-                alpha=alpha
-            )
+            for i, label in enumerate(unique_labels):
+                mask = [l == label for l in labels]
+                plt.scatter(tsne_result[mask, 0], tsne_result[mask, 1], 
+                       c=[colors[i]], label=label, s=point_size, alpha=alpha)
             
-            # 添加標題
+            # 添加標題和圖例
             if title:
                 plt.title(title, fontsize=14)
             else:
-                plt.title("t-SNE可視化", fontsize=14)
+                plt.title("t-SNE降維視覺化", fontsize=14)
                 
-            # 添加軸標籤
-            plt.xlabel('t-SNE維度1', fontsize=12)
-            plt.ylabel('t-SNE維度2', fontsize=12)
+            plt.legend(loc='best')
             
-            # 添加圖例
-            legend1 = plt.legend(
-                *scatter.legend_elements(),
-                loc="upper right",
-                title="標籤"
-            )
-            plt.gca().add_artist(legend1)
+            # 去除坐標軸刻度
+            plt.xticks([])
+            plt.yticks([])
+            
+            # 添加網格
+            plt.grid(True, linestyle='--', alpha=0.7)
             
             # 保存圖片
             if output_filename is None:
@@ -638,10 +639,11 @@ class Visualizer:
                 output_filename = f"tsne_{timestamp}.png"
                 
             output_path = os.path.join(self.output_dir, output_filename)
+            plt.tight_layout()
             plt.savefig(output_path, dpi=self.dpi)
             plt.close()
             
-            self.logger.info(f"t-SNE可視化已保存至: {output_path}")
+            self.logger.info(f"t-SNE視覺化已保存至: {output_path}")
             
             # 顯示成功通知視窗
             try:
@@ -655,9 +657,7 @@ class Visualizer:
             return output_path
             
         except Exception as e:
-            self.logger.error(f"生成t-SNE可視化時出錯: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
+            self.logger.error(f"t-SNE視覺化生成出錯: {str(e)}")
             return None
     
     def plot_wordcloud(self, word_freq, title=None, output_filename=None, max_words=200,
@@ -911,22 +911,22 @@ class Visualizer:
             self.logger.error(f"不支持的可視化類型: {vis_type}")
             return None
 
-    def create_topic_network(self, topics, vectors, show_weights=True, edge_threshold=0.3, interactive=True, output_dir=None):
-        """生成主題關係網絡可視化
+    def create_evaluation_visualization(self, evaluation_results, show_all=True, show_chart=True, output_dir=None):
+        """生成評估指標可視化
         
         Args:
-            topics: 主題詞字典，格式 {topic_id: [word1, word2, ...]}
-            vectors: 面向向量字典，格式 {topic_id: vector}
-            show_weights: 是否顯示連接權重
-            edge_threshold: 邊閾值，用於過濾弱連接
-            interactive: 是否生成互動式圖表
+            evaluation_results: 評估結果字典，格式可能是 
+                              {'coherence': float, 'separation': float, 'combined_score': float} 或
+                              {'topic_coherence': {...}, 'topic_separation': {...}, 'combined_score': float}
+            show_all: 是否顯示所有指標
+            show_chart: 是否顯示圖表
             output_dir: 輸出目錄
             
         Returns:
             tuple: (html_content, img_path, data_html)
         """
         try:
-            self.logger.info("生成主題關係網絡可視化")
+            self.logger.info("生成評估指標視覺化")
             
             # 如果提供了輸出目錄，則臨時更改輸出位置
             old_output_dir = None
@@ -935,305 +935,159 @@ class Visualizer:
                 self.output_dir = output_dir
                 os.makedirs(self.output_dir, exist_ok=True)
             
-            # 準備數據
-            topic_ids = list(vectors.keys())
-            vectors_list = list(vectors.values())
-            
-            # 計算主題間的相似度矩陣
-            import numpy as np
-            from sklearn.metrics.pairwise import cosine_similarity
-            
-            vectors_array = np.array(vectors_list)
-            similarity_matrix = cosine_similarity(vectors_array)
-            
-            # 應用閾值過濾
-            similarity_matrix[similarity_matrix < edge_threshold] = 0
-            
-            # 創建網絡數據
-            import pandas as pd
-            import networkx as nx
-            
-            # 創建圖
-            G = nx.Graph()
-            
-            # 添加節點
-            for i, topic_id in enumerate(topic_ids):
-                # 獲取主題關鍵詞
-                keywords = topics[topic_id][:3] if topic_id in topics else []
-                keyword_text = ", ".join(keywords) if keywords else ""
+            # 檢查評估結果數據格式
+            if not evaluation_results:
+                raise ValueError("評估結果為空")
                 
-                # 添加節點，包含關鍵詞信息
-                G.add_node(
-                    topic_id, 
-                    keywords=keyword_text,
-                    label=f"主題 {topic_id}"
-                )
+            # 拆分評估結果，支持不同格式
+            metrics_data = {}
             
-            # 添加邊
-            edges_data = []
-            for i in range(len(topic_ids)):
-                for j in range(i+1, len(topic_ids)):
-                    if similarity_matrix[i, j] > 0:
-                        G.add_edge(
-                            topic_ids[i], 
-                            topic_ids[j], 
-                            weight=similarity_matrix[i, j]
-                        )
-                        
-                        # 收集邊數據用於表格顯示
-                        edges_data.append({
-                            "主題1": topic_ids[i],
-                            "主題2": topic_ids[j],
-                            "相似度": similarity_matrix[i, j]
-                        })
+            # 處理基礎指標
+            base_metrics = ['coherence', 'separation', 'combined_score']
+            topic_level_metrics = ['topic_coherence', 'topic_separation']
             
-            # 創建邊數據表格HTML
-            edges_df = pd.DataFrame(edges_data)
-            data_html = edges_df.to_html(index=False) if not edges_df.empty else "<p>沒有符合閾值的主題連接</p>"
+            # 檢查是否有基本指標
+            has_base_metrics = any(metric in evaluation_results for metric in base_metrics)
             
-            # 生成圖像和HTML內容
-            html_content = ""
+            # 檢查是否有主題級別指標
+            has_topic_metrics = any(metric in evaluation_results for metric in topic_level_metrics)
+            
+            # 根據格式提取數據
+            if has_base_metrics:
+                # 使用基本指標
+                for metric in base_metrics:
+                    if metric in evaluation_results:
+                        metrics_data[metric] = evaluation_results[metric]
+            elif has_topic_metrics:
+                # 計算主題級別指標的平均值
+                for metric in topic_level_metrics:
+                    if metric in evaluation_results:
+                        topic_values = evaluation_results[metric]
+                        if isinstance(topic_values, dict):
+                            # 計算平均值
+                            metric_name = metric.replace('topic_', '')
+                            metrics_data[metric_name] = sum(topic_values.values()) / len(topic_values)
+                
+                # 獲取組合得分
+                if 'combined_score' in evaluation_results:
+                    metrics_data['combined_score'] = evaluation_results['combined_score']
+                elif 'coherence' in metrics_data and 'separation' in metrics_data:
+                    # 如果沒有給定組合得分，但有內聚度和分離度，則計算簡單的組合得分
+                    metrics_data['combined_score'] = (metrics_data['coherence'] + metrics_data['separation']) / 2
+            
+            # 如果仍然沒有數據，檢查其他可能的鍵名
+            if not metrics_data:
+                # 嘗試一些常見的替代鍵名
+                alt_keys = {
+                    'coherence': ['topic_coherence_avg', 'avg_coherence', 'coherence_score'],
+                    'separation': ['topic_separation_avg', 'avg_separation', 'separation_score'],
+                    'combined_score': ['overall_score', 'total_score', 'final_score']
+                }
+                
+                for target_key, alt_key_list in alt_keys.items():
+                    for alt_key in alt_key_list:
+                        if alt_key in evaluation_results:
+                            metrics_data[target_key] = evaluation_results[alt_key]
+                            break
+            
+            # 確保數據包含至少一個指標
+            if not metrics_data:
+                raise ValueError("無法從評估結果中提取有效的指標數據")
+                
+            self.logger.info(f"提取的指標數據: {metrics_data}")
+            
+            # 生成數據表格
+            import pandas as pd
+            
+            # 創建基本數據表格
+            metrics_df = pd.DataFrame([metrics_data])
+            
+            # 視覺化處理
             img_path = None
             
-            # 使用networkx和matplotlib創建靜態圖像
-            plt.figure(figsize=self.figsize)
-            
-            # 計算節點位置 (使用spring_layout以獲得較好的可視化效果)
-            pos = nx.spring_layout(G, seed=42)
-            
-            # 繪製節點
-            nx.draw_networkx_nodes(
-                G, pos,
-                node_size=700,
-                node_color='lightblue',
-                alpha=0.8
-            )
-            
-            # 繪製邊
-            edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
-            if edge_weights:
-                max_weight = max(edge_weights)
-                normalized_weights = [w / max_weight * 5 for w in edge_weights]
-                
-                nx.draw_networkx_edges(
-                    G, pos,
-                    width=normalized_weights,
-                    alpha=0.5,
-                    edge_color='gray'
-                )
-                
-                # 顯示邊權重
-                if show_weights:
-                    edge_labels = {(u, v): f"{G[u][v]['weight']:.2f}" for u, v in G.edges()}
-                    nx.draw_networkx_edge_labels(
-                        G, pos,
-                        edge_labels=edge_labels,
-                        font_size=8
-                    )
-            
-            # 繪製節點標籤
-            labels = {node: f"主題 {node}" for node in G.nodes()}
-            nx.draw_networkx_labels(G, pos, labels, font_size=10)
-            
-            # 設置標題和佈局
-            plt.title("主題關係網絡", fontsize=15)
-            plt.axis('off')
-            plt.tight_layout()
-            
-            # 保存圖片
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_filename = f"topic_network_{timestamp}.png"
-            img_path = os.path.join(self.output_dir, img_filename)
-            plt.savefig(img_path, dpi=self.dpi)
-            plt.close()
-            
-            # 創建互動式視覺化
-            if interactive:
+            if show_chart and len(metrics_data) > 0:
+                # 使用條形圖展示各指標
                 try:
-                    import plotly.graph_objects as go
-                    import networkx as nx
-                    import numpy as np
+                    # 確保我們有數據可視化
+                    data_to_viz = {k: v for k, v in metrics_data.items()}
                     
-                    # 將networkx圖轉換為plotly格式
-                    edge_x = []
-                    edge_y = []
-                    edge_text = []
+                    # 設置圖表標題
+                    chart_title = '面向模型評估指標'
                     
-                    for edge in G.edges():
-                        x0, y0 = pos[edge[0]]
-                        x1, y1 = pos[edge[1]]
-                        weight = G[edge[0]][edge[1]]['weight']
+                    # 在數據很少的情況下，可以使用極坐標圖更直觀
+                    if len(data_to_viz) <= 3:
+                        # 創建極坐標圖
+                        fig = plt.figure(figsize=self.figsize)
+                        ax = plt.subplot(111, polar=True)
                         
-                        edge_x.extend([x0, x1, None])
-                        edge_y.extend([y0, y1, None])
-                        edge_text.append(f"相似度: {weight:.3f}")
+                        # 計算角度
+                        categories = list(data_to_viz.keys())
+                        N = len(categories)
+                        angles = [n / float(N) * 2 * np.pi for n in range(N)]
+                        angles += angles[:1]  # 閉合圖形
+                        
+                        # 提取數值
+                        values = list(data_to_viz.values())
+                        values += values[:1]  # 閉合數據
+                        
+                        # 繪製極坐標圖
+                        ax.plot(angles, values, linewidth=2, linestyle='solid', label='評估指標')
+                        ax.fill(angles, values, alpha=0.25)
+                        
+                        # 設置極坐標標籤
+                        plt.xticks(angles[:-1], categories, fontsize=12)
+                        
+                        # 添加標題和圖例
+                        plt.title(chart_title, size=15, y=1.08)
+                        plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
+                        
+                    else:
+                        # 標準條形圖
+                        fig, ax = plt.subplots(figsize=self.figsize)
+                        bars = ax.bar(data_to_viz.keys(), data_to_viz.values(), color='steelblue')
+                        
+                        # 添加數值標籤
+                        for bar in bars:
+                            height = bar.get_height()
+                            ax.annotate(f'{height:.4f}',
+                                      xy=(bar.get_x() + bar.get_width() / 2, height),
+                                      xytext=(0, 3),  # 3點垂直偏移
+                                      textcoords="offset points",
+                                      ha='center', va='bottom', rotation=0)
+                        
+                        # 設置標題和標籤
+                        plt.title(chart_title, fontsize=14)
+                        plt.ylabel('評估得分', fontsize=12)
+                        plt.xticks(rotation=15, ha='right')
+                        plt.ylim(0, 1.0)  # 假設評分在0-1範圍內
+                        
+                    plt.tight_layout()
                     
-                    edge_trace = go.Scatter(
-                        x=edge_x, y=edge_y,
-                        line=dict(width=0.8, color='#888'),
-                        hoverinfo='text',
-                        text=edge_text,
-                        mode='lines'
-                    )
+                    # 保存圖像
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    img_filename = f"evaluation_metrics_{timestamp}.png"
+                    img_path = os.path.join(self.output_dir, img_filename)
+                    plt.savefig(img_path, dpi=self.dpi)
+                    plt.close()
                     
-                    # 節點數據
-                    node_x = []
-                    node_y = []
-                    for node in G.nodes():
-                        x, y = pos[node]
-                        node_x.append(x)
-                        node_y.append(y)
+                    self.logger.info(f"評估指標圖表已保存至: {img_path}")
                     
-                    # 節點懸停文本
-                    node_text = []
-                    for node in G.nodes():
-                        keywords = G.nodes[node]['keywords']
-                        text = f"主題 {node}<br>關鍵詞: {keywords}"
-                        node_text.append(text)
-                    
-                    node_trace = go.Scatter(
-                        x=node_x, y=node_y,
-                        mode='markers+text',
-                        hoverinfo='text',
-                        text=[f"T{n}" for n in G.nodes()],
-                        hovertext=node_text,
-                        marker=dict(
-                            showscale=True,
-                            colorscale='YlGnBu',
-                            size=20,
-                            colorbar=dict(
-                                thickness=15,
-                                title='節點連接數',
-                                xanchor='left',
-                            ),
-                            line=dict(width=2)
-                        )
-                    )
-                    
-                    # 連接數作為節點顏色
-                    node_adjacencies = []
-                    for node in G.nodes():
-                        node_adjacencies.append(len(list(G.neighbors(node))))
-                    
-                    node_trace.marker.color = node_adjacencies
-                    
-                    # 創建圖形
-                    fig = go.Figure(
-                        data=[edge_trace, node_trace],
-                        layout=go.Layout(
-                            title="主題關係網絡",
-                            showlegend=False,
-                            hovermode='closest',
-                            margin=dict(b=20, l=5, r=5, t=40),
-                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
-                        )
-                    )
-                    
-                    html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
-                    
-                except ImportError as e:
-                    self.logger.warning(f"缺少生成互動式圖表的必要模組 ({str(e)})，僅生成靜態圖像")
-                    html_content = f"<h2>主題關係網絡</h2><img src='{img_path}' width='100%'>"
-                except Exception as e:
-                    self.logger.error(f"生成互動式網絡圖時出錯: {str(e)}")
+                except Exception as viz_error:
+                    self.logger.error(f"生成評估指標圖表時出錯: {str(viz_error)}")
                     import traceback
                     self.logger.error(traceback.format_exc())
-                    html_content = f"<h2>主題關係網絡</h2><img src='{img_path}' width='100%'>"
-            else:
-                # 僅使用靜態圖像
-                html_content = f"<h2>主題關係網絡</h2><img src='{img_path}' width='100%'>"
-            
-            # 恢復原始輸出目錄
-            if old_output_dir:
-                self.output_dir = old_output_dir
-            
-            # 顯示成功通知視窗
-            try:
-                root = tk.Tk()
-                root.withdraw()  # 隱藏主視窗
-                messagebox.showinfo("輸出成功", f"主題關係網絡視覺化已成功生成！\n\n保存路徑：\n{img_path}")
-                root.destroy()
-            except Exception as e:
-                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
-                
-            return html_content, img_path, data_html
-            
-        except Exception as e:
-            self.logger.error(f"生成主題關係網絡視覺化時出錯: {str(e)}")
-            import traceback
-            self.logger.error(traceback.format_exc())
-            return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
-
-    def create_attention_heatmap(self, attention_matrix, row_labels=None, col_labels=None, title="注意力權重熱力圖", 
-                               output_filename=None, cmap="YlGnBu", annot=True, output_dir=None):
-        """生成注意力權重熱力圖
-        
-        Args:
-            attention_matrix: 注意力權重矩陣，形狀為 (n, m)
-            row_labels: 行標籤，對應於熱力圖的Y軸
-            col_labels: 列標籤，對應於熱力圖的X軸
-            title: 熱力圖標題
-            output_filename: 輸出檔案名稱
-            cmap: 顏色映射
-            annot: 是否在熱力圖上顯示數值
-            output_dir: 輸出目錄
-            
-        Returns:
-            tuple: (html_content, img_path, data_html)
-        """
-        try:
-            self.logger.info(f"生成注意力熱力圖: {title}")
-            
-            # 如果提供了輸出目錄，則臨時更改輸出位置
-            old_output_dir = None
-            if output_dir:
-                old_output_dir = self.output_dir
-                self.output_dir = output_dir
-                os.makedirs(self.output_dir, exist_ok=True)
-            
-            # 轉換為DataFrame以便更好地顯示標籤
-            import pandas as pd
-            if row_labels is None:
-                row_labels = [f"行 {i+1}" for i in range(attention_matrix.shape[0])]
-            if col_labels is None:
-                col_labels = [f"列 {i+1}" for i in range(attention_matrix.shape[1])]
-                
-            df = pd.DataFrame(attention_matrix, index=row_labels, columns=col_labels)
-            
-            # 創建圖表
-            plt.figure(figsize=self.figsize)
-            
-            # 繪製熱力圖
-            ax = sns.heatmap(df, annot=annot, cmap=cmap, fmt=".3f", linewidths=0.5)
-            
-            # 調整標籤方向，避免重疊
-            plt.xticks(rotation=45, ha='right')
-            plt.yticks(rotation=0)
-            
-            # 設置標題
-            plt.title(title, fontsize=14, pad=20)
-            
-            # 調整布局，確保不裁剪標籤
-            plt.tight_layout()
-            
-            # 保存圖片
-            if output_filename is None:
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                output_filename = f"attention_heatmap_{timestamp}.png"
-                
-            img_path = os.path.join(self.output_dir, output_filename)
-            plt.savefig(img_path, dpi=self.dpi, bbox_inches='tight')
-            plt.close()
-            
-            self.logger.info(f"注意力熱力圖已保存至: {img_path}")
             
             # 生成HTML內容
-            html_content = f"<h2>{title}</h2><img src='{img_path}' width='100%'>"
+            html_content = "<h2>模型評估指標</h2>"
+            
+            if img_path:
+                html_content += f"<img src='{img_path}' width='100%'>"
             
             # 生成數據表格HTML
-            data_html = df.to_html(classes="table table-bordered table-hover", 
-                                  float_format="%.4f")
+            data_html = metrics_df.to_html(index=False, float_format=lambda x: f"{x:.5f}")
+            
+            # 完善HTML內容
+            html_content += f"<div class='metrics-data'>{data_html}</div>"
             
             # 恢復原始輸出目錄
             if old_output_dir:
@@ -1243,7 +1097,7 @@ class Visualizer:
             try:
                 root = tk.Tk()
                 root.withdraw()  # 隱藏主視窗
-                messagebox.showinfo("輸出成功", f"注意力熱力圖已成功生成！\n\n保存路徑：\n{img_path}")
+                messagebox.showinfo("輸出成功", f"評估指標視覺化已成功生成！\n\n保存路徑：\n{img_path}")
                 root.destroy()
             except Exception as e:
                 self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
@@ -1251,11 +1105,10 @@ class Visualizer:
             return html_content, img_path, data_html
             
         except Exception as e:
-            self.logger.error(f"生成注意力熱力圖時出錯: {str(e)}")
+            self.logger.error(f"生成評估指標視覺化時出錯: {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
             return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
-
 
 # 測試代碼
 if __name__ == "__main__":

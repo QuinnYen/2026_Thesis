@@ -1051,8 +1051,22 @@ class AnalysisTab(QWidget):
             results = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "data_source": self.current_dataset_name,
-                "attention_type": self.params['attention_mechanisms'] if hasattr(self, 'params') else "未知類型",
             }
+            
+            # 正確地設置 attention_type (從分析結果中獲取)
+            if hasattr(self, 'analysis_thread') and hasattr(self.analysis_thread, 'aspect_result') and self.analysis_thread.aspect_result:
+                results["attention_type"] = self.analysis_thread.aspect_result.get('attention_type', "未知類型")
+            elif hasattr(self, 'analysis_thread') and hasattr(self.analysis_thread, 'params'):
+                # 備用方案：從參數中獲取
+                results["attention_type"] = self.analysis_thread.params.get('attention_mechanisms', "未知類型")
+            else:
+                # 這裡我們嘗試獲取最佳注意力類型，而不是使用「未知類型」
+                best_attention_type = None
+                if hasattr(self, 'evaluation_results') and self.evaluation_results and 'details' in self.evaluation_results:
+                    details = self.evaluation_results['details']
+                    if 'best_attention_type' in details:
+                        best_attention_type = details['best_attention_type']
+                results["attention_type"] = best_attention_type or "未知類型"
             
             # 正確處理不同類型的 aspect_vectors
             if isinstance(self.aspect_vectors, dict):

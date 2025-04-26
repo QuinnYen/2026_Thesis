@@ -591,24 +591,6 @@ class SettingsTab(QWidget):
         type_group.setLayout(type_layout)
         content_layout.addWidget(type_group)
         
-        # 互動設定
-        interactive_group = QGroupBox("互動設定")
-        interactive_layout = QGridLayout()
-        
-        # 啟用互動
-        interactive_layout.addWidget(QLabel("啟用互動圖表:"), 0, 0)
-        self.viz_interactive = QCheckBox()
-        interactive_layout.addWidget(self.viz_interactive, 0, 1)
-        
-        # 圖表庫
-        interactive_layout.addWidget(QLabel("互動圖表庫:"), 1, 0)
-        self.viz_library = QComboBox()
-        self.viz_library.addItems(["Plotly", "Bokeh", "Altair"])
-        interactive_layout.addWidget(self.viz_library, 1, 1)
-        
-        interactive_group.setLayout(interactive_layout)
-        content_layout.addWidget(interactive_group)
-        
         # 添加伸展因子
         content_layout.addStretch()
         
@@ -1011,10 +993,6 @@ class SettingsTab(QWidget):
             font_idx = self.viz_font.findText(font_name)
             if font_idx >= 0:
                 self.viz_font.setCurrentIndex(font_idx)
-            
-            # 互動設定
-            self.viz_interactive.setChecked(viz_config.get("interactive", False))
-            self.viz_library.setCurrentText(viz_config.get("interactive_library", "Plotly"))
         
         # 載入系統設定
         system_config = self.config.get("system")
@@ -1122,9 +1100,7 @@ class SettingsTab(QWidget):
             "color_scheme": self.viz_color_scheme.currentText(),
             "topic_chart_type": chart_types.get(self.viz_topic_type.currentText(), "bubble"),
             "wordcloud_max_words": self.viz_wordcloud_words.value(),
-            "font": self.viz_font.currentText(),
-            "interactive": self.viz_interactive.isChecked(),
-            "interactive_library": self.viz_library.currentText()
+            "font": self.viz_font.currentText()
         }
         
         # 收集系統設定

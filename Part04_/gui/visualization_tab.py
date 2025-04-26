@@ -240,13 +240,6 @@ class VisualizationTab(QWidget):
         self.cb_show_topic_labels.setChecked(True)
         topic_options_layout.addWidget(self.cb_show_topic_labels)
         
-        self.cb_interactive_topic = QCheckBox("互動式圖表")
-        self.cb_interactive_topic.setChecked(True)
-        topic_options_layout.addWidget(self.cb_interactive_topic)
-        
-        self.cb_3d_topic = QCheckBox("3D視圖 (如果可用)")
-        topic_options_layout.addWidget(self.cb_3d_topic)
-        
         topic_options_layout.addStretch()
         
         # 向量聚類選項
@@ -268,10 +261,6 @@ class VisualizationTab(QWidget):
         cluster_count_layout.addWidget(self.cluster_count_spin)
         cluster_options_layout.addLayout(cluster_count_layout)
         
-        self.cb_interactive_cluster = QCheckBox("互動式圖表")
-        self.cb_interactive_cluster.setChecked(True)
-        cluster_options_layout.addWidget(self.cb_interactive_cluster)
-        
         cluster_options_layout.addStretch()
         
         # 關係網絡選項
@@ -290,10 +279,6 @@ class VisualizationTab(QWidget):
         edge_threshold_layout.addWidget(self.edge_threshold_slider)
         edge_threshold_layout.addWidget(QLabel("0.30"))
         network_options_layout.addLayout(edge_threshold_layout)
-        
-        self.cb_interactive_network = QCheckBox("互動式網絡")
-        self.cb_interactive_network.setChecked(True)
-        network_options_layout.addWidget(self.cb_interactive_network)
         
         network_options_layout.addStretch()
         
@@ -516,73 +501,64 @@ class VisualizationTab(QWidget):
         self.load_results(result_path)
 
     def load_results(self, file_path):
-        """載入指定路徑的結果文件
+        """載入結果檔案
         
         Args:
-            file_path: 結果文件路徑
+            file_path: 結果檔案路徑
         """
         try:
-            # 重置數據和結果
-            self.current_dataset = None
-            self.topics = None
-            self.aspect_vectors = None
-            self.evaluation_results = None
-            self.visualization_results = {}
-            
-            # 讀取結果文件
             with open(file_path, 'r', encoding='utf-8') as f:
-                import json
-                result_data = json.load(f)
+                results = json.load(f)
             
-            # 設置結果文件路徑
-            self.result_file_path = file_path
+            # 清空當前結果
+            self.aspect_vectors = None
+            self.topics = None
+            self.evaluation_results = None
             
-            # 解析結果數據
-            base_name = os.path.basename(file_path)
+            # 從文件中獲取面向向量
+            if 'aspect_vectors' in results:
+                self.aspect_vectors = results['aspect_vectors']
+                self.logger.info(f"成功載入 {len(self.aspect_vectors)} 個面向向量")
             
-            # 處理不同格式的結果文件
-            if "aspect_vectors" in result_data and isinstance(result_data["aspect_vectors"], dict):
-                # 處理向量結果文件格式
-                self.current_dataset = result_data.get("data_source", os.path.splitext(base_name)[0])
-                self.aspect_vectors = result_data["aspect_vectors"]
+            # 從文件中獲取主題
+            if 'topics' in results:
+                self.topics = results['topics']
+                self.logger.info(f"成功載入 {len(self.topics)} 個主題")
+            
+            # 從文件中獲取評估結果 - 修改以同時支持多種格式
+            # 格式1: metrics 作為頂層鍵
+            if 'metrics' in results:
+                self.evaluation_results = results['metrics']
+                self.logger.info(f"從 metrics 鍵成功載入評估結果")
+            # 格式2: evaluation 作為頂層鍵
+            elif 'evaluation' in results:
+                self.evaluation_results = results['evaluation']
+                self.logger.info(f"從 evaluation 鍵成功載入評估結果")
+            # 格式3: metrics_details 作為頂層鍵 (備用方案)
+            elif 'metrics_details' in results:
+                self.evaluation_results = results['metrics_details']
+                self.logger.info(f"從 metrics_details 鍵成功載入評估結果")
                 
-                # 如果文件中沒有topics，生成模擬的topics數據從aspect_vectors的鍵中
-                if not result_data.get("topics"):
-                    self.topics = {}
-                    for topic_id in self.aspect_vectors.keys():
-                        # 從Topic_X提取X作為主題ID
-                        topic_num = topic_id.split('_')[-1] if '_' in topic_id else topic_id
-                        # 創建包含主題ID的臨時主題詞列表
-                        self.topics[topic_id] = [f"主題{topic_num}_關鍵詞1", f"主題{topic_num}_關鍵詞2", f"主題{topic_num}_關鍵詞3"]
-                else:
-                    self.topics = result_data.get("topics", {})
-                
-                self.evaluation_results = result_data.get("evaluation", {})
+            # 如果沒有找到評估結果，則記錄警告
+            if not self.evaluation_results:
+                self.logger.warning(f"在結果文件中沒有找到評估結果")
             else:
-                # 處理標準結果文件格式
-                self.current_dataset = result_data.get("dataset_name", os.path.splitext(base_name)[0])
-                self.topics = result_data.get("topics", {})
-                self.aspect_vectors = result_data.get("aspect_vectors", {})
-                self.evaluation_results = result_data.get("evaluation", {})
-                self.visualization_results = result_data.get("visualizations", {})
+                self.logger.info(f"評估結果包含: {list(self.evaluation_results.keys())}")
             
-            # 更新UI
+            # 設置當前數據集名稱
+            self.current_dataset = Path(file_path).stem
+            
+            # 更新 UI
             self._update_topic_selector()
             self._update_result_info()
             
-            # 通知用戶
-            self.status_message.emit(f"已載入結果文件: {os.path.basename(file_path)}", 5000)
+            return True
             
-            # 啟用視覺化按鈕
-            self.generate_btn.setEnabled(True)
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"解析JSON文件時出錯: {str(e)}")
-            QMessageBox.critical(self, "載入出錯", f"解析結果文件時出錯:\n{str(e)}")
         except Exception as e:
-            logger.error(f"載入結果文件時出錯: {str(e)}")
-            logger.error(traceback.format_exc())
+            self.logger.error(f"載入結果文件出錯: {str(e)}")
+            self.logger.error(traceback.format_exc())
             QMessageBox.critical(self, "載入出錯", f"載入結果文件時出錯:\n{str(e)}")
+            return False
 
     def _update_topic_selector(self):
         """更新主題選擇下拉框"""
@@ -897,8 +873,6 @@ class VisualizationTab(QWidget):
             
         # 取得選項
         show_labels = self.cb_show_topic_labels.isChecked()
-        interactive = self.cb_interactive_topic.isChecked()
-        use_3d = self.cb_3d_topic.isChecked()
         
         # 安全地獲取輸出目錄
         output_dir = "./visualizations"  # 默認值
@@ -932,8 +906,6 @@ class VisualizationTab(QWidget):
             topics=self.topics,
             vectors=self.aspect_vectors,
             show_labels=show_labels,
-            interactive=interactive,
-            use_3d=use_3d,
             output_dir=output_dir
         )
         
@@ -964,7 +936,6 @@ class VisualizationTab(QWidget):
         # 取得選項
         algorithm = self.cluster_algorithm_combo.currentText()
         n_clusters = self.cluster_count_spin.value()
-        interactive = self.cb_interactive_cluster.isChecked()
         
         # 安全地獲取輸出目錄
         output_dir = "./visualizations"  # 默認值
@@ -1002,7 +973,6 @@ class VisualizationTab(QWidget):
             vectors=self.aspect_vectors,
             algorithm=algorithm,
             n_clusters=n_clusters,
-            interactive=interactive,
             output_dir=output_dir
         )
         
@@ -1033,7 +1003,6 @@ class VisualizationTab(QWidget):
         # 取得選項
         show_weights = self.cb_show_weights.isChecked()
         edge_threshold = self.edge_threshold_slider.value() / 100.0
-        interactive = self.cb_interactive_network.isChecked()
         
         # 安全地獲取輸出目錄
         output_dir = "./visualizations"  # 默認值
@@ -1067,7 +1036,6 @@ class VisualizationTab(QWidget):
             vectors=self.aspect_vectors,
             show_weights=show_weights,
             edge_threshold=edge_threshold,
-            interactive=interactive,
             output_dir=output_dir
         )
         
@@ -1193,12 +1161,36 @@ class VisualizationTab(QWidget):
         show_all = self.cb_show_all_metrics.isChecked()
         show_chart = self.cb_show_chart.isChecked()
         
+        # 安全地設置輸出目錄
+        output_dir = self.output_dir  # 使用類中已初始化的默認輸出目錄
+        
+        # 嘗試從配置中獲取更精確的輸出目錄，但處理self.config可能為None的情況
+        if self.config is not None:
+            try:
+                if isinstance(self.config, dict):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict) and "visualizations_dir" in paths:
+                        output_dir = paths["visualizations_dir"]
+                elif hasattr(self.config, "get"):
+                    paths = self.config.get("paths", {})
+                    if isinstance(paths, dict) and "visualizations_dir" in paths:
+                        output_dir = paths["visualizations_dir"]
+            except Exception as e:
+                self.logger.warning(f"獲取可視化目錄配置出錯: {str(e)}，使用默認目錄 {output_dir}")
+        
+        # 確保輸出目錄存在
+        try:
+            os.makedirs(output_dir, exist_ok=True)
+        except Exception as e:
+            self.logger.warning(f"創建輸出目錄時出錯: {str(e)}")
+            output_dir = "./"  # 回退到當前目錄
+        
         # 生成可視化
         html_content, img_path, data_html = self.visualizer.create_evaluation_visualization(
             evaluation_results=self.evaluation_results,
             show_all=show_all,
             show_chart=show_chart,
-            output_dir=self.config.get("paths", {}).get("visualizations_dir", "./visualizations")
+            output_dir=output_dir
         )
         
         # 保存結果
