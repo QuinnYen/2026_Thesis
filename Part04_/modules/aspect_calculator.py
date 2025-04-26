@@ -574,12 +574,13 @@ class AspectCalculator:
             self.logger.error(f"創建比較可視化時出錯: {str(e)}")
             return None
     
-    def export_results(self, vectors_path, output_format='csv'):
+    def export_results(self, vectors_path, output_format='csv', attention_type=None):
         """導出面向向量為不同格式
         
         Args:
             vectors_path: 面向向量文件路徑
             output_format: 輸出格式，'csv', 'json'或'pickle'
+            attention_type: 注意力機制類型，如不提供將嘗試從文件名解析
             
         Returns:
             str: 導出文件路徑
@@ -596,6 +597,20 @@ class AspectCalculator:
             base_name = os.path.basename(vectors_path)
             base_name_without_ext = os.path.splitext(base_name)[0]
             
+            # 如果沒有提供注意力類型，嘗試從文件名中解析
+            if attention_type is None:
+                # 嘗試從文件名中提取注意力類型
+                parts = base_name_without_ext.split('_')
+                for part in parts:
+                    if part in ['no', 'similarity', 'keyword', 'self', 'combined']:
+                        attention_type = part
+                        break
+                
+                if attention_type is None:
+                    # 如果仍然無法確定，使用最佳注意力類型
+                    self.logger.warning("無法從文件名中確定注意力類型，將使用預設值")
+                    attention_type = "未指定"
+            
             if output_format == 'csv':
                 # 轉換為DataFrame並導出為CSV
                 df = pd.DataFrame(vectors)
@@ -605,11 +620,29 @@ class AspectCalculator:
                 
             elif output_format == 'json':
                 # 構建JSON對象並導出
-                json_data = {}
-                for i, topic in enumerate(topics):
-                    json_data[topic] = vectors[i].tolist()
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                # 從base_name中提取數據源信息
+                data_source = "Unknown"
+                if "IMDB" in base_name:
+                    data_source = "IMDB Dataset"
+                elif "Yelp" in base_name:
+                    data_source = "Yelp Dataset"
                 
-                output_path = os.path.join(self.output_dir, f"{base_name_without_ext}.json")
+                # 構建完整的JSON結構，包括元數據
+                json_data = {
+                    "timestamp": timestamp,
+                    "data_source": data_source,
+                    "attention_type": attention_type,
+                    "vector_type": "dictionary",
+                    "vector_shape": [len(topics), vectors.shape[1]],
+                    "aspect_vectors": {}
+                }
+                
+                # 添加面向向量
+                for i, topic in enumerate(topics):
+                    json_data["aspect_vectors"][topic] = vectors[i].tolist()
+                
+                output_path = os.path.join(self.output_dir, f"{base_name_without_ext}_result.json")
                 with open(output_path, 'w', encoding='utf-8') as f:
                     json.dump(json_data, f, ensure_ascii=False, indent=2)
                 
@@ -617,7 +650,8 @@ class AspectCalculator:
                 # 構建字典並導出為pickle
                 pickle_data = {
                     'aspect_vectors': vectors,
-                    'topics': topics
+                    'topics': topics,
+                    'attention_type': attention_type
                 }
                 output_path = os.path.join(self.output_dir, f"{base_name_without_ext}.pkl")
                 with open(output_path, 'wb') as f:

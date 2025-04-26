@@ -1050,8 +1050,8 @@ class AnalysisTab(QWidget):
             # 準備要保存的數據
             results = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "data_source": self.data_source_label.text() if hasattr(self, 'data_source_label') else "未知來源",
-                "attention_type": self.attention_type if hasattr(self, 'attention_type') else "未知類型",
+                "data_source": self.current_dataset_name,
+                "attention_type": self.params['attention_mechanisms'] if hasattr(self, 'params') else "未知類型",
             }
             
             # 正確處理不同類型的 aspect_vectors
@@ -1086,10 +1086,18 @@ class AnalysisTab(QWidget):
                 else:
                     results["aspect_vectors"] = []
             
-            # 如果有可用的指標，也保存它們
-            if hasattr(self, 'metrics') and self.metrics is not None:
-                results["metrics"] = self.metrics
+            # 保存評估指標
+            if hasattr(self, 'evaluation_results') and self.evaluation_results is not None:
+                results["metrics"] = {
+                    "coherence": self.evaluation_results.get('topic_coherence', 0.0),
+                    "separation": self.evaluation_results.get('topic_separation', 0.0),
+                    "combined_score": self.evaluation_results.get('combined_score', 0.0)
+                }
                 
+                # 如果有詳細指標，也一併保存
+                if 'details' in self.evaluation_results:
+                    results["metrics_details"] = self.evaluation_results['details']
+            
             # 保存結果到JSON文件
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(results, f, ensure_ascii=False, indent=2)

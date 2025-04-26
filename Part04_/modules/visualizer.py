@@ -5,6 +5,7 @@
 import os
 import numpy as np
 import pandas as pd
+import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
@@ -14,12 +15,90 @@ from wordcloud import WordCloud
 import logging
 import time
 from datetime import datetime
+from matplotlib.font_manager import FontProperties
+import tkinter as tk
+from tkinter import messagebox
 
 # 導入系統模組
 from utils.logger import get_logger
 
 # 獲取logger
 logger = get_logger("visualizer")
+
+# 設置中文字體支援
+def set_chinese_font():
+    """設置matplotlib支援中文字體"""
+    # 設置負號顯示
+    matplotlib.rcParams['axes.unicode_minus'] = False
+    
+    # 導入必要的模組
+    import matplotlib.font_manager as fm
+    from pathlib import Path
+    import platform
+    
+    # 根據不同操作系統設置默認字體路徑
+    system = platform.system()
+    font_found = False
+    
+    if system == 'Windows':
+        # Windows系統中文字體位置
+        potential_fonts = [
+            r"C:\Windows\Fonts\simsun.ttc",               # 宋體
+            r"C:\Windows\Fonts\simhei.ttf",               # 黑體
+            r"C:\Windows\Fonts\msyh.ttc",                 # 微軟雅黑
+            r"C:\Windows\Fonts\msjh.ttc",                 # 微軟正黑體
+            r"C:\Windows\Fonts\simkai.ttf",               # 楷體
+            r"C:\Windows\Fonts\DengXian.ttf",             # 等線體
+            r"C:\Windows\Fonts\Deng.ttf",                 # 等線體
+            r"C:\Windows\Fonts\NotoSansCJK-Regular.ttc",  # Noto Sans CJK
+        ]
+    elif system == 'Darwin':  # macOS
+        # macOS系統中文字體位置
+        potential_fonts = [
+            "/Library/Fonts/Songti.ttc",
+            "/Library/Fonts/PingFang.ttc",
+            "/Library/Fonts/Hiragino Sans GB.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/System/Library/Fonts/STHeiti Light.ttc",
+            "/System/Library/Fonts/STHeiti Medium.ttc",
+        ]
+    else:  # Linux和其他系統
+        # Linux系統中文字體位置
+        potential_fonts = [
+            "/usr/share/fonts/truetype/arphic/ukai.ttc",
+            "/usr/share/fonts/truetype/arphic/uming.ttc",
+            "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+            "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        ]
+    
+    # 嘗試設置字體
+    for font_path in potential_fonts:
+        if Path(font_path).exists():
+            logger.info(f"使用中文字體文件: {font_path}")
+            prop = fm.FontProperties(fname=font_path)
+            plt.rcParams['font.family'] = 'sans-serif'
+            plt.rcParams['font.sans-serif'] = [prop.get_name()] + plt.rcParams['font.sans-serif']
+            font_found = True
+            break
+    
+    # 如果找不到系統字體，嘗試使用matplotlib內建字體
+    if not font_found:
+        logger.warning("找不到系統中文字體，嘗試使用Matplotlib內建字體")
+        plt.rcParams['font.sans-serif'] = ['Noto Sans CJK JP', 'Noto Sans CJK TC', 
+                                          'Noto Sans CJK SC', 'Noto Sans CJK HK', 
+                                          'Microsoft YaHei', 'Microsoft JhengHei', 
+                                          'SimHei', 'DejaVu Sans', 'Arial Unicode MS']
+    
+    # 確保字體設置生效
+    plt.rcParams['axes.titlesize'] = 14  # 標題字體大小
+    plt.rcParams['axes.labelsize'] = 12  # 軸標籤字體大小
+    plt.rcParams['xtick.labelsize'] = 10  # x軸刻度標籤字體大小
+    plt.rcParams['ytick.labelsize'] = 10  # y軸刻度標籤字體大小
+    
+    logger.info("中文字體設置完成")
+
+# 設置中文字體
+set_chinese_font()
 
 class Visualizer:
     """提供各種可視化功能的類"""
@@ -126,6 +205,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"條形圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"條形圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+            
             return output_path
             
         except Exception as e:
@@ -209,6 +298,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"折線圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"折線圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -289,6 +388,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"雷達圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"雷達圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -352,6 +461,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"熱力圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"熱力圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -425,6 +544,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"3D散點圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"3D散點圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -513,6 +642,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"t-SNE可視化已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"t-SNE視覺化已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -569,6 +708,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"詞雲圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"詞雲圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -648,6 +797,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"面向向量比較圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"面向向量比較圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -704,6 +863,16 @@ class Visualizer:
             plt.close()
             
             self.logger.info(f"注意力權重熱力圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"注意力權重熱力圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
             return output_path
             
         except Exception as e:
@@ -742,22 +911,22 @@ class Visualizer:
             self.logger.error(f"不支持的可視化類型: {vis_type}")
             return None
 
-    def create_topic_distribution(self, topics, vectors, show_labels=True, interactive=True, use_3d=False, output_dir=None):
-        """生成主題分佈可視化
+    def create_topic_network(self, topics, vectors, show_weights=True, edge_threshold=0.3, interactive=True, output_dir=None):
+        """生成主題關係網絡可視化
         
         Args:
             topics: 主題詞字典，格式 {topic_id: [word1, word2, ...]}
             vectors: 面向向量字典，格式 {topic_id: vector}
-            show_labels: 是否顯示主題標籤
+            show_weights: 是否顯示連接權重
+            edge_threshold: 邊閾值，用於過濾弱連接
             interactive: 是否生成互動式圖表
-            use_3d: 是否使用3D視圖
             output_dir: 輸出目錄
             
         Returns:
             tuple: (html_content, img_path, data_html)
         """
         try:
-            self.logger.info("生成主題分佈可視化")
+            self.logger.info("生成主題關係網絡可視化")
             
             # 如果提供了輸出目錄，則臨時更改輸出位置
             old_output_dir = None
@@ -767,187 +936,322 @@ class Visualizer:
                 os.makedirs(self.output_dir, exist_ok=True)
             
             # 準備數據
-            vectors_list = list(vectors.values())
             topic_ids = list(vectors.keys())
+            vectors_list = list(vectors.values())
             
-            # 創建主題標籤
-            if show_labels:
-                # 從主題詞創建簡短標籤
-                labels = []
-                for topic_id in topic_ids:
-                    if topic_id in topics:
-                        # 獲取前3個關鍵詞作為標籤
-                        keywords = topics[topic_id][:3]
-                        label = f"主題 {topic_id}: {', '.join(keywords)}"
-                    else:
-                        label = f"主題 {topic_id}"
-                    labels.append(label)
-            else:
-                labels = [f"主題 {t_id}" for t_id in topic_ids]
+            # 計算主題間的相似度矩陣
+            import numpy as np
+            from sklearn.metrics.pairwise import cosine_similarity
             
-            # 創建數據表格HTML
+            vectors_array = np.array(vectors_list)
+            similarity_matrix = cosine_similarity(vectors_array)
+            
+            # 應用閾值過濾
+            similarity_matrix[similarity_matrix < edge_threshold] = 0
+            
+            # 創建網絡數據
             import pandas as pd
-            df = pd.DataFrame({
-                "主題ID": topic_ids,
-                "標籤": labels,
-                "向量維度": [len(vec) for vec in vectors_list]
-            })
+            import networkx as nx
             
-            data_html = df.to_html(index=False)
+            # 創建圖
+            G = nx.Graph()
             
-            # 將向量降維可視化
+            # 添加節點
+            for i, topic_id in enumerate(topic_ids):
+                # 獲取主題關鍵詞
+                keywords = topics[topic_id][:3] if topic_id in topics else []
+                keyword_text = ", ".join(keywords) if keywords else ""
+                
+                # 添加節點，包含關鍵詞信息
+                G.add_node(
+                    topic_id, 
+                    keywords=keyword_text,
+                    label=f"主題 {topic_id}"
+                )
+            
+            # 添加邊
+            edges_data = []
+            for i in range(len(topic_ids)):
+                for j in range(i+1, len(topic_ids)):
+                    if similarity_matrix[i, j] > 0:
+                        G.add_edge(
+                            topic_ids[i], 
+                            topic_ids[j], 
+                            weight=similarity_matrix[i, j]
+                        )
+                        
+                        # 收集邊數據用於表格顯示
+                        edges_data.append({
+                            "主題1": topic_ids[i],
+                            "主題2": topic_ids[j],
+                            "相似度": similarity_matrix[i, j]
+                        })
+            
+            # 創建邊數據表格HTML
+            edges_df = pd.DataFrame(edges_data)
+            data_html = edges_df.to_html(index=False) if not edges_df.empty else "<p>沒有符合閾值的主題連接</p>"
+            
+            # 生成圖像和HTML內容
             html_content = ""
             img_path = None
             
-            if use_3d and len(vectors_list) > 2:
-                # 3D可視化需要至少3個向量
+            # 使用networkx和matplotlib創建靜態圖像
+            plt.figure(figsize=self.figsize)
+            
+            # 計算節點位置 (使用spring_layout以獲得較好的可視化效果)
+            pos = nx.spring_layout(G, seed=42)
+            
+            # 繪製節點
+            nx.draw_networkx_nodes(
+                G, pos,
+                node_size=700,
+                node_color='lightblue',
+                alpha=0.8
+            )
+            
+            # 繪製邊
+            edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+            if edge_weights:
+                max_weight = max(edge_weights)
+                normalized_weights = [w / max_weight * 5 for w in edge_weights]
+                
+                nx.draw_networkx_edges(
+                    G, pos,
+                    width=normalized_weights,
+                    alpha=0.5,
+                    edge_color='gray'
+                )
+                
+                # 顯示邊權重
+                if show_weights:
+                    edge_labels = {(u, v): f"{G[u][v]['weight']:.2f}" for u, v in G.edges()}
+                    nx.draw_networkx_edge_labels(
+                        G, pos,
+                        edge_labels=edge_labels,
+                        font_size=8
+                    )
+            
+            # 繪製節點標籤
+            labels = {node: f"主題 {node}" for node in G.nodes()}
+            nx.draw_networkx_labels(G, pos, labels, font_size=10)
+            
+            # 設置標題和佈局
+            plt.title("主題關係網絡", fontsize=15)
+            plt.axis('off')
+            plt.tight_layout()
+            
+            # 保存圖片
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            img_filename = f"topic_network_{timestamp}.png"
+            img_path = os.path.join(self.output_dir, img_filename)
+            plt.savefig(img_path, dpi=self.dpi)
+            plt.close()
+            
+            # 創建互動式視覺化
+            if interactive:
                 try:
-                    from sklearn.manifold import TSNE
-                    import plotly.express as px
+                    import plotly.graph_objects as go
+                    import networkx as nx
                     import numpy as np
                     
-                    # 降維到3D
-                    tsne_3d = TSNE(n_components=3, perplexity=min(30, len(vectors_list)-1), 
-                             random_state=42, n_iter=1000)
-                    vectors_array = np.array(vectors_list)
-                    embeddings_3d = tsne_3d.fit_transform(vectors_array)
+                    # 將networkx圖轉換為plotly格式
+                    edge_x = []
+                    edge_y = []
+                    edge_text = []
                     
-                    if interactive:
-                        # 創建互動式3D圖
-                        df_3d = pd.DataFrame({
-                            'x': embeddings_3d[:, 0],
-                            'y': embeddings_3d[:, 1],
-                            'z': embeddings_3d[:, 2],
-                            'label': labels,
-                            'topic_id': topic_ids
-                        })
+                    for edge in G.edges():
+                        x0, y0 = pos[edge[0]]
+                        x1, y1 = pos[edge[1]]
+                        weight = G[edge[0]][edge[1]]['weight']
                         
-                        fig = px.scatter_3d(
-                            df_3d, x='x', y='y', z='z',
-                            text='label', color='topic_id',
-                            title='主題分佈 (3D)'
-                        )
-                        
-                        html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
+                        edge_x.extend([x0, x1, None])
+                        edge_y.extend([y0, y1, None])
+                        edge_text.append(f"相似度: {weight:.3f}")
                     
-                    # 同時生成靜態圖像
-                    import matplotlib.pyplot as plt
-                    from mpl_toolkits.mplot3d import Axes3D
-                    
-                    fig = plt.figure(figsize=self.figsize)
-                    ax = fig.add_subplot(111, projection='3d')
-                    
-                    # 繪製散點圖
-                    scatter = ax.scatter(
-                        embeddings_3d[:, 0], 
-                        embeddings_3d[:, 1], 
-                        embeddings_3d[:, 2],
-                        s=100, alpha=0.8
+                    edge_trace = go.Scatter(
+                        x=edge_x, y=edge_y,
+                        line=dict(width=0.8, color='#888'),
+                        hoverinfo='text',
+                        text=edge_text,
+                        mode='lines'
                     )
                     
-                    # 添加標籤
-                    if show_labels:
-                        for i, label in enumerate(labels):
-                            ax.text(
-                                embeddings_3d[i, 0], 
-                                embeddings_3d[i, 1], 
-                                embeddings_3d[i, 2],
-                                label, fontsize=8
-                            )
+                    # 節點數據
+                    node_x = []
+                    node_y = []
+                    for node in G.nodes():
+                        x, y = pos[node]
+                        node_x.append(x)
+                        node_y.append(y)
                     
-                    ax.set_title('主題分佈 (3D)')
+                    # 節點懸停文本
+                    node_text = []
+                    for node in G.nodes():
+                        keywords = G.nodes[node]['keywords']
+                        text = f"主題 {node}<br>關鍵詞: {keywords}"
+                        node_text.append(text)
                     
-                    # 保存圖片
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    img_filename = f"topic_distribution_3d_{timestamp}.png"
-                    img_path = os.path.join(self.output_dir, img_filename)
-                    plt.savefig(img_path, dpi=self.dpi)
-                    plt.close()
+                    node_trace = go.Scatter(
+                        x=node_x, y=node_y,
+                        mode='markers+text',
+                        hoverinfo='text',
+                        text=[f"T{n}" for n in G.nodes()],
+                        hovertext=node_text,
+                        marker=dict(
+                            showscale=True,
+                            colorscale='YlGnBu',
+                            size=20,
+                            colorbar=dict(
+                                thickness=15,
+                                title='節點連接數',
+                                xanchor='left',
+                            ),
+                            line=dict(width=2)
+                        )
+                    )
                     
+                    # 連接數作為節點顏色
+                    node_adjacencies = []
+                    for node in G.nodes():
+                        node_adjacencies.append(len(list(G.neighbors(node))))
+                    
+                    node_trace.marker.color = node_adjacencies
+                    
+                    # 創建圖形
+                    fig = go.Figure(
+                        data=[edge_trace, node_trace],
+                        layout=go.Layout(
+                            title="主題關係網絡",
+                            showlegend=False,
+                            hovermode='closest',
+                            margin=dict(b=20, l=5, r=5, t=40),
+                            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                        )
+                    )
+                    
+                    html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
+                    
+                except ImportError as e:
+                    self.logger.warning(f"缺少生成互動式圖表的必要模組 ({str(e)})，僅生成靜態圖像")
+                    html_content = f"<h2>主題關係網絡</h2><img src='{img_path}' width='100%'>"
                 except Exception as e:
-                    self.logger.warning(f"3D可視化生成失敗，回退到2D: {str(e)}")
-                    use_3d = False
-            
-            if not use_3d or img_path is None:
-                # 2D可視化
-                try:
-                    from sklearn.manifold import TSNE
-                    import numpy as np
-                    
-                    # 降維到2D
-                    tsne = TSNE(n_components=2, perplexity=min(30, len(vectors_list)-1), 
-                           random_state=42, n_iter=1000)
-                    vectors_array = np.array(vectors_list)
-                    embeddings_2d = tsne.fit_transform(vectors_array)
-                    
-                    if interactive:
-                        # 創建互動式2D圖
-                        try:
-                            import plotly.express as px
-                            import pandas as pd
-                            
-                            df_2d = pd.DataFrame({
-                                'x': embeddings_2d[:, 0],
-                                'y': embeddings_2d[:, 1],
-                                'label': labels,
-                                'topic_id': topic_ids
-                            })
-                            
-                            fig = px.scatter(
-                                df_2d, x='x', y='y',
-                                text='label', hover_data=['topic_id'],
-                                title='主題分佈 (2D)'
-                            )
-                            
-                            html_content = fig.to_html(full_html=True, include_plotlyjs='cdn')
-                            
-                        except ImportError:
-                            self.logger.warning("未安裝plotly，無法生成互動式圖表")
-                    
-                    # 生成靜態圖像
-                    import matplotlib.pyplot as plt
-                    
-                    plt.figure(figsize=self.figsize)
-                    plt.scatter(embeddings_2d[:, 0], embeddings_2d[:, 1], s=100, alpha=0.8)
-                    
-                    # 添加標籤
-                    if show_labels:
-                        for i, label in enumerate(labels):
-                            plt.annotate(
-                                label,
-                                (embeddings_2d[i, 0], embeddings_2d[i, 1]),
-                                fontsize=9,
-                                alpha=0.8
-                            )
-                    
-                    plt.title('主題分佈 (2D)')
-                    plt.grid(True, linestyle='--', alpha=0.7)
-                    plt.tight_layout()
-                    
-                    # 保存圖片
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    img_filename = f"topic_distribution_2d_{timestamp}.png"
-                    img_path = os.path.join(self.output_dir, img_filename)
-                    plt.savefig(img_path, dpi=self.dpi)
-                    plt.close()
-                    
-                except Exception as e:
-                    self.logger.error(f"2D可視化生成失敗: {str(e)}")
+                    self.logger.error(f"生成互動式網絡圖時出錯: {str(e)}")
                     import traceback
                     self.logger.error(traceback.format_exc())
+                    html_content = f"<h2>主題關係網絡</h2><img src='{img_path}' width='100%'>"
+            else:
+                # 僅使用靜態圖像
+                html_content = f"<h2>主題關係網絡</h2><img src='{img_path}' width='100%'>"
             
-            # 如果互動式圖表生成失敗，但靜態圖片成功，則創建簡單HTML
-            if not html_content and img_path:
-                html_content = f"<h2>主題分佈</h2><img src='{img_path}' width='100%'>"
-                
             # 恢復原始輸出目錄
             if old_output_dir:
                 self.output_dir = old_output_dir
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"主題關係網絡視覺化已成功生成！\n\n保存路徑：\n{img_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
                 
             return html_content, img_path, data_html
             
         except Exception as e:
-            self.logger.error(f"生成主題分佈可視化時出錯: {str(e)}")
+            self.logger.error(f"生成主題關係網絡視覺化時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
+
+    def create_attention_heatmap(self, attention_matrix, row_labels=None, col_labels=None, title="注意力權重熱力圖", 
+                               output_filename=None, cmap="YlGnBu", annot=True, output_dir=None):
+        """生成注意力權重熱力圖
+        
+        Args:
+            attention_matrix: 注意力權重矩陣，形狀為 (n, m)
+            row_labels: 行標籤，對應於熱力圖的Y軸
+            col_labels: 列標籤，對應於熱力圖的X軸
+            title: 熱力圖標題
+            output_filename: 輸出檔案名稱
+            cmap: 顏色映射
+            annot: 是否在熱力圖上顯示數值
+            output_dir: 輸出目錄
+            
+        Returns:
+            tuple: (html_content, img_path, data_html)
+        """
+        try:
+            self.logger.info(f"生成注意力熱力圖: {title}")
+            
+            # 如果提供了輸出目錄，則臨時更改輸出位置
+            old_output_dir = None
+            if output_dir:
+                old_output_dir = self.output_dir
+                self.output_dir = output_dir
+                os.makedirs(self.output_dir, exist_ok=True)
+            
+            # 轉換為DataFrame以便更好地顯示標籤
+            import pandas as pd
+            if row_labels is None:
+                row_labels = [f"行 {i+1}" for i in range(attention_matrix.shape[0])]
+            if col_labels is None:
+                col_labels = [f"列 {i+1}" for i in range(attention_matrix.shape[1])]
+                
+            df = pd.DataFrame(attention_matrix, index=row_labels, columns=col_labels)
+            
+            # 創建圖表
+            plt.figure(figsize=self.figsize)
+            
+            # 繪製熱力圖
+            ax = sns.heatmap(df, annot=annot, cmap=cmap, fmt=".3f", linewidths=0.5)
+            
+            # 調整標籤方向，避免重疊
+            plt.xticks(rotation=45, ha='right')
+            plt.yticks(rotation=0)
+            
+            # 設置標題
+            plt.title(title, fontsize=14, pad=20)
+            
+            # 調整布局，確保不裁剪標籤
+            plt.tight_layout()
+            
+            # 保存圖片
+            if output_filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"attention_heatmap_{timestamp}.png"
+                
+            img_path = os.path.join(self.output_dir, output_filename)
+            plt.savefig(img_path, dpi=self.dpi, bbox_inches='tight')
+            plt.close()
+            
+            self.logger.info(f"注意力熱力圖已保存至: {img_path}")
+            
+            # 生成HTML內容
+            html_content = f"<h2>{title}</h2><img src='{img_path}' width='100%'>"
+            
+            # 生成數據表格HTML
+            data_html = df.to_html(classes="table table-bordered table-hover", 
+                                  float_format="%.4f")
+            
+            # 恢復原始輸出目錄
+            if old_output_dir:
+                self.output_dir = old_output_dir
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"注意力熱力圖已成功生成！\n\n保存路徑：\n{img_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
+            return html_content, img_path, data_html
+            
+        except Exception as e:
+            self.logger.error(f"生成注意力熱力圖時出錯: {str(e)}")
             import traceback
             self.logger.error(traceback.format_exc())
             return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
