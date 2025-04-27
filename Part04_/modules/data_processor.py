@@ -461,6 +461,102 @@ class AmazonProcessor(DataProcessor):
         df['data_source'] = 'amazon'
         
         return df
+    
+    def process_amazon_files(self, file_paths, output_path=None, sample_size=10000):
+        """處理多個Amazon數據文件，合併結果並抽樣
+        
+        Args:
+            file_paths: Amazon數據文件路徑列表
+            output_path: 輸出文件路徑，如果為None則自動生成
+            sample_size: 抽樣數量，用於處理大型數據集
+            
+        Returns:
+            pd.DataFrame: 處理後的數據
+        """
+        import random
+        import time
+        
+        self.logger.info("===== Amazon數據處理開始 =====")
+        for i, path in enumerate(file_paths):
+            self.logger.info(f"輸入文件{i+1}: {path}")
+        self.logger.info(f"抽樣數量: {sample_size}")
+        
+        # 設定隨機種子確保結果可重現
+        random.seed(42)
+        
+        # 記錄開始時間
+        start_time = time.time()
+        
+        # 讀取並合併所有文件
+        dfs = []
+        total_reviews = 0
+        
+        for file_path in file_paths:
+            try:
+                # 根據文件擴展名選擇加載方式
+                file_ext = os.path.splitext(file_path)[1].lower()
+                
+                if file_ext == '.csv':
+                    df = pd.read_csv(file_path)
+                elif file_ext == '.json':
+                    try:
+                        df = pd.read_json(file_path)
+                    except:
+                        df = pd.read_json(file_path, lines=True)
+                else:
+                    self.logger.warning(f"不支持的文件類型: {file_ext}，跳過")
+                    continue
+                
+                # 記錄讀取信息
+                self.logger.info(f"成功讀取 {len(df)} 條評論，來自 {file_path}")
+                total_reviews += len(df)
+                
+                # 將數據添加到列表
+                dfs.append(df)
+                
+            except Exception as e:
+                self.logger.error(f"讀取文件 {file_path} 時出錯: {str(e)}")
+                continue
+        
+        # 如果沒有成功讀取任何數據，返回錯誤
+        if not dfs:
+            raise ValueError("沒有成功讀取任何數據")
+        
+        # 合併所有數據框
+        self.logger.info("正在合併數據...")
+        merged_df = pd.concat(dfs, ignore_index=True)
+        self.logger.info(f"合併後共有 {len(merged_df)} 條評論")
+        
+        # 抽樣（如果數據量超過sample_size）
+        if len(merged_df) > sample_size:
+            self.logger.info(f"正在從 {len(merged_df)} 條評論中抽樣 {sample_size} 條...")
+            merged_df = merged_df.sample(sample_size, random_state=42)
+        
+        # 預處理數據
+        self.logger.info("正在進行數據預處理...")
+        processed_df = self.preprocess(merged_df)
+        
+        # 如果提供了輸出路徑，則保存為CSV
+        if output_path:
+            output_dir = os.path.dirname(output_path)
+            if output_dir and not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+            
+            self.logger.info(f"正在保存處理結果到 {output_path}")
+            processed_df.to_csv(output_path, index=False)
+        
+        # 計算處理時間
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        minutes, seconds = divmod(elapsed_time, 60)
+        
+        # 記錄處理完成信息
+        self.logger.info(f"===== 處理完成! 用時: {int(minutes)}分{int(seconds)}秒 =====")
+        self.logger.info(f"從 {total_reviews} 條評論中處理並抽樣了 {len(processed_df)} 條")
+        if output_path:
+            self.logger.info(f"結果已保存至: {output_path}")
+        
+        return processed_df
 
 
 class YelpProcessor(DataProcessor):

@@ -195,16 +195,27 @@ class AnalysisTab(QWidget):
         import_btn = QPushButton("導入...")
         import_btn.clicked.connect(self.import_data)
         
-        dataset_selector_layout.addWidget(load_btn)
-        dataset_selector_layout.addWidget(refresh_btn)
-        dataset_selector_layout.addWidget(import_btn)
-        dataset_layout.addLayout(dataset_selector_layout)
-        
-        # 添加Yelp數據合併按鈕
         yelp_btn = QPushButton("Yelp合併導入")
         yelp_btn.clicked.connect(self.import_yelp_data)
         yelp_btn.setToolTip("合併Yelp的business和review數據文件")
-        dataset_layout.addWidget(yelp_btn)
+        
+        dataset_selector_layout.addWidget(load_btn)
+        dataset_selector_layout.addWidget(refresh_btn)
+        dataset_selector_layout.addWidget(import_btn)
+        dataset_selector_layout.addWidget(yelp_btn)
+        dataset_layout.addLayout(dataset_selector_layout)
+        
+        # 添加數據處理數量輸入框
+        sample_layout = QHBoxLayout()
+        sample_layout.addWidget(QLabel("處理數據數量:"))
+        self.sample_size_spin = QSpinBox()
+        self.sample_size_spin.setMinimum(100)
+        self.sample_size_spin.setMaximum(100000)
+        self.sample_size_spin.setSingleStep(100)
+        self.sample_size_spin.setValue(50000)
+        self.sample_size_spin.setToolTip("設定要處理的數據記錄數量")
+        sample_layout.addWidget(self.sample_size_spin)
+        dataset_layout.addLayout(sample_layout)
         
         # 添加數據集信息標籤
         self.dataset_info_label = QLabel("當前資料集: 未載入")
@@ -375,7 +386,7 @@ class AnalysisTab(QWidget):
     
     def _get_available_datasets(self):
         """獲取可用的數據集列表"""
-        datasets = ["-- 選擇數據集 --"]
+        datasets = []
         
         try:
             # 從處理後的數據目錄中獲取
@@ -633,13 +644,7 @@ class AnalysisTab(QWidget):
             output_file = os.path.join(data_dir, f"yelp_merged_{timestamp}.csv")
             
             # 取得樣本大小
-            sample_size, ok = QInputDialog.getInt(
-                self, "樣本大小", "請輸入需要的樣本數量:", 5000, 100, 100000, 100
-            )
-            if not ok:
-                if progress:
-                    progress.close()
-                return
+            sample_size = self.sample_size_spin.value()
             
             # 創建處理器並處理數據
             processor = YelpProcessor()
@@ -707,7 +712,7 @@ class AnalysisTab(QWidget):
         """載入選中的數據集"""
         dataset_name = self.dataset_combo.currentText()
         
-        if dataset_name == "-- 選擇數據集 --" or not dataset_name:
+        if not dataset_name:
             QMessageBox.warning(self, "選擇數據集", "請選擇一個有效的數據集")
             return
             
