@@ -55,8 +55,8 @@ class VisualizationTab(QWidget):
         # 設置 logger
         self.logger = logger
 
-        # 默認輸出目錄 - 更新為使用 Part04_/0_output/visualizations 目錄
-        self.output_dir = os.path.join("Part04_", "0_output", "visualizations")
+        # 默認輸出目錄 - 更新為使用 Part04_/1_output/visualizations 目錄
+        self.output_dir = os.path.join("Part04_", "1_output", "visualizations")
         # 嘗試從文件管理器獲取正確路徑
         if file_manager is not None and hasattr(file_manager, "visualizations_dir"):
             self.output_dir = file_manager.visualizations_dir
@@ -373,23 +373,23 @@ class VisualizationTab(QWidget):
             # 嘗試不同的方式獲取配置值
             try:
                 if isinstance(self.config, dict):
-                    results_dir = self.config.get("paths", {}).get("output_dir", "./Part04_/0_output")
+                    results_dir = self.config.get("paths", {}).get("output_dir", "./Part04_/1_output")
                 elif hasattr(self.config, "get"):
                     # 嘗試直接獲取配置路徑
                     try:
                         paths = self.config.get("paths")
                         if isinstance(paths, dict):
-                            results_dir = paths.get("output_dir", "./Part04_/0_output")
+                            results_dir = paths.get("output_dir", "./Part04_/1_output")
                         else:
-                            results_dir = self.config.get(("paths", "output_dir"), "./Part04_/0_output")
+                            results_dir = self.config.get(("paths", "output_dir"), "./Part04_/1_output")
                     except TypeError:
                         # 如果上述方法失敗，嘗試一次直接訪問完整路徑
-                        results_dir = self.config.get("paths.output_dir", "./Part04_/0_output")
+                        results_dir = self.config.get("paths.output_dir", "./Part04_/1_output")
                 else:
-                    results_dir = "./Part04_/0_output"  # 默認值
+                    results_dir = "./Part04_/1_output"  # 默認值
             except Exception as config_error:
                 logger.warning(f"讀取配置時出現錯誤，使用默認值: {str(config_error)}")
-                results_dir = "./Part04_/0_output"
+                results_dir = "./Part04_/1_output"
             
             if not os.path.exists(results_dir):
                 return results
@@ -883,7 +883,7 @@ class VisualizationTab(QWidget):
         show_labels = self.cb_show_topic_labels.isChecked()
         
         # 安全地獲取輸出目錄
-        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 修改為絕對路徑
+        output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 修改為絕對路徑
         
         # 檢查配置對象是否存在
         if self.config is not None:
@@ -907,7 +907,7 @@ class VisualizationTab(QWidget):
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建目錄時出錯: {str(e)}")
-            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定輸出目錄
+            output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 回退到固定輸出目錄
             os.makedirs(output_dir, exist_ok=True)  # 再次嘗試創建
         
         # 生成可視化
@@ -947,7 +947,7 @@ class VisualizationTab(QWidget):
         n_clusters = self.sb_n_clusters.value()
         
         # 安全地獲取輸出目錄
-        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 默認值改為絕對路徑
+        output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 默認值改為絕對路徑
         
         # 檢查配置對象是否存在並嘗試獲取更精確的輸出目錄
         if self.config is not None:
@@ -974,7 +974,7 @@ class VisualizationTab(QWidget):
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建目錄時出錯: {str(e)}")
-            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定的輸出目錄
+            output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 回退到固定的輸出目錄
             os.makedirs(output_dir, exist_ok=True)  # 再次嘗試創建
         
         # 生成可視化
@@ -1014,7 +1014,7 @@ class VisualizationTab(QWidget):
         edge_threshold = self.edge_threshold_slider.value() / 100.0
         
         # 安全地獲取輸出目錄
-        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 修改為絕對路徑
+        output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 修改為絕對路徑
         
         # 檢查配置對象是否存在
         if self.config is not None:
@@ -1037,7 +1037,7 @@ class VisualizationTab(QWidget):
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建輸出目錄時出錯: {str(e)}")
-            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定絕對路徑
+            output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 回退到固定絕對路徑
             try:
                 os.makedirs(output_dir, exist_ok=True)
             except Exception as e2:
@@ -1079,7 +1079,7 @@ class VisualizationTab(QWidget):
         sample_id = self.sample_id_spin.value()
         
         # 安全地獲取輸出目錄
-        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 修改為絕對路徑
+        output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 修改為絕對路徑
         
         # 檢查配置對象是否存在
         if self.config is not None:
@@ -1102,7 +1102,7 @@ class VisualizationTab(QWidget):
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建輸出目錄時出錯: {str(e)}")
-            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定絕對路徑
+            output_dir = os.path.join("Part04_", "1_output", "visualizations")  # 回退到固定絕對路徑
             try:
                 os.makedirs(output_dir, exist_ok=True)
             except Exception as e2:

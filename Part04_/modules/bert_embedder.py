@@ -59,32 +59,31 @@ class BertEmbedder:
     """使用BERT模型提取文本的語義表示"""
     
     def __init__(self, config=None):
-        """初始化BERT編碼器
+        """初始化BERT嵌入器
         
         Args:
-            config: 配置參數字典，可包含以下鍵:
+            config: 配置字典，可包含以下鍵:
                 - model_name: BERT模型名稱
-                - max_length: 最大序列長度
                 - batch_size: 批次大小
-                - use_gpu: 是否使用GPU加速
+                - max_length: 最大序列長度
+                - use_gpu: 是否使用GPU
                 - output_dir: 輸出目錄
         """
         self.config = config or {}
         self.logger = logger
         
         # 設置默認配置
-        self.model_name = self.config.get('model_name', 'bert-base-uncased')
+        self.model_name = self.config.get('model_name', 'bert-base-chinese')
+        self.batch_size = self.config.get('batch_size', 32)
         self.max_length = self.config.get('max_length', 128)
-        self.batch_size = self.config.get('batch_size', 16)
-        # 從配置中獲取輸出目錄，默認為Part04_/0_output/embeddings
-        self.output_dir = self.config.get('output_dir', './Part04_/0_output/embeddings')
-        use_gpu = self.config.get('use_gpu', True)
+        self.use_gpu = self.config.get('use_gpu', True)
+        self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '1_output', 'embeddings'))
         
         # 檢查CUDA可用性
         self.cuda_available = torch.cuda.is_available()
         
         # 設置設備
-        if self.cuda_available and use_gpu:
+        if self.cuda_available and self.use_gpu:
             self.device = torch.device('cuda')
             self.logger.info(f"使用GPU: {torch.cuda.get_device_name(0)}")
             try:
@@ -94,7 +93,7 @@ class BertEmbedder:
                 self.logger.warning(f"無法獲取GPU記憶體資訊: {str(e)}")
         else:
             self.device = torch.device('cpu')
-            if use_gpu and not self.cuda_available:
+            if self.use_gpu and not self.cuda_available:
                 self.logger.warning("找不到可用的GPU，將使用CPU進行處理")
             else:
                 self.logger.info("使用CPU進行處理")

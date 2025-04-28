@@ -142,8 +142,8 @@ def configure_app():
     # 設置應用程式路徑
     app_dir = os.path.abspath(os.path.dirname(__file__))
     
-    # 設置輸出目錄 - 修正為 0_output 而非 output
-    output_dir = os.path.join(app_dir, "0_output")
+    # 設置輸出目錄 - 修正為 1_output 而非 output
+    output_dir = os.path.join(app_dir, "1_output")
     logs_dir = os.path.join(output_dir, "logs")
     resources_dir = os.path.join(app_dir, "resources")
     

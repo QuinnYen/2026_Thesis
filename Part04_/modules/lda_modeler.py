@@ -30,29 +30,30 @@ class LDAModeler:
     """使用LDA算法進行主題建模和面向切割"""
     
     def __init__(self, config=None):
-        """初始化LDA主題建模器
+        """初始化LDA模型
         
         Args:
             config: 配置參數字典，可包含以下鍵:
-                - n_topics: 主題數量
-                - alpha: 文檔-主題先驗分布參數
-                - beta: 主題-詞彙先驗分布參數
-                - max_iter: 最大迭代次數
+                - num_topics: 主題數量
+                - alpha: 文檔-主題分佈的先驗參數
+                - eta: 主題-詞分佈的先驗參數
+                - passes: 訓練通過次數
+                - iterations: 迭代次數
                 - random_state: 隨機種子
                 - output_dir: 輸出目錄
-                - topic_labels: 預設主題標籤
         """
         self.config = config or {}
         self.logger = logger
         
         # 設置默認配置
-        self.n_topics = self.config.get('n_topics', 10)
-        self.alpha = self.config.get('alpha', 0.1)
-        self.beta = self.config.get('beta', 0.01)
-        self.max_iter = self.config.get('max_iter', 50)
+        self.num_topics = self.config.get('num_topics', 10)
+        # 將 'auto' 轉換為 None (sklearn LDA 不接受 'auto' 字符串)
+        self.alpha = None if self.config.get('alpha', 'auto') == 'auto' else self.config.get('alpha')
+        self.eta = None if self.config.get('eta', 'auto') == 'auto' else self.config.get('eta')
+        self.passes = self.config.get('passes', 10)
+        self.iterations = self.config.get('iterations', 50)
         self.random_state = self.config.get('random_state', 42)
-        self.output_dir = self.config.get('output_dir', './Part04_/0_output/topics')
-        self.topic_labels = self.config.get('topic_labels', None)
+        self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '1_output', 'topics'))
         
         # 確保輸出目錄存在
         os.makedirs(self.output_dir, exist_ok=True)
@@ -77,13 +78,13 @@ class LDAModeler:
             self.config.update(new_config)
             
             # 更新類屬性
-            self.n_topics = self.config.get('n_topics', self.n_topics)
-            self.alpha = self.config.get('alpha', self.alpha)
-            self.beta = self.config.get('beta', self.beta)
-            self.max_iter = self.config.get('max_iter', self.max_iter)
+            self.num_topics = self.config.get('num_topics', self.num_topics)
+            self.alpha = None if self.config.get('alpha', self.alpha) == 'auto' else self.config.get('alpha', self.alpha)
+            self.eta = None if self.config.get('eta', self.eta) == 'auto' else self.config.get('eta', self.eta)
+            self.passes = self.config.get('passes', self.passes)
+            self.iterations = self.config.get('iterations', self.iterations)
             self.random_state = self.config.get('random_state', self.random_state)
             self.output_dir = self.config.get('output_dir', self.output_dir)
-            self.topic_labels = self.config.get('topic_labels', self.topic_labels)
             
             # 確保輸出目錄存在
             os.makedirs(self.output_dir, exist_ok=True)
@@ -104,12 +105,12 @@ class LDAModeler:
             tuple: (lda_model, topics_dict) LDA模型和主題詞字典
         """
         try:
-            self.logger.info(f"開始訓練LDA模型，使用 {self.n_topics} 個主題")
+            self.logger.info(f"開始訓練LDA模型，使用 {self.num_topics} 個主題")
             
             # 使用TF-IDF向量化文本
             self.logger.info(f"正在向量化文本...")
             if progress_callback:
-                progress_callback(1, self.max_iter, "向量化文本")
+                progress_callback(1, self.iterations, "向量化文本")
                 
             # 使用CountVectorizer進行特徵抽取
             vectorizer = CountVectorizer(
@@ -130,14 +131,14 @@ class LDAModeler:
             # 構建LDA模型
             self.logger.info(f"正在訓練LDA模型...")
             if progress_callback:
-                progress_callback(2, self.max_iter, "初始化模型")
+                progress_callback(2, self.iterations, "初始化模型")
             
             # 設置LDA模型參數
             lda_model = LatentDirichletAllocation(
-                n_components=self.n_topics,
+                n_components=self.num_topics,
                 doc_topic_prior=self.alpha,
-                topic_word_prior=self.beta,
-                max_iter=self.max_iter,
+                topic_word_prior=self.eta,
+                max_iter=self.iterations,
                 learning_method='online',
                 random_state=self.random_state,
                 verbose=1,       # 啟用詳細輸出，但不使用callback
@@ -148,17 +149,17 @@ class LDAModeler:
             # 如果需要進度更新，可以手動實現
             if progress_callback:
                 # 初始通知
-                progress_callback(2, self.max_iter, f"LDA迭代 0/{self.max_iter}")
+                progress_callback(2, self.iterations, f"LDA迭代 0/{self.iterations}")
                 
                 # 分批訓練，手動更新進度
-                for i in range(self.max_iter):
+                for i in range(self.iterations):
                     if i == 0:
                         lda_model.fit_transform(X)
                     else:
                         lda_model.partial_fit(X)
                         
                     # 更新進度
-                    progress_callback(i + 3, self.max_iter, f"LDA迭代 {i+1}/{self.max_iter}")
+                    progress_callback(i + 3, self.iterations, f"LDA迭代 {i+1}/{self.iterations}")
             else:
                 # 正常訓練
                 lda_model.fit(X)
@@ -173,8 +174,8 @@ class LDAModeler:
             topic_top_words = {}
             
             # 使用自定義主題標籤（如果提供）
-            use_custom_labels = (self.topic_labels is not None and 
-                                len(self.topic_labels) >= self.n_topics)
+            use_custom_labels = (self.config.get('topic_labels') is not None and 
+                                len(self.config.get('topic_labels')) >= self.num_topics)
             
             for topic_idx, topic in enumerate(topic_word_distributions):
                 # 獲取前n_top_words個詞
@@ -182,8 +183,8 @@ class LDAModeler:
                 top_words = [feature_names[i] for i in top_word_indices]
                 
                 # 獲取主題標籤
-                if use_custom_labels and topic_idx in self.topic_labels:
-                    topic_label = self.topic_labels[topic_idx]
+                if use_custom_labels and topic_idx in self.config.get('topic_labels'):
+                    topic_label = self.config.get('topic_labels')[topic_idx]
                     topic_key = f"Topic_{topic_idx+1}_{topic_label}"
                 else:
                     topic_key = f"Topic_{topic_idx+1}"
@@ -193,7 +194,7 @@ class LDAModeler:
             
             # 完成進度
             if progress_callback:
-                progress_callback(self.max_iter, self.max_iter, "LDA模型訓練完成")
+                progress_callback(self.iterations, self.iterations, "LDA模型訓練完成")
                 
             # 保存vectorizer作為實例變數，以便後續使用
             self.vectorizer = vectorizer
@@ -221,7 +222,7 @@ class LDAModeler:
         """
         try:
             start_time = time.time()
-            self.logger.info(f"開始構建LDA主題模型，使用 {self.n_topics} 個主題")
+            self.logger.info(f"開始構建LDA主題模型，使用 {self.num_topics} 個主題")
             
             # 加載數據
             self.logger.info(f"正在加載數據...")
@@ -277,10 +278,10 @@ class LDAModeler:
             
             # 設置LDA模型參數
             lda_model = LatentDirichletAllocation(
-                n_components=self.n_topics,
+                n_components=self.num_topics,
                 doc_topic_prior=self.alpha,
-                topic_word_prior=self.beta,
-                max_iter=self.max_iter,
+                topic_word_prior=self.eta,
+                max_iter=self.iterations,
                 learning_method='online',
                 random_state=self.random_state,
                 n_jobs=1  # 使用所有可用CPU核心
@@ -303,8 +304,8 @@ class LDAModeler:
             topic_top_words = {}
             
             # 使用自定義主題標籤（如果提供）
-            use_custom_labels = (self.topic_labels is not None and 
-                                len(self.topic_labels) >= self.n_topics)
+            use_custom_labels = (self.config.get('topic_labels') is not None and 
+                                len(self.config.get('topic_labels')) >= self.num_topics)
             
             for topic_idx, topic in enumerate(topic_word_distributions):
                 # 獲取前n_top_words個詞
@@ -312,8 +313,8 @@ class LDAModeler:
                 top_words = [feature_names[i] for i in top_word_indices]
                 
                 # 獲取主題標籤
-                if use_custom_labels and topic_idx in self.topic_labels:
-                    topic_label = self.topic_labels[topic_idx]
+                if use_custom_labels and topic_idx in self.config.get('topic_labels'):
+                    topic_label = self.config.get('topic_labels')[topic_idx]
                     topic_key = f"Topic_{topic_idx+1}_{topic_label}"
                 else:
                     topic_key = f"Topic_{topic_idx+1}"
@@ -333,10 +334,10 @@ class LDAModeler:
             
             # 創建主題標籤映射
             if use_custom_labels:
-                topic_id_to_label = {idx: f"Topic_{idx+1}_{self.topic_labels[idx]}" 
-                                     for idx in range(self.n_topics) if idx in self.topic_labels}
+                topic_id_to_label = {idx: f"Topic_{idx+1}_{self.config.get('topic_labels')[idx]}" 
+                                     for idx in range(self.num_topics) if idx in self.config.get('topic_labels')}
             else:
-                topic_id_to_label = {idx: f"Topic_{idx+1}" for idx in range(self.n_topics)}
+                topic_id_to_label = {idx: f"Topic_{idx+1}" for idx in range(self.num_topics)}
                 
             # 為每個文檔分配主題標籤
             df['main_topic'] = [topic_id_to_label.get(topic_idx, f"Topic_{topic_idx+1}") 
@@ -359,7 +360,7 @@ class LDAModeler:
             base_name_without_ext = os.path.splitext(base_name)[0]
             
             # 保存LDA模型
-            lda_model_path = os.path.join(self.output_dir, f"{base_name_without_ext}_lda_{self.n_topics}_topics.pkl")
+            lda_model_path = os.path.join(self.output_dir, f"{base_name_without_ext}_lda_{self.num_topics}_topics.pkl")
             with open(lda_model_path, 'wb') as f:
                 pickle.dump(lda_model, f)
             
@@ -383,10 +384,10 @@ class LDAModeler:
                 json.dump({
                     'topic_counts': topic_counts,
                     'n_docs': len(df),
-                    'n_topics': self.n_topics,
+                    'n_topics': self.num_topics,
                     'alpha': self.alpha,
-                    'beta': self.beta,
-                    'max_iter': self.max_iter
+                    'eta': self.eta,
+                    'iterations': self.iterations
                 }, f, ensure_ascii=False, indent=2)
             
             # 生成可視化
@@ -425,7 +426,7 @@ class LDAModeler:
                 'visualizations': visualizations,
                 'topic_counts': topic_counts,
                 'feature_names': feature_names.tolist(),
-                'n_topics': self.n_topics,
+                'n_topics': self.num_topics,
                 'topic_words': topic_top_words
             }
             
@@ -494,7 +495,7 @@ class LDAModeler:
         """
         try:
             # 設定畫布大小
-            plt.figure(figsize=(15, int(3 * self.n_topics / 2)))
+            plt.figure(figsize=(15, int(3 * self.num_topics / 2)))
             
             for topic_idx, topic in enumerate(lda_model.components_):
                 # 獲取頂部詞語
@@ -503,13 +504,13 @@ class LDAModeler:
                 weights = topic[top_features_ind]
                 
                 # 繪製條形圖
-                ax = plt.subplot(int((self.n_topics+1)/2), 2, topic_idx+1)
+                ax = plt.subplot(int((self.num_topics+1)/2), 2, topic_idx+1)
                 ax.barh(top_features, weights)
                 
                 # 設置標題
                 topic_label = ""
-                if self.topic_labels and topic_idx in self.topic_labels:
-                    topic_label = f": {self.topic_labels[topic_idx]}"
+                if self.config.get('topic_labels') and topic_idx in self.config.get('topic_labels'):
+                    topic_label = f": {self.config.get('topic_labels')[topic_idx]}"
                 ax.set_title(f'主題 {topic_idx+1}{topic_label}', fontsize=12)
                 
                 # 設置字體大小
@@ -539,22 +540,22 @@ class LDAModeler:
         """
         try:
             # 計算每個主題的文檔數量
-            topic_counts = np.zeros(self.n_topics)
+            topic_counts = np.zeros(self.num_topics)
             doc_main_topics = np.argmax(doc_topic_dist, axis=1)
             
-            for topic_idx in range(self.n_topics):
+            for topic_idx in range(self.num_topics):
                 topic_counts[topic_idx] = np.sum(doc_main_topics == topic_idx)
             
             # 繪製條形圖
             plt.figure(figsize=(12, 7))
-            x = np.arange(self.n_topics)
+            x = np.arange(self.num_topics)
             plt.bar(x, topic_counts)
             
             # 使用自定義標籤（如果提供）
-            if self.topic_labels:
-                x_labels = [f'主題 {i+1}\n{self.topic_labels.get(i, "")}' for i in range(self.n_topics)]
+            if self.config.get('topic_labels'):
+                x_labels = [f'主題 {i+1}\n{self.config.get("topic_labels").get(i, "")}' for i in range(self.num_topics)]
             else:
-                x_labels = [f'主題 {i+1}' for i in range(self.n_topics)]
+                x_labels = [f'主題 {i+1}' for i in range(self.num_topics)]
             
             plt.xlabel('主題')
             plt.ylabel('文檔數量')
@@ -611,8 +612,8 @@ class LDAModeler:
             plt.ylabel('主題')
             
             # 使用自定義標籤（如果提供）
-            if self.topic_labels:
-                topic_label_texts = [f'主題 {i+1}\n{self.topic_labels.get(i, "")}' for i in range(n_topics)]
+            if self.config.get('topic_labels'):
+                topic_label_texts = [f'主題 {i+1}\n{self.config.get("topic_labels").get(i, "")}' for i in range(n_topics)]
             else:
                 topic_label_texts = [f'主題 {i+1}' for i in range(n_topics)]
                 
@@ -704,7 +705,7 @@ class LDAModeler:
                 lda = LatentDirichletAllocation(
                     n_components=n_topics,
                     doc_topic_prior=self.alpha,
-                    topic_word_prior=self.beta,
+                    topic_word_prior=self.eta,
                     max_iter=10,  # 使用較小的迭代次數加速評估
                     learning_method='online',
                     random_state=self.random_state,
@@ -750,7 +751,7 @@ class LDAModeler:
                     'perplexity_scores': perplexity_scores,
                     'best_n_topics': best_n_topics,
                     'alpha': self.alpha,
-                    'beta': self.beta
+                    'eta': self.eta
                 }, f, ensure_ascii=False, indent=2)
             
             if progress_callback:
@@ -771,17 +772,17 @@ class LDAModeler:
             return None
 
 
-def build_lda_model(data_path, output_dir='./output/topics', n_topics=10, 
-                  alpha=0.1, beta=0.01, max_iter=50, topic_labels=None, progress_callback=None):
+def build_lda_model(data_path, output_dir='./output/topics', num_topics=10, 
+                  alpha='auto', eta='auto', iterations=50, topic_labels=None, progress_callback=None):
     """構建LDA主題模型的方便函數
     
     Args:
         data_path: 數據文件路徑
         output_dir: 輸出目錄
-        n_topics: 主題數量
-        alpha: 文檔-主題先驗分布參數
-        beta: 主題-詞彙先驗分布參數
-        max_iter: 最大迭代次數
+        num_topics: 主題數量
+        alpha: 文檔-主題分佈的先驗參數
+        eta: 主題-詞分佈的先驗參數
+        iterations: 最大迭代次數
         topic_labels: 主題標籤字典
         progress_callback: 進度回調函數
         
@@ -790,10 +791,10 @@ def build_lda_model(data_path, output_dir='./output/topics', n_topics=10,
     """
     # 創建配置
     config = {
-        'n_topics': n_topics,
+        'num_topics': num_topics,
         'alpha': alpha,
-        'beta': beta,
-        'max_iter': max_iter,
+        'eta': eta,
+        'iterations': iterations,
         'output_dir': output_dir,
         'topic_labels': topic_labels
     }
@@ -821,7 +822,7 @@ if __name__ == "__main__":
         # 構建LDA模型
         result = build_lda_model(
             test_file,
-            n_topics=10,
+            num_topics=10,
             progress_callback=progress_callback
         )
         

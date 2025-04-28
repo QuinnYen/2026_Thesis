@@ -11,6 +11,7 @@ import traceback
 import threading
 import json
 from pathlib import Path
+import pickle
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
@@ -72,21 +73,21 @@ class AnalysisTab(QWidget):
             if hasattr(self.config, 'get'):
                 paths_config = self.config.get("paths", {})
                 if isinstance(paths_config, dict):
-                    self.output_dir = paths_config.get("output_dir", "./0_output")
+                    self.output_dir = paths_config.get("output_dir", "./1_output")
                 else:
                     # 默認輸出目錄
                     app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-                    self.output_dir = os.path.join(app_dir, "0_output")
+                    self.output_dir = os.path.join(app_dir, "1_output")
             else:
                 # 默認輸出目錄
                 app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-                self.output_dir = os.path.join(app_dir, "0_output")
+                self.output_dir = os.path.join(app_dir, "1_output")
                 
             # 確保輸出目錄存在
             os.makedirs(self.output_dir, exist_ok=True)
         except Exception as e:
             self.logger.error(f"設置輸出目錄時出錯: {str(e)}")
-            self.output_dir = "./0_output"  # 使用相對路徑作為最後的備用選項
+            self.output_dir = "./1_output"  # 使用相對路徑作為最後的備用選項
             os.makedirs(self.output_dir, exist_ok=True)
         
         # 初始化成員變數
@@ -1204,6 +1205,25 @@ class AnalysisThread(QThread):
         self.modules = modules
         self.should_stop = False
         self.logger = get_logger("analysis_thread")
+        
+        # 生成當前時間戳
+        current_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # 設置輸出基礎目錄路徑 - 使用相對路徑，確保使用 1_output
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.output_base_dir = os.path.join("Part04_", "1_output", f"run_{current_timestamp}")
+        
+        # 定義各階段的輸出子目錄路徑 - 僅定義路徑，不創建目錄
+        self.output_dirs = {
+            'processed_data': os.path.join(self.output_base_dir, "01_processed_data"),
+            'bert_embeddings': os.path.join(self.output_base_dir, "02_bert_embeddings"),
+            'lda_topics': os.path.join(self.output_base_dir, "03_lda_topics"),
+            'aspect_vectors': os.path.join(self.output_base_dir, "04_aspect_vectors"),
+            'evaluation': os.path.join(self.output_base_dir, "05_evaluation")
+        }
+        
+        # 確保基礎輸出目錄存在
+        os.makedirs(self.output_base_dir, exist_ok=True)
     
     def run(self):
         """運行分析處理"""
@@ -1242,6 +1262,11 @@ class AnalysisThread(QThread):
                 raise ValueError("數據中找不到文本列，請確保數據中包含'text'或'review'列")
                 
             self.logger.info(f"使用文本列: {found_text_col}")
+            
+            # 準備文件名基礎部分（使用數據集名稱和時間戳）
+            dataset_name = self.params.get('dataset_name', 'dataset')
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            file_base_name = f"{dataset_name}_{timestamp}"
             
             # 應用樣本大小限制 - 檢查參數中是否有樣本大小設定
             sample_size = self.params.get('sample_size', 100000)  # 默認值為100000
@@ -1291,6 +1316,14 @@ class AnalysisThread(QThread):
             processed_data['processed_text'] = processed_texts
             results['processed_data'] = processed_data
             
+            # 保存預處理結果到CSV
+            processed_data_path = os.path.join(self.output_dirs['processed_data'], f"{file_base_name}_processed.csv")
+            # 確保保存目錄存在
+            os.makedirs(os.path.dirname(processed_data_path), exist_ok=True)
+            processed_data.to_csv(processed_data_path, index=False)
+            self.logger.info(f"預處理數據已保存至: {processed_data_path}")
+            self.status_updated.emit(f"預處理數據已保存至: {os.path.basename(processed_data_path)}")
+            
             # 2. BERT嵌入
             self.status_updated.emit("正在進行BERT編碼...")
             self.logger.info("開始BERT編碼")
@@ -1312,6 +1345,23 @@ class AnalysisThread(QThread):
             bert_embeddings = np.array(embeddings)
             results['bert_embeddings'] = bert_embeddings
             
+            # 保存BERT嵌入結果到NPY文件
+            embeddings_path = os.path.join(self.output_dirs['bert_embeddings'], f"{file_base_name}_embeddings.npy")
+            # 確保保存目錄存在
+            os.makedirs(os.path.dirname(embeddings_path), exist_ok=True)
+            np.save(embeddings_path, bert_embeddings)
+            self.logger.info(f"BERT嵌入數據已保存至: {embeddings_path}")
+            self.status_updated.emit(f"BERT嵌入數據已保存至: {os.path.basename(embeddings_path)}")
+            
+            # 同時保存一份元數據索引
+            embeddings_meta = pd.DataFrame({
+                'index': range(len(bert_embeddings)),
+                'text_col': processed_data[text_col].tolist() if text_col in processed_data.columns else [''] * len(bert_embeddings),
+                'processed_text': processed_texts
+            })
+            embeddings_meta_path = os.path.join(self.output_dirs['bert_embeddings'], f"{file_base_name}_embeddings_meta.csv")
+            embeddings_meta.to_csv(embeddings_meta_path, index=False)
+            
             # 3. LDA主題建模
             self.status_updated.emit("正在進行LDA主題建模...")
             self.logger.info("開始LDA主題建模")
@@ -1328,6 +1378,27 @@ class AnalysisThread(QThread):
             results['lda_model'] = lda_model
             results['topics'] = topics
             
+            # 保存LDA主題結果
+            topics_path = os.path.join(self.output_dirs['lda_topics'], f"{file_base_name}_topics.json")
+            # 確保保存目錄存在
+            os.makedirs(os.path.dirname(topics_path), exist_ok=True)
+            with open(topics_path, 'w', encoding='utf-8') as f:
+                # 將topics轉換為可JSON序列化的格式
+                serializable_topics = {str(k): v for k, v in topics.items()}
+                json.dump(serializable_topics, f, ensure_ascii=False, indent=2)
+            self.logger.info(f"LDA主題已保存至: {topics_path}")
+            self.status_updated.emit(f"LDA主題已保存至: {os.path.basename(topics_path)}")
+            
+            # 如果模型對象可以被pickle，也保存模型對象
+            try:
+                model_path = os.path.join(self.output_dirs['lda_topics'], f"{file_base_name}_lda_model.pkl")
+                # 目錄已在上面確保存在
+                with open(model_path, 'wb') as f:
+                    pickle.dump(lda_model, f)
+                self.logger.info(f"LDA模型已保存至: {model_path}")
+            except Exception as e:
+                self.logger.warning(f"無法保存LDA模型對象: {str(e)}")
+            
             # 獲取文檔主題分佈 (這部分是新增的，用於獲取doc_main_topics)
             if lda_model is not None:
                 # 準備文檔-主題分佈所需的向量化文本
@@ -1337,6 +1408,19 @@ class AnalysisThread(QThread):
                     doc_topic_dist = lda_model.transform(X)
                     # 獲取每個文檔的主要主題索引
                     doc_main_topics = np.argmax(doc_topic_dist, axis=1)
+                    
+                    # 保存文檔-主題分佈
+                    doc_topics_path = os.path.join(self.output_dirs['lda_topics'], f"{file_base_name}_doc_topics.csv")
+                    doc_topics_df = pd.DataFrame({
+                        'doc_index': range(len(doc_topic_dist)),
+                        'main_topic': [f"Topic_{i+1}" for i in doc_main_topics]
+                    })
+                    # 添加每個主題的分佈概率
+                    for i in range(doc_topic_dist.shape[1]):
+                        doc_topics_df[f'topic_{i+1}_prob'] = doc_topic_dist[:, i]
+                    
+                    doc_topics_df.to_csv(doc_topics_path, index=False)
+                    self.logger.info(f"文檔-主題分佈已保存至: {doc_topics_path}")
                 else:
                     # 如果無法獲取向量化器，則將所有文檔分配到主題0
                     self.logger.warning("無法獲取LDA模型的向量化器，將所有文檔分配到主題0")
@@ -1398,10 +1482,65 @@ class AnalysisThread(QThread):
                 progress_callback=_aspect_progress_callback
             )
             
+            # 保存aspect_result（包含面向向量和其他結果）
+            self.aspect_result = aspect_result  # 保存引用以供later_use
+            
             # 從返回結果中獲取面向向量
             if aspect_result and 'aspect_vectors' in aspect_result:
                 aspect_vectors = aspect_result['aspect_vectors']
                 results['aspect_vectors'] = aspect_vectors
+                
+                # 保存面向向量結果
+                vectors_path = os.path.join(self.output_dirs['aspect_vectors'], f"{file_base_name}_aspect_vectors.json")
+                
+                # 確保目錄存在
+                os.makedirs(os.path.dirname(vectors_path), exist_ok=True)
+                
+                # 準備可序列化的數據
+                serializable_vectors = {}
+                if isinstance(aspect_vectors, dict):
+                    # 如果是字典類型，將每個向量轉為列表
+                    for topic, vector in aspect_vectors.items():
+                        if isinstance(vector, np.ndarray):
+                            serializable_vectors[str(topic)] = vector.tolist()
+                        else:
+                            serializable_vectors[str(topic)] = vector
+                else:
+                    # 如果是numpy數組，直接轉為列表
+                    serializable_vectors = {
+                        'format': 'numpy_array',
+                        'shape': list(aspect_vectors.shape) if hasattr(aspect_vectors, 'shape') else [],
+                        'data': aspect_vectors.tolist() if hasattr(aspect_vectors, 'tolist') else []
+                    }
+                
+                with open(vectors_path, 'w', encoding='utf-8') as f:
+                    json.dump(serializable_vectors, f, ensure_ascii=False, indent=2)
+                    
+                self.logger.info(f"面向向量已保存至: {vectors_path}")
+                self.status_updated.emit(f"面向向量已保存至: {os.path.basename(vectors_path)}")
+                
+                # 保存完整的aspect_result，包含所有相關信息
+                result_path = os.path.join(self.output_dirs['aspect_vectors'], f"{file_base_name}_aspect_result.json")
+                
+                # 準備可序列化的完整結果 - 改進版本，確保所有嵌套的numpy數組都被轉換
+                def convert_to_serializable(obj):
+                    """遞迴轉換所有numpy數組為列表"""
+                    if isinstance(obj, np.ndarray):
+                        return obj.tolist()
+                    elif isinstance(obj, dict):
+                        return {str(k): convert_to_serializable(v) for k, v in obj.items()}
+                    elif isinstance(obj, list) or isinstance(obj, tuple):
+                        return [convert_to_serializable(item) for item in obj]
+                    else:
+                        return obj
+                
+                # 使用遞迴轉換函數處理完整結果
+                serializable_result = convert_to_serializable(aspect_result)
+                
+                # 保存為JSON
+                with open(result_path, 'w', encoding='utf-8') as f:
+                    json.dump(serializable_result, f, ensure_ascii=False, indent=2)
+                    
             else:
                 self.logger.error("無法獲取面向向量結果")
                 if self.should_stop:
@@ -1423,6 +1562,33 @@ class AnalysisThread(QThread):
             )
             
             results['evaluation'] = evaluation
+            
+            # 保存評估結果
+            eval_path = os.path.join(self.output_dirs['evaluation'], f"{file_base_name}_evaluation.json")
+            
+            # 確保保存目錄存在
+            os.makedirs(os.path.dirname(eval_path), exist_ok=True)
+            
+            with open(eval_path, 'w', encoding='utf-8') as f:
+                # 將評估結果轉換為可JSON序列化的格式
+                serializable_eval = {}
+                for key, value in evaluation.items():
+                    if isinstance(value, np.ndarray):
+                        serializable_eval[key] = value.tolist()
+                    elif isinstance(value, dict):
+                        serializable_eval[key] = {}
+                        for k, v in value.items():
+                            if isinstance(v, np.ndarray):
+                                serializable_eval[key][k] = v.tolist()
+                            else:
+                                serializable_eval[key][k] = v
+                    else:
+                        serializable_eval[key] = value
+                        
+                json.dump(serializable_eval, f, ensure_ascii=False, indent=2)
+                
+            self.logger.info(f"評估結果已保存至: {eval_path}")
+            self.status_updated.emit(f"評估結果已保存至: {os.path.basename(eval_path)}")
             
             # 發送完成信號
             self.status_updated.emit("分析完成")

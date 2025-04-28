@@ -39,7 +39,7 @@ class AttentionEvaluator:
         self.logger = logger
         
         # 設置默認配置
-        self.output_dir = self.config.get('output_dir', './Part04_/0_output/evaluation')
+        self.output_dir = self.config.get('output_dir', './Part04_/1_output/evaluation')
         self.enable_visualizations = self.config.get('visualizations', True)
         self.report_format = self.config.get('report_format', 'html')
         
@@ -206,10 +206,24 @@ class AttentionEvaluator:
             float: 主題分離度得分 (0-1之間)
         """
         try:
+            # 先檢查是否為字典類型（aspect_vectors常以字典形式傳入）
+            if isinstance(vectors, dict):
+                # 從字典中提取向量值作為列表
+                vectors_list = list(vectors.values())
+                # 轉換為numpy數組
+                vectors = np.array(vectors_list)
+            
             # 確保輸入是numpy數組
             vectors = np.asarray(vectors)
             
+            # 檢查向量數組是否有效
+            if vectors.size == 0 or len(vectors.shape) != 2:
+                self.logger.warning(f"無效的向量數組形狀: {vectors.shape if hasattr(vectors, 'shape') else '未知形狀'}")
+                return 0.0
+                
+            # 檢查主題數量
             if len(vectors) <= 1:
+                self.logger.warning("只有一個或零個主題，無法計算分離度")
                 return 0.0
             
             # 計算向量間的餘弦相似度
@@ -230,6 +244,8 @@ class AttentionEvaluator:
             
         except Exception as e:
             self.logger.error(f"計算主題分離度時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
             return 0.0
     
     def update_config(self, new_config):
@@ -890,7 +906,7 @@ class AttentionEvaluator:
 # 添加 Evaluator 作為 AttentionEvaluator 的別名，以保持向後相容性
 Evaluator = AttentionEvaluator
 
-def evaluate_attention_results(result_paths, output_dir='./Part04_/0_output/evaluation', 
+def evaluate_attention_results(result_paths, output_dir='./Part04_/1_output/evaluation', 
                              report_format='html', progress_callback=None):
     """評估注意力機制結果的便捷函數
     

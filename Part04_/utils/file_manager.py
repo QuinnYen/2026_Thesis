@@ -68,10 +68,13 @@ class FileManager:
             base_dir = part04_dir
         else:
             base_dir = "./Part04_"
-            
-        # 設置統一的輸出根目錄 
-        output_root = os.path.join(base_dir, "0_output")
+
+        # 生成帶有時間戳的輸出目錄名稱
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
+        # 設置輸出根目錄為1_output/run_timestamp
+        output_root = os.path.join(base_dir, "1_output", f"run_{timestamp}")
+            
         # 設置各個目錄路徑
         self.data_dir = paths_config.get("data_dir", os.path.join(base_dir, "..", "ReviewsDataBase"))
         self.output_dir = paths_config.get("output_dir", output_root)
@@ -94,6 +97,10 @@ class FileManager:
         
         # 資源目錄
         self.resources_dir = paths_config.get("resources_dir", os.path.join(base_dir, "resources"))
+        
+        # 保存時間戳和輸出根目錄，以便其他方法使用
+        self.timestamp = timestamp
+        self.output_root = output_root
 
     def _find_part04_directory(self):
         """尋找 Part04_ 目錄的絕對路徑
@@ -144,30 +151,38 @@ class FileManager:
             return None
 
     def _ensure_directories(self):
-        """確保所有必要的目錄存在"""
-        directories = [
-            self.data_dir,
-            self.output_dir,
-            self.log_dir,
-            self.model_dir,
-            self.export_dir,
-            self.results_dir,
-            self.embeddings_dir,
-            self.topics_dir,
-            self.vectors_dir,
-            self.evaluation_dir,
-            self.visualizations_dir,
-            self.temp_dir,
-            self.resources_dir
+        """確保基本必要的目錄存在，其他目錄將在需要時創建"""
+        # 只創建基本必要的目錄
+        essential_directories = [
+            self.output_dir,  # 主輸出目錄
+            self.log_dir      # 日誌目錄(必須存在才能記錄日誌)
         ]
         
-        for directory in directories:
+        for directory in essential_directories:
             try:
                 if not os.path.exists(directory):
                     os.makedirs(directory)
-                    self.logger.info(f"已創建目錄: {directory}")
+                    self.logger.info(f"已創建必要目錄: {directory}")
             except Exception as e:
-                self.logger.warning(f"無法創建目錄 {directory}: {str(e)}")
+                self.logger.warning(f"無法創建必要目錄 {directory}: {str(e)}")
+                
+    def ensure_dir(self, directory):
+        """確保目錄存在，不存在則創建
+        
+        Args:
+            directory: 目錄路徑
+            
+        Returns:
+            bool: 目錄是否存在或創建成功
+        """
+        try:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+                self.logger.debug(f"已創建目錄: {directory}")
+            return True
+        except Exception as e:
+            self.logger.error(f"確保目錄 {directory} 存在失敗: {str(e)}")
+            return False
 
     def _create_backup(self, file_path):
         """為指定文件創建備份
@@ -722,24 +737,6 @@ class FileManager:
         except Exception as e:
             self.logger.error(f"列出目錄 {directory} 中的文件失敗: {str(e)}")
             return []
-
-    def ensure_dir(self, directory):
-        """確保目錄存在，不存在則創建
-        
-        Args:
-            directory: 目錄路徑
-            
-        Returns:
-            bool: 目錄是否存在或創建成功
-        """
-        try:
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-                self.logger.debug(f"已創建目錄: {directory}")
-            return True
-        except Exception as e:
-            self.logger.error(f"確保目錄 {directory} 存在失敗: {str(e)}")
-            return False
 
     def copy_file(self, source, destination):
         """複製文件

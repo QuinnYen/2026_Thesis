@@ -95,10 +95,8 @@ class Config:
     def _create_default_config(self):
         """創建默認配置"""
         try:
-            # 應用程式路徑
-            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
             
-            # 設置預設配置
             self.config = {
                 "app": {
                     "name": "跨領域情感分析系統",
@@ -107,11 +105,11 @@ class Config:
                 },
                 "paths": {
                     "data_dir": os.path.join(app_dir, "data"),
-                    "output_dir": os.path.join(app_dir, "0_output"),
-                    "logs_dir": os.path.join(app_dir, "0_output", "logs"),
+                    "output_dir": os.path.join("Part04_", "1_output"),
+                    "logs_dir": os.path.join("Part04_", "1_output", "logs"),
                     "resources_dir": os.path.join(app_dir, "resources"),
-                    "models_dir": os.path.join(app_dir, "0_output", "models"),
-                    "visualizations_dir": os.path.join(app_dir, "0_output", "visualizations")
+                    "models_dir": os.path.join("Part04_", "1_output", "models"),
+                    "visualizations_dir": os.path.join("Part04_", "1_output", "visualizations")
                 },
                 "data_processing": {
                     "encoding": "utf-8",
@@ -145,7 +143,7 @@ class Config:
                     "report_format": "html"
                 },
                 "visualization": {
-                    "output_dir": os.path.join(app_dir, "0_output", "visualizations"),
+                    "output_dir": os.path.join("Part04_", "1_output", "visualizations"),
                     "dpi": 300,
                     "figsize": [12, 8],
                     "cmap": "viridis",

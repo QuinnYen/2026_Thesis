@@ -23,7 +23,7 @@ class Logger:
     # 默認日誌格式
     DEFAULT_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     
-    def __init__(self, name="cross_domain_sentiment", log_dir="./Part04_/0_output/logs", level="INFO"):
+    def __init__(self, name="cross_domain_sentiment", log_dir="./Part04_/1_output/logs", level="INFO"):
         """初始化日誌管理器
         
         Args:
@@ -168,43 +168,14 @@ def set_level(level):
     """
     default_logger.set_level(level)
 
-def setup_logger(name="cross_domain_sentiment", log_dir="./Part04_/0_output/logs", level="INFO"):
-    """設置全局日誌器
+def setup_logger(log_file=None):
+    """設置日誌系統
     
     Args:
-        name: 日誌名稱
-        log_dir: 日誌目錄，默認為Part04_資料夾下的0_output/logs目錄
-        level: 日誌級別
-        
-    Returns:
-        Logger: 日誌管理器實例
+        log_file: 日誌文件路徑，如果為None則使用默認路徑
     """
-    # 獲取Part04_目錄的絕對路徑
-    part04_dir = None
-    
-    # 嘗試找到Part04_目錄
-    current_dir = os.path.abspath(os.curdir)
-    if os.path.basename(current_dir) == 'Part04_':
-        part04_dir = current_dir
-    elif 'Part04_' in current_dir:
-        # 如果當前在Part04_的子目錄中
-        part04_dir = os.path.abspath(os.path.join(current_dir, '..'))
-    else:
-        # 嘗試查找腳本的位置
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        if os.path.basename(script_dir) == 'Part04_':
-            part04_dir = script_dir
-        elif 'Part04_' in script_dir:
-            # 假設我們在utils子目錄下
-            part04_dir = os.path.abspath(os.path.join(script_dir, '..'))
-    
-    # 如果找到Part04_目錄，則使用它
-    if part04_dir and os.path.isdir(part04_dir):
-        # 確保使用絕對路徑
-        log_dir = os.path.join(part04_dir, '0_output/logs')
-    
-    # 創建新的日誌管理器
-    global default_logger
-    default_logger = Logger(name, log_dir, level)
-    
-    return default_logger
+    # 如果log_file為None，設置默認路徑
+    if log_file is None:
+        log_dir = os.path.join("Part04_", "1_output", "logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, "app.log")

@@ -118,7 +118,7 @@ class Visualizer:
         self.logger = logger
         
         # 設置默認配置
-        self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '0_output', 'visualizations'))
+        self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '1_output', 'visualizations'))
         self.dpi = self.config.get('dpi', 300)
         self.figsize = self.config.get('figsize', (12, 8))
         self.cmap = self.config.get('cmap', 'viridis')

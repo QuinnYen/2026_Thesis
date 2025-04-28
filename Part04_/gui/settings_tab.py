@@ -44,17 +44,17 @@ class SettingsTab(QWidget):
         # 設置預設路徑 - 更新為使用 Part04_ 路徑
         self.default_paths = {
             "data_dir": os.path.join("..", "ReviewsDataBase"),
-            "output_dir": os.path.join("Part04_", "0_output"),
-            "log_dir": os.path.join("Part04_", "0_output", "logs"),
-            "model_dir": os.path.join("Part04_", "0_output", "models"),
-            "export_dir": os.path.join("Part04_", "0_output", "exports"),
-            "results_dir": os.path.join("Part04_", "0_output", "results"),
-            "embeddings_dir": os.path.join("Part04_", "0_output", "embeddings"),
-            "topics_dir": os.path.join("Part04_", "0_output", "topics"),
-            "vectors_dir": os.path.join("Part04_", "0_output", "vectors"),
-            "evaluation_dir": os.path.join("Part04_", "0_output", "evaluation"),
-            "visualizations_dir": os.path.join("Part04_", "0_output", "visualizations"),
-            "temp_dir": os.path.join("Part04_", "0_output", "temp")
+            "output_dir": os.path.join("Part04_", "1_output"),
+            "log_dir": os.path.join("Part04_", "1_output", "logs"),
+            "model_dir": os.path.join("Part04_", "1_output", "models"),
+            "export_dir": os.path.join("Part04_", "1_output", "exports"),
+            "results_dir": os.path.join("Part04_", "1_output", "results"),
+            "embeddings_dir": os.path.join("Part04_", "1_output", "embeddings"),
+            "topics_dir": os.path.join("Part04_", "1_output", "topics"),
+            "vectors_dir": os.path.join("Part04_", "1_output", "vectors"),
+            "evaluation_dir": os.path.join("Part04_", "1_output", "evaluation"),
+            "visualizations_dir": os.path.join("Part04_", "1_output", "visualizations"),
+            "temp_dir": os.path.join("Part04_", "1_output", "temp")
         }
         
         # 緩存原配置，用於比較變化
