@@ -76,7 +76,8 @@ class BertEmbedder:
         self.model_name = self.config.get('model_name', 'bert-base-uncased')
         self.max_length = self.config.get('max_length', 128)
         self.batch_size = self.config.get('batch_size', 16)
-        self.output_dir = self.config.get('output_dir', './output/embeddings')
+        # 從配置中獲取輸出目錄，默認為Part04_/0_output/embeddings
+        self.output_dir = self.config.get('output_dir', './Part04_/0_output/embeddings')
         use_gpu = self.config.get('use_gpu', True)
         
         # 檢查CUDA可用性

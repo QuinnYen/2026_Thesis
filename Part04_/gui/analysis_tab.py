@@ -816,7 +816,8 @@ class AnalysisTab(QWidget):
             'n_topics': self.topic_count_spin.value(),
             'max_iter': self.max_iter_spin.value(),
             'dataset_name': self.current_dataset_name,
-            'attention_mechanisms': []
+            'attention_mechanisms': [],
+            'sample_size': self.sample_size_spin.value()  # 新增樣本大小參數
         }
         
         # 收集選中的注意力機制
@@ -1209,15 +1210,52 @@ class AnalysisThread(QThread):
         try:
             results = {}
             
-            # 檢查是否有文本列
-            if 'text' not in self.data.columns and 'review' not in self.data.columns:
+            # 檢查是否有文本列 - 擴展支援的文本列名稱
+            common_text_columns = [
+                'text', 'review', 'review_text', 'reviewText', 
+                'content', 'comment', 'description',
+                'Review', 'TEXT', 'REVIEW', 'Content'
+            ]
+            
+            # 尋找可能的文本列
+            found_text_col = None
+            for col in common_text_columns:
+                if col in self.data.columns:
+                    found_text_col = col
+                    break
+                    
+            # 如果沒找到常見文本列，則嘗試查找包含關鍵字的列名
+            if found_text_col is None:
+                text_keywords = ['text', 'review', 'comment', 'content', 'description']
+                for col in self.data.columns:
+                    col_lower = col.lower()
+                    if any(keyword in col_lower for keyword in text_keywords):
+                        found_text_col = col
+                        break
+                        
+            # 如果還是找不到，嘗試檢查 Amazon 格式的數據
+            if found_text_col is None and 'asin' in self.data.columns and 'reviewText' in self.data.columns:
+                found_text_col = 'reviewText'
+                
+            # 如果仍然無法找到文本列，則報錯
+            if found_text_col is None:
                 raise ValueError("數據中找不到文本列，請確保數據中包含'text'或'review'列")
+                
+            self.logger.info(f"使用文本列: {found_text_col}")
+            
+            # 應用樣本大小限制 - 檢查參數中是否有樣本大小設定
+            sample_size = self.params.get('sample_size', 100000)  # 默認值為100000
+            if len(self.data) > sample_size:
+                self.logger.info(f"數據總量 {len(self.data)} 筆，根據設定將限制處理量為 {sample_size} 筆")
+                # 隨機抽樣，使用固定的隨機種子以確保結果可重現
+                self.data = self.data.sample(n=sample_size, random_state=42)
+                self.logger.info(f"已隨機抽樣 {sample_size} 筆數據進行處理")
             
             # 1. 數據預處理
             self.status_updated.emit("正在進行數據預處理...")
             self.logger.info("開始數據預處理")
             
-            text_col = 'text' if 'text' in self.data.columns else 'review'
+            text_col = found_text_col
             processor = self.modules['data_processor']
             
             total_rows = len(self.data)
@@ -1227,7 +1265,22 @@ class AnalysisThread(QThread):
                 if self.should_stop:
                     return
                     
-                processed_text = processor.preprocess(text)
+                # 處理可能的 NaN 值和浮點數
+                if pd.isna(text):
+                    # 如果是 NaN 值，直接使用空字串
+                    processed_text = ""
+                else:
+                    try:
+                        # 將文本轉換為字串並清理
+                        text_str = str(text)
+                        # 使用清洗文本和標記化函數，避免調用整個 preprocess
+                        clean_text = processor._clean_text(text_str)
+                        tokens = processor._tokenize_and_lemmatize(clean_text)
+                        processed_text = " ".join(tokens) if isinstance(tokens, list) else ""
+                    except Exception as e:
+                        self.logger.warning(f"處理文本時出錯: {str(e)}, 行號: {i}")
+                        processed_text = ""  # 如果處理出錯，使用空字串
+                
                 processed_texts.append(processed_text)
                 
                 if i % 10 == 0 or i == total_rows - 1:

@@ -212,23 +212,55 @@ class DataProcessor:
         if text_column is not None and text_column in df.columns:
             return text_column
         
-        # 嘗試常見的文本列名
-        common_text_columns = ['text', 'review', 'review_text', 'reviewText', 'content', 'comment', 'description']
+        # 嘗試常見的文本列名（擴展列表以包含更多可能的文本欄位名稱）
+        common_text_columns = [
+            'text', 'review', 'review_text', 'reviewText', 
+            'content', 'comment', 'description', 
+            'Review', 'TEXT', 'REVIEW', 'Content',
+            'review_body', 'reviews', 'feedback'
+        ]
+        
+        # 先檢查最常見的列名
         for col in common_text_columns:
             if col in df.columns:
+                self.logger.info(f"找到文本列: '{col}'")
+                return col
+        
+        # 檢查列名中包含常見文本關鍵字的列
+        text_keywords = ['text', 'review', 'comment', 'content', 'description', 'feedback']
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in text_keywords):
+                self.logger.info(f"找到可能的文本列: '{col}'")
                 return col
         
         # 如果找不到常見文本列，選擇字符串類型的列
         for col in df.columns:
             if df[col].dtype == 'object':  # pandas中的字符串類型
                 # 進一步檢查是否包含足夠長的文本
-                avg_len = df[col].astype(str).str.len().mean()
-                if avg_len > 20:  # 假設平均長度大於20的是文本
-                    return col
+                try:
+                    avg_len = df[col].astype(str).str.len().mean()
+                    if avg_len > 20:  # 假設平均長度大於20的是文本
+                        self.logger.info(f"基於內容長度選擇文本列: '{col}'")
+                        return col
+                except Exception as e:
+                    self.logger.debug(f"計算列 '{col}' 平均長度時出錯: {str(e)}")
         
-        # 如果仍然找不到，使用第一列
-        self.logger.warning("無法識別文本列，使用第一列")
-        return df.columns[0]
+        # 如果仍然找不到適合的列，檢查資料中是否有可能的評論文本欄位
+        # 特別檢查 Amazon 格式
+        if 'asin' in df.columns or 'overall' in df.columns:
+            # 這可能是 Amazon 數據
+            self.logger.info("檢測到可能的 Amazon 格式數據")
+            if 'reviewText' in df.columns:
+                return 'reviewText'
+        
+        # 如果仍然找不到，使用第一列或報錯
+        if len(df.columns) > 0:
+            self.logger.warning(f"無法識別文本列，使用第一列: {df.columns[0]}")
+            return df.columns[0]
+        else:
+            self.logger.error("數據框為空或無法識別文本列")
+            raise ValueError("數據中找不到文本列，請確保數據中包含'text'或'review'等列")
     
     def _handle_missing_values(self, df):
         """處理缺失值

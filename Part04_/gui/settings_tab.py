@@ -41,6 +41,22 @@ class SettingsTab(QWidget):
         self.file_manager = file_manager
         self.settings = QSettings("ThesisResearch", "TextAnalysisTool")
         
+        # 設置預設路徑 - 更新為使用 Part04_ 路徑
+        self.default_paths = {
+            "data_dir": os.path.join("..", "ReviewsDataBase"),
+            "output_dir": os.path.join("Part04_", "0_output"),
+            "log_dir": os.path.join("Part04_", "0_output", "logs"),
+            "model_dir": os.path.join("Part04_", "0_output", "models"),
+            "export_dir": os.path.join("Part04_", "0_output", "exports"),
+            "results_dir": os.path.join("Part04_", "0_output", "results"),
+            "embeddings_dir": os.path.join("Part04_", "0_output", "embeddings"),
+            "topics_dir": os.path.join("Part04_", "0_output", "topics"),
+            "vectors_dir": os.path.join("Part04_", "0_output", "vectors"),
+            "evaluation_dir": os.path.join("Part04_", "0_output", "evaluation"),
+            "visualizations_dir": os.path.join("Part04_", "0_output", "visualizations"),
+            "temp_dir": os.path.join("Part04_", "0_output", "temp")
+        }
+        
         # 緩存原配置，用於比較變化
         self._original_config = {}
         
@@ -967,11 +983,11 @@ class SettingsTab(QWidget):
         # 載入路徑設定
         paths_config = self.config.get("paths")
         if paths_config:
-            self.data_dir.setText(paths_config.get("data_dir", "./data"))
-            self.output_dir.setText(paths_config.get("output_dir", "./output"))
-            self.model_dir.setText(paths_config.get("model_dir", "./models"))
-            self.log_dir.setText(paths_config.get("log_dir", "./logs"))
-            self.export_dir.setText(paths_config.get("export_dir", "./exports"))
+            self.data_dir.setText(paths_config.get("data_dir", self.default_paths["data_dir"]))
+            self.output_dir.setText(paths_config.get("output_dir", self.default_paths["output_dir"]))
+            self.model_dir.setText(paths_config.get("model_dir", self.default_paths["model_dir"]))
+            self.log_dir.setText(paths_config.get("log_dir", self.default_paths["log_dir"]))
+            self.export_dir.setText(paths_config.get("export_dir", self.default_paths["export_dir"]))
         
         # 載入視覺化設定
         viz_config = self.config.get("visualization")

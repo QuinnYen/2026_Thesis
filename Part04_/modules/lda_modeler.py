@@ -51,7 +51,7 @@ class LDAModeler:
         self.beta = self.config.get('beta', 0.01)
         self.max_iter = self.config.get('max_iter', 50)
         self.random_state = self.config.get('random_state', 42)
-        self.output_dir = self.config.get('output_dir', './output/topics')
+        self.output_dir = self.config.get('output_dir', './Part04_/0_output/topics')
         self.topic_labels = self.config.get('topic_labels', None)
         
         # 確保輸出目錄存在

@@ -39,7 +39,7 @@ class AspectCalculator:
         self.logger = logger
         
         # 設置默認配置
-        self.output_dir = self.config.get('output_dir', './output/vectors')
+        self.output_dir = self.config.get('output_dir', './Part04_/0_output/vectors')
         self.attention_types = self.config.get('attention_types', ['no', 'similarity', 'keyword', 'self', 'combined'])
         self.attention_weights = self.config.get('attention_weights', {
             'similarity': 0.33,

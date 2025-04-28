@@ -638,9 +638,12 @@ class VisualizationTab(QWidget):
             
             # 設置輸出目錄
             if output_dir is None:
+                # 使用實例的預設輸出目錄
                 output_dir = self.output_dir
-                
+
+            # 確保輸出目錄存在
             os.makedirs(output_dir, exist_ok=True)
+            
             # 將輸入轉換為NumPy數組
             embeddings_array = np.array(embeddings, dtype=np.float32)
             
@@ -682,10 +685,15 @@ class VisualizationTab(QWidget):
             # 保存圖片
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"tsne_{timestamp}.png"
+            
+            # 使用os.path.join確保路徑分隔符正確
             img_path = os.path.join(output_dir, filename)
+            
             plt.tight_layout()
             plt.savefig(img_path, dpi=300, bbox_inches='tight')
             plt.close()
+            
+            self.logger.info(f"t-SNE視覺化已保存至: {img_path}")
             
             return img_path
             
@@ -875,7 +883,7 @@ class VisualizationTab(QWidget):
         show_labels = self.cb_show_topic_labels.isChecked()
         
         # 安全地獲取輸出目錄
-        output_dir = "./visualizations"  # 默認值
+        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 修改為絕對路徑
         
         # 檢查配置對象是否存在
         if self.config is not None:
@@ -899,7 +907,8 @@ class VisualizationTab(QWidget):
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建目錄時出錯: {str(e)}")
-            output_dir = "./"  # 回退到當前目錄
+            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定輸出目錄
+            os.makedirs(output_dir, exist_ok=True)  # 再次嘗試創建
         
         # 生成可視化
         html_content, img_path, data_html = self.visualizer.create_topic_distribution(
@@ -929,21 +938,20 @@ class VisualizationTab(QWidget):
 
     def _generate_vector_clustering(self):
         """生成向量聚類可視化"""
-        if self.aspect_vectors is None:
-            QMessageBox.warning(self, "缺少數據", "缺少向量數據，無法生成聚類可視化")
+        if not self.aspect_vectors:
+            QMessageBox.warning(self, "缺少數據", "缺少向量數據，無法生成向量聚類")
             return
             
-        # 取得選項
-        algorithm = self.cluster_algorithm_combo.currentText()
-        n_clusters = self.cluster_count_spin.value()
+        # 獲取聚類選項
+        algorithm = self.cb_clustering_algorithm.currentText()
+        n_clusters = self.sb_n_clusters.value()
         
         # 安全地獲取輸出目錄
-        output_dir = "./visualizations"  # 默認值
+        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 默認值改為絕對路徑
         
-        # 檢查配置對象是否存在
+        # 檢查配置對象是否存在並嘗試獲取更精確的輸出目錄
         if self.config is not None:
             try:
-                # 嘗試不同方式獲取配置
                 if isinstance(self.config, dict):
                     paths = self.config.get("paths", {})
                     if isinstance(paths, dict):
@@ -966,7 +974,8 @@ class VisualizationTab(QWidget):
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建目錄時出錯: {str(e)}")
-            output_dir = "./"  # 回退到當前目錄
+            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定的輸出目錄
+            os.makedirs(output_dir, exist_ok=True)  # 再次嘗試創建
         
         # 生成可視化
         html_content, img_path, data_html = self.create_vector_clustering(
@@ -1005,7 +1014,7 @@ class VisualizationTab(QWidget):
         edge_threshold = self.edge_threshold_slider.value() / 100.0
         
         # 安全地獲取輸出目錄
-        output_dir = "./visualizations"  # 默認值
+        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 修改為絕對路徑
         
         # 檢查配置對象是否存在
         if self.config is not None:
@@ -1021,14 +1030,18 @@ class VisualizationTab(QWidget):
             except Exception as e:
                 self.logger.warning(f"獲取可視化目錄配置出錯: {str(e)}，使用默認目錄 {output_dir}")
         else:
-            self.logger.warning("配置對象為None，使用默認輸出目錄: {output_dir}")
+            self.logger.warning(f"配置對象為None，使用默認輸出目錄: {output_dir}")
             
         # 確保輸出目錄存在
         try:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建輸出目錄時出錯: {str(e)}")
-            output_dir = "./"  # 回退到當前目錄
+            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定絕對路徑
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except Exception as e2:
+                self.logger.error(f"創建回退目錄也失敗: {str(e2)}")
         
         # 生成可視化
         html_content, img_path, data_html = self.visualizer.create_topic_network(
@@ -1066,7 +1079,7 @@ class VisualizationTab(QWidget):
         sample_id = self.sample_id_spin.value()
         
         # 安全地獲取輸出目錄
-        output_dir = "./visualizations"  # 默認值
+        output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 修改為絕對路徑
         
         # 檢查配置對象是否存在
         if self.config is not None:
@@ -1082,14 +1095,18 @@ class VisualizationTab(QWidget):
             except Exception as e:
                 self.logger.warning(f"獲取可視化目錄配置出錯: {str(e)}，使用默認目錄 {output_dir}")
         else:
-            self.logger.warning("配置對象為None，使用默認輸出目錄: {output_dir}")
+            self.logger.warning(f"配置對象為None，使用默認輸出目錄: {output_dir}")
             
         # 確保輸出目錄存在
         try:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
             self.logger.warning(f"創建輸出目錄時出錯: {str(e)}")
-            output_dir = "./"  # 回退到當前目錄
+            output_dir = os.path.join("Part04_", "0_output", "visualizations")  # 回退到固定絕對路徑
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except Exception as e2:
+                self.logger.error(f"創建回退目錄也失敗: {str(e2)}")
         
         # 創建示例注意力矩陣數據
         try:

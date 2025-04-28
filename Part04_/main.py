@@ -13,8 +13,7 @@ from pathlib import Path
 
 # 添加調試訊息
 print("應用程式啟動中...")
-print(f"Python 版本: {sys.version}")
-print(f"當前工作目錄: {os.getcwd()}")
+print(f"Python 版本: {sys.version}", f"｜當前工作目錄: {os.getcwd()}")
 
 # 確保能夠正確引入模組，無論從哪裡執行腳本
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -109,11 +108,9 @@ try:
     # PyQt相關引入
     try:
         from PyQt5.QtWidgets import QApplication, QMessageBox, QSplashScreen
-        print("PyQt5.QtWidgets 導入成功")
         from PyQt5.QtGui import QPixmap, QFont, QIcon
-        print("PyQt5.QtGui 導入成功")
         from PyQt5.QtCore import Qt, QTimer
-        print("PyQt5.QtCore 導入成功")
+        print("PyQt5.QtWidgets、QtGui、QtCore 導入成功")
     except ImportError as e:
         print(f"PyQt5 導入錯誤: {e}")
         print("這可能是由於以下原因造成:")
@@ -129,11 +126,9 @@ try:
     # 導入主窗口類
     print("正在導入應用程式模組...")
     from gui.main_window import MainWindow
-    print("MainWindow 導入成功")
     from utils.logger import setup_logger, get_logger
-    print("Logger 導入成功")
     from utils.config import Config
-    print("Config 導入成功")
+    print("MainWindow、Logger、Config 導入成功")
 except ImportError as e:
     # 處理缺少必要套件的情況
     print(f"錯誤：缺少必要的套件：{e}")
@@ -147,8 +142,8 @@ def configure_app():
     # 設置應用程式路徑
     app_dir = os.path.abspath(os.path.dirname(__file__))
     
-    # 設置輸出目錄
-    output_dir = os.path.join(app_dir, "output")
+    # 設置輸出目錄 - 修正為 0_output 而非 output
+    output_dir = os.path.join(app_dir, "0_output")
     logs_dir = os.path.join(output_dir, "logs")
     resources_dir = os.path.join(app_dir, "resources")
     

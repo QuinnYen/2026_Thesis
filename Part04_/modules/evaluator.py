@@ -890,7 +890,7 @@ class AttentionEvaluator:
 # 添加 Evaluator 作為 AttentionEvaluator 的別名，以保持向後相容性
 Evaluator = AttentionEvaluator
 
-def evaluate_attention_results(result_paths, output_dir='./output/evaluation', 
+def evaluate_attention_results(result_paths, output_dir='./Part04_/0_output/evaluation', 
                              report_format='html', progress_callback=None):
     """評估注意力機制結果的便捷函數
     
