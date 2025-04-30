@@ -207,13 +207,13 @@ class FileManager:
             return None
 
     def migrate_output_directories(self):
-        """遷移輸出目錄結構，將根目錄下的output檔案移動到Part04_/0_output目錄
+        """遷移輸出目錄結構，將根目錄下的output檔案移動到Part04_/1_output目錄
         
         將舊的輸出目錄結構遷移到新的統一目錄結構中，確保所有資料都在正確位置。
         此方法會執行以下操作：
         1. 找到根目錄下的output資料夾
         2. 找到Part04_下的logs資料夾
-        3. 將上述資料夾中的檔案移動到Part04_/0_output的對應子目錄
+        3. 將上述資料夾中的檔案移動到Part04_/1_output的對應子目錄
         
         Returns:
             dict: 遷移統計信息
@@ -287,7 +287,7 @@ class FileManager:
                     item_path = os.path.join(root_output_dir, item)
                     if os.path.isfile(item_path):
                         try:
-                            # 其他檔案直接移至0_output根目錄
+                            # 其他檔案直接移至1_output根目錄
                             target_path = os.path.join(self.output_dir, item)
                             # 避免覆蓋已存在的檔案
                             if os.path.exists(target_path):

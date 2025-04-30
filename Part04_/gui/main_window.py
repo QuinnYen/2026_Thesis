@@ -132,9 +132,9 @@ class MainWindow(QMainWindow):
         default_config = {
             "paths": {
                 "app_dir": app_dir,
-                "output_dir": os.path.join(app_dir, "output"),
+                "output_dir": os.path.join(app_dir, "1_output"),  # 修改為 1_output 而不是 output
                 "resources_dir": os.path.join(app_dir, "resources"),
-                "logs_dir": os.path.join(app_dir, "output", "logs"),
+                "logs_dir": os.path.join(app_dir, "1_output", "logs"),  # 修改為 1_output/logs
                 "data_dir": os.path.join(app_dir, "data")
             },
             "gui": {
@@ -371,14 +371,17 @@ class MainWindow(QMainWindow):
         # 使用QFileSystemModel
         from PyQt5.QtWidgets import QFileSystemModel
         self.file_model = QFileSystemModel()
-        self.file_model.setRootPath(self.file_manager.data_dir)
+        
+        # 設置根路徑為主項目目錄，而非只是data_dir
+        app_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+        self.file_model.setRootPath(app_dir)
         
         # 設置過濾器以只顯示所關心的文件類型
         self.file_model.setNameFilters(["*.csv", "*.txt", "*.json", "*.html", "*.png", "*.jpg"])
         self.file_model.setNameFilterDisables(False)
         
         self.file_tree.setModel(self.file_model)
-        self.file_tree.setRootIndex(self.file_model.index(self.file_manager.data_dir))
+        self.file_tree.setRootIndex(self.file_model.index(app_dir))
         
         # 隱藏不需要的列
         self.file_tree.setColumnHidden(1, True)  # 隱藏大小列

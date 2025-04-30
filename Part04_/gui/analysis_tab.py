@@ -177,22 +177,7 @@ class AnalysisTab(QWidget):
         # 創建資料集選擇組合框
         dataset_selector_layout = QHBoxLayout()
         
-        self.dataset_combo = QComboBox()
-        self.dataset_combo.setMinimumWidth(200)
-        available_datasets = self._get_available_datasets()
-        for dataset in available_datasets:
-            self.dataset_combo.addItem(dataset)
-        
-        dataset_selector_layout.addWidget(QLabel("選擇資料集:"))
-        dataset_selector_layout.addWidget(self.dataset_combo, 1)
-        
-        # 創建載入、刷新按鈕
-        load_btn = QPushButton("載入")
-        load_btn.clicked.connect(self.load_selected_data)
-        
-        refresh_btn = QPushButton("刷新")
-        refresh_btn.clicked.connect(self.refresh_dataset_list)
-        
+        # 創建匯入按鈕
         import_btn = QPushButton("導入...")
         import_btn.clicked.connect(self.import_data)
         
@@ -200,8 +185,6 @@ class AnalysisTab(QWidget):
         yelp_btn.clicked.connect(self.import_yelp_data)
         yelp_btn.setToolTip("合併Yelp的business和review數據文件")
         
-        dataset_selector_layout.addWidget(load_btn)
-        dataset_selector_layout.addWidget(refresh_btn)
         dataset_selector_layout.addWidget(import_btn)
         dataset_selector_layout.addWidget(yelp_btn)
         dataset_layout.addLayout(dataset_selector_layout)

@@ -153,27 +153,10 @@ class VisualizationTab(QWidget):
         # 創建結果選擇組合框
         result_selector_layout = QHBoxLayout()
         
-        self.result_combo = QComboBox()
-        self.result_combo.setMinimumWidth(300)
-        available_results = self._get_available_results()
-        for result in available_results:
-            self.result_combo.addItem(result["name"], result["path"])
-        
-        result_selector_layout.addWidget(QLabel("選擇結果:"))
-        result_selector_layout.addWidget(self.result_combo, 1)
-        
-        # 創建載入、刷新按鈕
-        load_btn = QPushButton("載入")
-        load_btn.clicked.connect(self.load_selected_result)
-        
-        refresh_btn = QPushButton("刷新")
-        refresh_btn.clicked.connect(self.refresh_result_list)
-        
+        # 創建瀏覽按鈕
         browse_btn = QPushButton("瀏覽...")
         browse_btn.clicked.connect(self.browse_result_file)
         
-        result_selector_layout.addWidget(load_btn)
-        result_selector_layout.addWidget(refresh_btn)
         result_selector_layout.addWidget(browse_btn)
         results_layout.addLayout(result_selector_layout)
         
@@ -456,22 +439,26 @@ class VisualizationTab(QWidget):
 
     def browse_result_file(self):
         """瀏覽選擇結果文件"""
-        # 安全獲取輸出目錄
-        output_dir = "./output"  # 默認值
-        
-        # 檢查配置對象是否存在並安全獲取路徑
-        if self.config is not None:
-            try:
-                if isinstance(self.config, dict):
-                    output_dir = self.config.get("paths", {}).get("output_dir", output_dir)
-                elif hasattr(self.config, "get"):
-                    paths = self.config.get("paths")
-                    if isinstance(paths, dict):
-                        output_dir = paths.get("output_dir", output_dir)
-                    else:
-                        output_dir = self.config.get("paths.output_dir", output_dir)
-            except Exception as e:
-                logger.warning(f"獲取輸出目錄時出錯: {str(e)}，使用默認值 {output_dir}")
+        # 優先使用file_manager的路徑
+        if self.file_manager is not None and hasattr(self.file_manager, "output_dir"):
+            output_dir = self.file_manager.output_dir
+        else:
+            # 退回到安全獲取輸出目錄的方式
+            output_dir = "./1_output"
+            
+            # 檢查配置對象是否存在並安全獲取路徑
+            if self.config is not None:
+                try:
+                    if isinstance(self.config, dict):
+                        output_dir = self.config.get("paths", {}).get("output_dir", output_dir)
+                    elif hasattr(self.config, "get"):
+                        paths = self.config.get("paths")
+                        if isinstance(paths, dict):
+                            output_dir = paths.get("output_dir", output_dir)
+                        else:
+                            output_dir = self.config.get("paths.output_dir", output_dir)
+                except Exception as e:
+                    logger.warning(f"獲取輸出目錄時出錯: {str(e)}，使用默認值 {output_dir}")
         
         # 確保路徑存在
         if not os.path.exists(output_dir):
