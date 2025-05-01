@@ -127,6 +127,41 @@ class Visualizer:
         # 確保輸出目錄存在
         os.makedirs(self.output_dir, exist_ok=True)
     
+    def update_config(self, config):
+        """更新視覺化器配置
+        
+        Args:
+            config: 新的配置參數字典
+            
+        Returns:
+            None
+        """
+        if not config:
+            self.logger.warning("收到空配置，未進行更新")
+            return
+            
+        self.logger.info("更新視覺化器配置")
+        try:
+            # 更新配置字典
+            self.config.update(config)
+            
+            # 更新各項設置
+            self.output_dir = self.config.get('output_dir', self.output_dir)
+            self.dpi = self.config.get('dpi', self.dpi)
+            self.figsize = self.config.get('figsize', self.figsize)
+            self.cmap = self.config.get('cmap', self.cmap)
+            self.show_values = self.config.get('show_values', self.show_values)
+            
+            # 確保輸出目錄存在
+            os.makedirs(self.output_dir, exist_ok=True)
+            
+            self.logger.info(f"視覺化器配置已更新: output_dir={self.output_dir}, dpi={self.dpi}, "
+                             f"figsize={self.figsize}, cmap={self.cmap}, show_values={self.show_values}")
+        except Exception as e:
+            self.logger.error(f"更新視覺化器配置時出錯: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            
     def plot_bar_chart(self, data, x_column, y_columns, title, output_filename=None, 
                       xlabel=None, ylabel=None, rotate_xlabels=False):
         """繪製條形圖

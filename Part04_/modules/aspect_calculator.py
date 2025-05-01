@@ -54,6 +54,35 @@ class AspectCalculator:
         self.vis_dir = os.path.join(self.output_dir, 'visualizations')
         os.makedirs(self.vis_dir, exist_ok=True)
     
+    def update_config(self, config):
+        """更新配置參數
+        
+        Args:
+            config: 新的配置參數字典
+        """
+        if config is None:
+            return
+            
+        self.config = config
+        
+        # 更新配置參數
+        self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '1_output', 'vectors'))
+        self.attention_types = self.config.get('attention_types', ['no', 'similarity', 'keyword', 'self', 'combined'])
+        self.attention_weights = self.config.get('attention_weights', {
+            'similarity': 0.33,
+            'keyword': 0.33,
+            'self': 0.34
+        })
+        
+        # 確保輸出目錄存在
+        os.makedirs(self.output_dir, exist_ok=True)
+        
+        # 更新可視化目錄
+        self.vis_dir = os.path.join(self.output_dir, 'visualizations')
+        os.makedirs(self.vis_dir, exist_ok=True)
+        
+        self.logger.info(f"已更新面向向量計算器配置")
+        
     def calculate_aspect_vectors(self, embeddings_path=None, metadata_path=None, topics_path=None, 
                           embeddings=None, metadata=None, topics=None, progress_callback=None):
         """計算面向向量

@@ -166,7 +166,7 @@ class Config:
         """獲取配置項
         
         Args:
-            section: 配置區段
+            section: 配置區段或巢狀路徑列表，例如：'app' 或 ['app', 'name']
             key: 配置鍵名，若為None則返回整個區段
             default: 默認值，若配置項不存在則返回此值
             
@@ -174,20 +174,116 @@ class Config:
             配置值或默認值
         """
         try:
+            # 支援使用列表表示巢狀路徑，例如 ['app', 'name']
+            if isinstance(section, list):
+                return self._get_by_path(section, key, default)
+                
+            # 向下兼容：支援使用字典表示巢狀路徑
+            if isinstance(section, dict):
+                self.logger.warning(f"配置鍵名必須是字符串或整數，而不是 {type(section)}")
+                # 嘗試轉換字典為字符串鍵
+                try:
+                    section_key = next(iter(section.keys()))
+                    if isinstance(section_key, str):
+                        return self.get_nested(section, key, default)
+                    else:
+                        return default
+                except:
+                    return default
+                
+            # 確保 section 是字符串型別
+            if not isinstance(section, str) and not isinstance(section, int):
+                self.logger.warning(f"配置區段名稱必須是字符串或整數，而不是 {type(section)}")
+                return default
+                
             if section not in self.config:
                 return default
                 
             if key is None:
-                return self.config[section]
+                return copy.deepcopy(self.config[section])
             
-            # 修正: 先檢查 section 是否為字典
+            # 確保 key 是可哈希的類型
+            if not isinstance(key, str) and not isinstance(key, int):
+                self.logger.warning(f"配置鍵名必須是字符串或整數，而不是 {type(key)}")
+                return default
+                
+            # 檢查 section 是否為字典
             if isinstance(self.config[section], dict):
-                return self.config[section].get(key, default)
+                if key in self.config[section]:
+                    return self.config[section][key]
+                else:
+                    return default
             
             # 如果 section 不是字典，返回默認值
             return default
         except Exception as e:
             self.logger.error(f"獲取配置項出錯: {str(e)}")
+            return default
+    
+    def _get_by_path(self, path, key=None, default=None):
+        """根據路徑列表獲取巢狀配置
+        
+        Args:
+            path: 配置路徑列表，例如 ['app', 'name']
+            key: 最終鍵名，若為None則返回巢狀字典
+            default: 默認值，若配置項不存在則返回此值
+            
+        Returns:
+            配置值或默認值
+        """
+        try:
+            if not isinstance(path, list):
+                self.logger.warning(f"路徑必須是列表，而不是 {type(path)}")
+                return default
+                
+            # 從配置中依序查找
+            config_ptr = self.config
+            for item in path:
+                if not isinstance(item, (str, int)):
+                    self.logger.warning(f"路徑項必須是字符串或整數，而不是 {type(item)}")
+                    return default
+                    
+                if isinstance(config_ptr, dict) and item in config_ptr:
+                    config_ptr = config_ptr[item]
+                else:
+                    return default
+            
+            # 已找到巢狀字典
+            if key is None:
+                return copy.deepcopy(config_ptr)
+            
+            # 檢查最終鍵名
+            if isinstance(config_ptr, dict) and key in config_ptr:
+                return config_ptr[key]
+            
+            return default
+        except Exception as e:
+            self.logger.error(f"獲取巢狀配置項出錯: {str(e)}")
+            return default
+    
+    def get_nested(self, path_dict, key=None, default=None):
+        """獲取巢狀配置項 (舊版方法，建議使用列表路徑)
+        
+        Args:
+            path_dict: 配置路徑字典，例如 {'section': 'subsection'}
+            key: 最終鍵名，若為None則返回巢狀字典
+            default: 默認值，若配置項不存在則返回此值
+            
+        Returns:
+            配置值或默認值
+        """
+        try:
+            # 將路徑字典轉換成路徑列表
+            path_items = []
+            for k, v in path_dict.items():
+                path_items.append(k)
+                if v is not None:
+                    path_items.append(v)
+            
+            # 使用新方法處理
+            return self._get_by_path(path_items, key, default)
+        except Exception as e:
+            self.logger.error(f"獲取巢狀配置項出錯: {str(e)}")
             return default
     
     def set(self, section, key, value):
@@ -254,4 +350,9 @@ class Config:
         Returns:
             dict: 配置區段
         """
+        # 確保 key 是可哈希的類型
+        if not isinstance(key, str) and not isinstance(key, int):
+            self.logger.warning(f"配置區段名稱必須是字符串或整數，而不是 {type(key)}")
+            return {}
+            
         return self.config.get(key, {})

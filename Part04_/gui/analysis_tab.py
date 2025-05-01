@@ -178,14 +178,14 @@ class AnalysisTab(QWidget):
         dataset_selector_layout = QHBoxLayout()
         
         # 創建匯入按鈕
-        import_btn = QPushButton("導入...")
+        import_btn = QPushButton("導入CSV/JSON...")
         import_btn.clicked.connect(self.import_data)
         
         yelp_btn = QPushButton("Yelp合併導入")
         yelp_btn.clicked.connect(self.import_yelp_data)
         yelp_btn.setToolTip("合併Yelp的business和review數據文件")
         
-        dataset_selector_layout.addWidget(import_btn)
+        dataset_selector_layout.addWidget(import_btn, 1)  # 使用1作為伸展因子
         dataset_selector_layout.addWidget(yelp_btn)
         dataset_layout.addLayout(dataset_selector_layout)
         
@@ -452,17 +452,14 @@ class AnalysisTab(QWidget):
     
     def refresh_dataset_list(self):
         """刷新數據集列表"""
-        current_text = self.dataset_combo.currentText()
-        
-        self.dataset_combo.clear()
+        # 不再修改當前資料集標籤文字，保留原始的 "當前資料集" 標示
         available_datasets = self._get_available_datasets()
-        for dataset in available_datasets:
-            self.dataset_combo.addItem(dataset)
-            
-        # 嘗試恢復之前選中的項
-        index = self.dataset_combo.findText(current_text)
-        if index >= 0:
-            self.dataset_combo.setCurrentIndex(index)
+        
+        # 僅將刷新結果記錄到日誌，不再更新UI
+        if available_datasets:
+            logger.info(f"可用數據集: {', '.join(available_datasets)}")
+        else:
+            logger.info("目前沒有可用數據集")
             
         self.status_message.emit("數據集列表已刷新", 3000)
     
@@ -518,42 +515,25 @@ class AnalysisTab(QWidget):
             else:
                 raise ValueError(f"不支持的文件類型: {file_ext}")
             
-            # 提取文件名作為數據集名稱
-            file_name = Path(file_path).stem
+            # 直接載入資料，不再保存副本到 ReviewsDataBase 目錄
+            self.data = data
             
-            # 獲取數據目錄 - 使用安全方式
-            try:
-                # 方法1：直接從配置對象獲取路徑字符串
-                if isinstance(self.config, dict):
-                    data_dir = self.config.get("paths", {}).get("data_dir", "./data")
-                elif hasattr(self.config, "config") and isinstance(self.config.config, dict):
-                    data_dir = self.config.config.get("paths", {}).get("data_dir", "./data")
-                else:
-                    data_dir = "./data"
-            except Exception:
-                data_dir = "./data"
+            # 設置數據集名稱
+            self.current_dataset_name = file_name
             
-            # 確保目錄存在
-            os.makedirs(data_dir, exist_ok=True)
+            # 顯示數據
+            self._create_data_model(self.data, self.original_data_table)
             
-            # 保存到數據目錄
-            output_path = os.path.join(data_dir, f"{file_name}.csv")
+            # 切換到原始數據標籤頁
+            self.data_tabs.setCurrentIndex(0)
             
-            # 確保目錄存在
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            # 更新UI狀態
+            self._update_ui_state()
             
-            # 保存數據
-            data.to_csv(output_path, index=False)
-            
-            # 刷新數據集列表並選中新導入的數據集
+            # 刷新數據集列表
             self.refresh_dataset_list()
-            index = self.dataset_combo.findText(file_name)
-            if index >= 0:
-                self.dataset_combo.setCurrentIndex(index)
-                
-            # 載入數據
-            self.load_data(output_path)
             
+            # 顯示成功信息
             self.status_message.emit(f"已導入數據集 {file_name}", 3000)
             
         except Exception as e:
@@ -563,7 +543,7 @@ class AnalysisTab(QWidget):
             logger.error(f"導入數據出錯: {str(e)}")
             logger.error(error_details)
             QMessageBox.critical(self, "導入出錯", f"導入數據時出錯:\n{str(e)}")
-            
+    
     def import_yelp_data(self):
         """專用的Yelp數據導入方法"""
         progress = None
@@ -651,15 +631,6 @@ class AnalysisTab(QWidget):
             except Exception as e:
                 logger.warning(f"刷新數據集列表失敗: {str(e)}")
             
-            # 安全地嘗試選擇新導入的數據集
-            dataset_name = Path(output_file).stem
-            try:
-                index = self.dataset_combo.findText(dataset_name)
-                if index >= 0:
-                    self.dataset_combo.setCurrentIndex(index)
-            except Exception as e:
-                logger.warning(f"選擇新導入的數據集失敗: {str(e)}")
-            
             # 安全地載入數據
             try:
                 self.load_data(output_file)
@@ -694,7 +665,7 @@ class AnalysisTab(QWidget):
     
     def load_selected_data(self):
         """載入選中的數據集"""
-        dataset_name = self.dataset_combo.currentText()
+        dataset_name = self.dataset_info_label.text()
         
         if not dataset_name:
             QMessageBox.warning(self, "選擇數據集", "請選擇一個有效的數據集")
@@ -1147,23 +1118,47 @@ class AnalysisTab(QWidget):
     
     def on_settings_changed(self):
         """處理設定變更"""
-        # 重新載入配置到各模組
-        self.data_processor.update_config(self.config.get("data_processing"))
-        self.bert_embedder.update_config(self.config.get("bert"))
-        self.lda_modeler.update_config(self.config.get("lda"))
-        self.aspect_calculator.update_config(self.config.get("attention"))
-        self.evaluator.update_config(self.config.get("evaluation"))
-        self.visualizer.update_config(self.config.get("visualization"))
-        
-        # 更新界面上的參數設置
-        self.topic_count_spin.setValue(self.config.get("lda", {}).get("n_topics", 10))
-        self.max_iter_spin.setValue(self.config.get("lda", {}).get("max_iter", 50))
-        
-        # 注意力機制勾選狀態
-        enabled_mechanisms = self.config.get("attention", {}).get("enabled_mechanisms", [])
-        self.similarity_attention_check.setChecked("similarity" in enabled_mechanisms)
-        self.keyword_attention_check.setChecked("keyword" in enabled_mechanisms)
-        self.self_attention_check.setChecked("self" in enabled_mechanisms)
+        # 確保 self.config 不為 None
+        if self.config is None:
+            self.logger.warning("配置對象為空，無法更新模組配置")
+            return
+            
+        # 安全地更新各模組配置
+        try:
+            # 重新載入配置到各模組
+            self.data_processor.update_config(self.config.get("data_processing", {}))
+            self.bert_embedder.update_config(self.config.get("bert", {}))
+            self.lda_modeler.update_config(self.config.get("lda", {}))
+            self.aspect_calculator.update_config(self.config.get("attention", {}))
+            self.evaluator.update_config(self.config.get("evaluation", {}))
+            self.visualizer.update_config(self.config.get("visualization", {}))
+            
+            # 更新界面上的參數設置
+            lda_config = self.config.get("lda", {})
+            if isinstance(lda_config, dict):
+                self.topic_count_spin.setValue(lda_config.get("n_topics", 10))
+                self.max_iter_spin.setValue(lda_config.get("max_iter", 50))
+            else:
+                self.logger.warning("LDA配置無效，使用默認值")
+                self.topic_count_spin.setValue(10)
+                self.max_iter_spin.setValue(50)
+            
+            # 注意力機制勾選狀態
+            attention_config = self.config.get("attention", {})
+            if isinstance(attention_config, dict):
+                enabled_mechanisms = attention_config.get("enabled_mechanisms", [])
+                self.similarity_attention_check.setChecked("similarity" in enabled_mechanisms)
+                self.keyword_attention_check.setChecked("keyword" in enabled_mechanisms)
+                self.self_attention_check.setChecked("self" in enabled_mechanisms)
+            else:
+                self.logger.warning("注意力機制配置無效，使用默認值")
+                self.similarity_attention_check.setChecked(True)
+                self.keyword_attention_check.setChecked(True)
+                self.self_attention_check.setChecked(True)
+        except Exception as e:
+            self.logger.error(f"更新配置時發生錯誤: {str(e)}")
+            import traceback
+            self.logger.error(traceback.format_exc())
 
 
 class AnalysisThread(QThread):
