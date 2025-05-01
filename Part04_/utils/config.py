@@ -178,9 +178,8 @@ class Config:
             if isinstance(section, list):
                 return self._get_by_path(section, key, default)
                 
-            # 向下兼容：支援使用字典表示巢狀路徑
+            # 向下兼容：支援使用字典表示巢狀路徑，但不發出警告
             if isinstance(section, dict):
-                self.logger.warning(f"配置鍵名必須是字符串或整數，而不是 {type(section)}")
                 # 嘗試轉換字典為字符串鍵
                 try:
                     section_key = next(iter(section.keys()))
@@ -193,7 +192,7 @@ class Config:
                 
             # 確保 section 是字符串型別
             if not isinstance(section, str) and not isinstance(section, int):
-                self.logger.warning(f"配置區段名稱必須是字符串或整數，而不是 {type(section)}")
+                self.logger.debug(f"配置區段名稱必須是字符串或整數，收到: {type(section)}")
                 return default
                 
             if section not in self.config:
@@ -204,7 +203,7 @@ class Config:
             
             # 確保 key 是可哈希的類型
             if not isinstance(key, str) and not isinstance(key, int):
-                self.logger.warning(f"配置鍵名必須是字符串或整數，而不是 {type(key)}")
+                self.logger.debug(f"配置鍵名必須是字符串或整數，收到: {type(key)}")
                 return default
                 
             # 檢查 section 是否為字典
