@@ -603,112 +603,103 @@ class VisualizationTab(QWidget):
         
         # 根據當前選中的標籤頁生成相應的可視化
         try:
+            import os
+            import re
+            
             self.status_message.emit("正在生成可視化...", 0)
             
             # 決定要生成的可視化類型和保存文件名
             viz_type = ""
             default_name = ""
+            all_img_paths = []  # 存儲所有生成的圖片路徑
             
             if current_tab_index == 0:  # 面向向量質量
                 viz_type = "vector_quality"
                 default_name = "vector_quality"
                 img_path = self._generate_vector_quality_viz()
+                
+                # 尋找同一時間生成的所有圖表
+                if img_path:
+                    # 從路徑中提取時間戳部分
+                    timestamp_match = re.search(r'_(\d{8}_\d{6})\.png$', img_path)
+                    if timestamp_match:
+                        timestamp = timestamp_match.group(1)
+                        directory = os.path.dirname(img_path)
+                        # 找到相同時間戳的所有文件
+                        for file in os.listdir(directory):
+                            if timestamp in file and file.startswith("vector_quality_"):
+                                all_img_paths.append(os.path.join(directory, file))
+                        
+                        # 排序圖片路徑
+                        all_img_paths.sort()
             elif current_tab_index == 1:  # 情感分析性能
                 viz_type = "sentiment_analysis"
                 default_name = "sentiment_analysis" 
                 img_path = self._generate_sentiment_viz()
+                if img_path:
+                    all_img_paths.append(img_path)
             elif current_tab_index == 2:  # 注意力機制評估
                 viz_type = "attention_evaluation"
                 default_name = "attention_evaluation"
                 img_path = self._generate_attention_viz()
+                if img_path:
+                    all_img_paths.append(img_path)
             elif current_tab_index == 3:  # 主題模型評估
                 viz_type = "topic_evaluation"
                 default_name = "topic_evaluation"
                 img_path = self._generate_topic_viz()
+                if img_path:
+                    all_img_paths.append(img_path)
             elif current_tab_index == 4:  # 綜合比較視覺化
                 viz_type = "comprehensive"
                 default_name = "comprehensive_viz"
                 img_path = self._generate_comprehensive_viz()
+                if img_path:
+                    all_img_paths.append(img_path)
             else:
                 QMessageBox.warning(self, "無效選擇", "請選擇一種可視化類型")
                 return
             
-            # 如果成功生成，自動保存圖片
+            # 如果成功生成圖片，顯示成功訊息
             if img_path and os.path.exists(img_path):
-                # 創建保存目錄 - 確保在 1_output/exports 目錄下
-                exports_dir = os.path.join("Part04_", "1_output", "exports")
-                
-                # 嘗試從文件管理器獲取正確路徑
-                if self.file_manager is not None:
-                    if hasattr(self.file_manager, "export_dir"):
-                        exports_dir = self.file_manager.export_dir
-                        self.logger.debug(f"從文件管理器獲取導出目錄: {exports_dir}")
-                    elif hasattr(self.file_manager, "get_path"):
-                        try:
-                            exports_dir = self.file_manager.get_path("exports")
-                            self.logger.debug(f"從文件管理器的get_path獲取導出目錄: {exports_dir}")
-                        except:
-                            pass
-                    # 確保路徑包含 1_output
-                    if "1_output" not in exports_dir and os.path.exists(os.path.join("Part04_", "1_output")):
-                        exports_dir = os.path.join("Part04_", "1_output", "exports")
-                
-                # 安全地檢查配置對象並獲取路徑，確保包含 1_output
-                if self.config is not None:
-                    if isinstance(self.config, dict):
-                        paths = self.config.get("paths", {})
-                        if "exports_dir" in paths:
-                            exports_dir = paths.get("exports_dir")
-                            # 確保路徑在 1_output 下
-                            if "1_output" not in exports_dir:
-                                # 檢查是否有 output_dir 設定
-                                output_dir = paths.get("output_dir", os.path.join("Part04_", "1_output"))
-                                exports_dir = os.path.join(output_dir, "exports")
-                    elif hasattr(self.config, "get"):
-                        try:
-                            paths = self.config.get("paths", {})
-                            if isinstance(paths, dict) and "exports_dir" in paths:
-                                exports_dir = paths.get("exports_dir")
-                                if "1_output" not in exports_dir:
-                                    output_dir = paths.get("output_dir", os.path.join("Part04_", "1_output"))
-                                    exports_dir = os.path.join(output_dir, "exports")
-                        except Exception as e:
-                            self.logger.warning(f"從配置獲取導出目錄時出錯: {str(e)}")
-                
-                # 最後確認路徑是否包含 1_output，如果不包含則強制設置
-                if "1_output" not in exports_dir:
-                    # 絕對路徑處理
-                    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../"))
-                    exports_dir = os.path.join(project_root, "1_output", "exports")
-                    self.logger.debug(f"修正導出目錄到1_output下: {exports_dir}")
-                
-                # 確保目錄存在
-                if not os.path.exists(exports_dir):
-                    os.makedirs(exports_dir, exist_ok=True)
-                    self.logger.debug(f"創建導出目錄: {exports_dir}")
-                
-                # 生成目標文件名
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                target_filename = f"{default_name}_{self.current_dataset}_{timestamp}.png"
-                target_path = os.path.join(exports_dir, target_filename)
-                
-                # 複製檔案
-                import shutil
-                shutil.copy2(img_path, target_path)
-                
-                # 提示用戶
-                self.status_message.emit(f"可視化已生成並保存至: {target_path}", 5000)
-                QMessageBox.information(
-                    self, 
-                    "生成並保存成功", 
-                    f"可視化已成功生成並保存！\n\n保存路徑：\n{target_path}"
-                )
+                # 提示用戶所有生成的圖表
+                if len(all_img_paths) > 1 and viz_type == "vector_quality":
+                    img_types = []
+                    for path in all_img_paths:
+                        base_name = os.path.basename(path)
+                        if "cohesion" in base_name:
+                            img_types.append("內聚度與分離度")
+                        elif "combined" in base_name:
+                            img_types.append("綜合得分")
+                        elif "silhouette" in base_name:
+                            img_types.append("輪廓係數")
+                        elif "perplexity" in base_name:
+                            img_types.append("困惑度")
+                            
+                    img_folder = os.path.dirname(img_path)
+                    multi_img_message = f"已成功生成 {len(all_img_paths)} 種圖表：\n\n"
+                    for i, img_type in enumerate(img_types):
+                        multi_img_message += f"{i+1}. {img_type}\n"
+                    multi_img_message += f"\n所有圖表已保存在目錄：\n{img_folder}"
+                    
+                    self.status_message.emit(f"已生成 {len(all_img_paths)} 種面向向量質量圖表", 5000)
+                    QMessageBox.information(self, "生成成功", multi_img_message)
+                else:
+                    # 提示用戶
+                    img_folder = os.path.dirname(img_path)
+                    self.status_message.emit(f"可視化已生成並保存至: {img_folder}", 5000)
+                    QMessageBox.information(
+                        self, 
+                        "生成成功", 
+                        f"可視化已成功生成！\n\n保存路徑：\n{img_folder}"
+                    )
             else:
                 self.status_message.emit("可視化生成失敗或未生成圖片文件", 3000)
                 
         except Exception as e:
-            logger.error(f"生成可視化出錯: {str(e)}")
-            logger.error(traceback.format_exc())
+            import traceback
+            self.logger.error(f"生成可視化出錯: {str(e)}")
+            self.logger.error(traceback.format_exc())
             QMessageBox.critical(self, "生成出錯", f"生成可視化時出錯:\n{str(e)}")
             
     def _generate_vector_quality_viz(self):
@@ -718,30 +709,64 @@ class VisualizationTab(QWidget):
             str: 圖片路徑，如果失敗則返回None
         """
         try:
-            # 獲取選項
-            chart_type = self.cohesion_chart_combo.currentText()
-            
-            # 創建示例數據（實際項目中應從模型結果獲取）
+            # 導入必要的模組
+            import os
             import numpy as np
             import pandas as pd
             import matplotlib.pyplot as plt
-            import os
+            import seaborn as sns
+            from datetime import datetime
+            import traceback
             
-            # 確保輸出目錄存在
-            output_dir = self.output_dir
+            # 創建對應的中文子目錄
+            output_dir = os.path.join(self.output_dir, "面向向量質量")
             os.makedirs(output_dir, exist_ok=True)
             
-            # 模擬不同注意力機制的內聚度和分離度數據
-            attention_mechanisms = ['相似度注意力', '關鍵詞注意力', '自注意力', '綜合注意力']
-            cohesion_values = np.random.uniform(0.6, 0.9, len(attention_mechanisms))
-            separation_values = np.random.uniform(0.5, 0.8, len(attention_mechanisms))
+            self.status_message.emit("開始生成面向向量質量可視化...", 3000)
+            self.progress_bar.setValue(5)
+            
+            # 獲取當前選項
+            cohesion_chart_type = self.cohesion_chart_combo.currentText()
+            combined_chart_type = self.combined_chart_combo.currentText()
+            silhouette_chart_type = self.silhouette_chart_combo.currentText()
+            min_topics = self.min_topics_spin.value()
+            max_topics = self.max_topics_spin.value()
             
             # 設置中文字體
             plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
             plt.rcParams['axes.unicode_minus'] = False
             
-            # 根據選擇的圖表類型生成不同的圖表
-            if chart_type == "條形圖":
+            # 創建示例數據
+            import numpy as np
+            import pandas as pd
+            import matplotlib.pyplot as plt
+            import seaborn as sns
+            import os
+            
+            # 創建圖表類型選擇
+            viz_type_options = {
+                "內聚度與分離度": cohesion_chart_type,
+                "綜合得分": combined_chart_type,
+                "輪廓係數": silhouette_chart_type,
+                "困惑度": "line_chart"  # 困惑度固定使用折線圖
+            }
+            
+            self.status_message.emit(f"處理「面向向量質量」標籤頁: 已選取 {len(viz_type_options)} 個視覺化區域", 3000)
+            
+            # 根據用戶選擇決定要生成的圖表類型
+            # 這裡我們默認生成所有類型的圖表併返回第一張
+            img_paths = []
+            
+            # 生成內聚度與分離度圖表
+            self.status_message.emit(f"1. 開始處理「內聚度與分離度」區域（{cohesion_chart_type}）...", 3000)
+            self.progress_bar.setValue(15)
+            
+            attention_mechanisms = ['相似度注意力', '關鍵詞注意力', '自注意力', '綜合注意力']
+            cohesion_values = np.random.uniform(0.6, 0.9, len(attention_mechanisms))
+            separation_values = np.random.uniform(0.5, 0.8, len(attention_mechanisms))
+            
+            # 1. 內聚度與分離度圖表
+            if cohesion_chart_type == "條形圖":
                 fig, ax = plt.subplots(figsize=(10, 6))
                 x = np.arange(len(attention_mechanisms))
                 width = 0.35
@@ -755,7 +780,7 @@ class VisualizationTab(QWidget):
                 ax.set_xticklabels(attention_mechanisms)
                 ax.legend()
                 
-            elif chart_type == "散點圖":
+            elif cohesion_chart_type == "散點圖":
                 fig, ax = plt.subplots(figsize=(10, 6))
                 
                 ax.scatter(cohesion_values, separation_values, s=100)
@@ -763,14 +788,14 @@ class VisualizationTab(QWidget):
                 # 添加標籤
                 for i, mechanism in enumerate(attention_mechanisms):
                     ax.annotate(mechanism, (cohesion_values[i], separation_values[i]),
-                               textcoords="offset points", xytext=(0,10), ha='center')
+                              textcoords="offset points", xytext=(0,10), ha='center')
                 
                 ax.set_xlabel('內聚度')
                 ax.set_ylabel('分離度')
                 ax.set_title('內聚度與分離度的關係散點圖')
                 ax.grid(True)
                 
-            elif chart_type == "樹狀圖":
+            elif cohesion_chart_type == "樹狀圖":
                 # 使用条形图模拟树状图
                 combined_scores = cohesion_values * 0.5 + separation_values * 0.5
                 
@@ -785,20 +810,207 @@ class VisualizationTab(QWidget):
                 ax.set_xticklabels(attention_mechanisms)
                 ax.legend()
             
-            # 保存圖片
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_path = os.path.join(output_dir, f"vector_quality_{chart_type}_{timestamp}.png")
-            plt.tight_layout()
-            plt.savefig(img_path, dpi=300, bbox_inches='tight')
-            plt.close()
+            # 創建「內聚度與分離度」子目錄
+            cohesion_dir = os.path.join(output_dir, "內聚度與分離度")
+            os.makedirs(cohesion_dir, exist_ok=True)
             
-            return img_path
+            # 保存內聚度分離度圖表
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            cs_img_path = os.path.join(cohesion_dir, f"vector_quality_cohesion_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(cs_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            img_paths.append(cs_img_path)
+            
+            self.status_message.emit(f"✓ 「內聚度與分離度」區域處理完成", 3000)
+            self.progress_bar.setValue(30)
+            
+            # 2. 綜合得分圖表
+            self.status_message.emit(f"2. 開始處理「綜合得分」區域（{combined_chart_type}）...", 3000)
+            # 創建示例數據
+            mechanisms = ['相似度注意力', '關鍵詞注意力', '自注意力', '綜合注意力']
+            metrics = ['內聚度', '分離度', '輪廓係數', 'F1分數']
+            
+            # 創建隨機得分矩陣
+            scores_matrix = np.random.uniform(0.5, 0.9, (len(mechanisms), len(metrics)))
+            
+            if combined_chart_type == "條形圖":
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # 創建組合得分
+                combined_scores = np.mean(scores_matrix, axis=1)
+                
+                bars = ax.bar(mechanisms, combined_scores, color='skyblue')
+                
+                # 添加數值標籤
+                for bar in bars:
+                    height = bar.get_height()
+                    ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                           f'{height:.2f}', ha='center', va='bottom')
+                
+                ax.set_ylim(0, 1.0)
+                ax.set_ylabel('綜合得分')
+                ax.set_title('不同注意力機制的綜合性能得分')
+                ax.grid(axis='y', linestyle='--', alpha=0.7)
+                
+            elif combined_chart_type == "熱力圖":
+                fig, ax = plt.subplots(figsize=(10, 8))
+                
+                # 創建熱力圖
+                sns.heatmap(scores_matrix, annot=True, fmt=".2f", cmap="YlGnBu",
+                          xticklabels=metrics, yticklabels=mechanisms, ax=ax)
+                
+                ax.set_title('不同注意力機制在各指標上的得分熱力圖')
+            
+            # 創建「綜合得分」子目錄
+            combined_dir = os.path.join(output_dir, "綜合得分")
+            os.makedirs(combined_dir, exist_ok=True)
+                
+            # 保存綜合得分圖表
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            combined_img_path = os.path.join(combined_dir, f"vector_quality_combined_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(combined_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            img_paths.append(combined_img_path)
+            
+            self.status_message.emit(f"✓ 「綜合得分」區域處理完成", 3000)
+            self.progress_bar.setValue(50)
+            
+            # 3. 輪廓係數圖表
+            self.status_message.emit(f"3. 開始處理「輪廓係數」區域（{silhouette_chart_type}）...", 3000)
+            # 創建示例數據
+            n_samples = 200
+            n_clusters = 5
+            
+            # 創建隨機輪廓係數值 (模擬不同機制的結果)
+            silhouette_values = []
+            cluster_labels = []
+            
+            for mechanism_id in range(len(mechanisms)):
+                # 為每個機制創建隨機輪廓係數值 (-1到1之間，通常好的聚類大於0)
+                mech_values = np.random.uniform(-0.1, 0.8, n_samples // len(mechanisms))
+                silhouette_values.extend(mech_values)
+                
+                # 為每個樣本分配聚類標籤
+                cluster_ids = np.random.randint(0, n_clusters, size=len(mech_values))
+                cluster_labels.extend(cluster_ids)
+                
+                # 為每個樣本記錄相應的機制
+                mechanism_labels = [mechanisms[mechanism_id]] * len(mech_values)
+                if mechanism_id == 0:
+                    all_mechanism_labels = mechanism_labels
+                else:
+                    all_mechanism_labels.extend(mechanism_labels)
+            
+            # 創建DataFrame用於可視化
+            silhouette_df = pd.DataFrame({
+                '輪廓係數': silhouette_values,
+                '聚類': [f'聚類{c}' for c in cluster_labels],
+                '注意力機制': all_mechanism_labels
+            })
+            
+            if silhouette_chart_type == "輪廓圖":
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # 為每個機制創建輪廓圖 (簡化版)
+                for mechanism in mechanisms:
+                    mech_data = silhouette_df[silhouette_df['注意力機制'] == mechanism]
+                    sns.kdeplot(mech_data['輪廓係數'], label=mechanism, ax=ax)
+                
+                ax.set_xlabel('輪廓係數')
+                ax.set_ylabel('密度')
+                ax.set_title('不同注意力機制的輪廓係數分布')
+                ax.legend()
+                ax.grid(True, linestyle='--', alpha=0.7)
+                
+                # 添加垂直線表示平均值
+                for mechanism in mechanisms:
+                    mech_data = silhouette_df[silhouette_df['注意力機制'] == mechanism]
+                    avg = mech_data['輪廓係數'].mean()
+                    ax.axvline(avg, linestyle='--', alpha=0.6)
+                    ax.text(avg, 0.1, f'{avg:.2f}', horizontalalignment='center')
+                    
+            elif silhouette_chart_type == "小提琴圖":
+                fig, ax = plt.subplots(figsize=(12, 8))
+                
+                # 創建小提琴圖
+                sns.violinplot(x='注意力機制', y='輪廓係數', data=silhouette_df,
+                             inner='box', ax=ax)
+                
+                ax.set_title('不同注意力機制的輪廓係數分布')
+                ax.grid(axis='y', linestyle='--', alpha=0.7)
+            
+            # 創建「輪廓係數」子目錄
+            silhouette_dir = os.path.join(output_dir, "輪廓係數")
+            os.makedirs(silhouette_dir, exist_ok=True)
+            
+            # 保存輪廓係數圖表
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            silhouette_img_path = os.path.join(silhouette_dir, f"vector_quality_silhouette_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(silhouette_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            img_paths.append(silhouette_img_path)
+            
+            self.status_message.emit(f"✓ 「輪廓係數」區域處理完成", 3000)
+            self.progress_bar.setValue(75)
+            
+            # 4. 困惑度圖表 (只用折線圖)
+            self.status_message.emit(f"4. 開始處理「困惑度」區域 (範圍: {min_topics}-{max_topics})...", 3000)
+            # 創建困惑度數據
+            topic_nums = list(range(min_topics, max_topics + 1))
+            perplexities = []
+            
+            # 為每個機制創建困惑度值
+            for mechanism in mechanisms:
+                # 使用對數衰減函數模擬困惑度隨主題數增加而降低的情況
+                base_perp = 1000 + np.random.uniform(-200, 200)  # 基準困惑度
+                mech_perplexities = [base_perp * np.exp(-0.05 * i) + 100 + np.random.uniform(-20, 20) 
+                                   for i in range(len(topic_nums))]
+                perplexities.append(mech_perplexities)
+            
+            # 繪製困惑度曲線
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            for i, mechanism in enumerate(mechanisms):
+                ax.plot(topic_nums, perplexities[i], marker='o', label=mechanism)
+            
+            ax.set_xlabel('主題數量')
+            ax.set_ylabel('困惑度')
+            ax.set_title(f'主題數{min_topics}至{max_topics}的困惑度變化')
+            ax.legend()
+            ax.grid(True)
+            
+            # 創建「困惑度」子目錄
+            perplexity_dir = os.path.join(output_dir, "困惑度")
+            os.makedirs(perplexity_dir, exist_ok=True)
+            
+            # 保存困惑度圖表
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            perplexity_img_path = os.path.join(perplexity_dir, f"vector_quality_perplexity_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(perplexity_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            img_paths.append(perplexity_img_path)
+            
+            self.status_message.emit(f"✓ 「困惑度」區域處理完成", 3000)
+            self.progress_bar.setValue(95)
+            
+            # 返回第一張圖片的路徑
+            if img_paths:
+                self.status_message.emit(f"✓ 所有面向向量質量可視化已完成，共生成 {len(img_paths)} 個圖表", 5000)
+                self.progress_bar.setValue(100)
+                return img_paths[0]  # 返回第一張圖片的路徑
+            return None
             
         except Exception as e:
+            self.status_message.emit(f"生成面向向量質量可視化出錯: {str(e)}", 5000)
+            self.progress_bar.setValue(0)
             self.logger.error(f"生成面向向量質量可視化出錯: {str(e)}")
             self.logger.error(traceback.format_exc())
             return None
-            
+
     def _generate_sentiment_viz(self):
         """生成情感分析性能指標可視化
         
@@ -806,17 +1018,20 @@ class VisualizationTab(QWidget):
             str: 圖片路徑，如果失敗則返回None
         """
         try:
+            # 導入必要的模組
+            import os
+            import numpy as np
+            import matplotlib.pyplot as plt
+            from datetime import datetime
+            import traceback
+            
             # 獲取選項
             chart_type = self.metrics_chart_combo.currentText()
             
             # 創建示例數據（實際項目中應從模型結果獲取）
-            import numpy as np
-            import pandas as pd
-            import matplotlib.pyplot as plt
-            import os
             
-            # 確保輸出目錄存在
-            output_dir = self.output_dir
+            # 創建對應的中文子目錄
+            output_dir = os.path.join(self.output_dir, "情感分析性能")
             os.makedirs(output_dir, exist_ok=True)
             
             # 模擬不同注意力機制的指標數據
@@ -830,7 +1045,14 @@ class VisualizationTab(QWidget):
             plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
             plt.rcParams['axes.unicode_minus'] = False
             
+            # 更新狀態和進度條
+            self.status_message.emit("開始生成情感分析性能指標可視化...", 3000)
+            self.progress_bar.setValue(10)
+            
             # 根據選擇的圖表類型生成不同的圖表
+            self.status_message.emit(f"1. 開始處理「準確率、精確率、召回率、F1分數」區域（{chart_type}）...", 3000)
+            self.progress_bar.setValue(30)
+            
             if chart_type == "分組條形圖":
                 fig, ax = plt.subplots(figsize=(12, 6))
                 x = np.arange(len(attention_mechanisms))
@@ -898,16 +1120,87 @@ class VisualizationTab(QWidget):
                 ax.set_xticklabels(attention_mechanisms)
                 ax.legend()
             
+            self.status_message.emit(f"✓ 「準確率、精確率、召回率、F1分數」區域處理完成", 3000)
+            self.progress_bar.setValue(60)
+            
+            # 根據F1圖表類型創建子目錄
+            f1_chart_type = self.f1_chart_combo.currentText()
+            metrics_dir = os.path.join(output_dir, "準確率精確率召回率F1")
+            os.makedirs(metrics_dir, exist_ok=True)
+            
             # 保存圖片
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_path = os.path.join(output_dir, f"sentiment_analysis_{chart_type}_{timestamp}.png")
+            img_path = os.path.join(metrics_dir, f"sentiment_analysis_{chart_type}_{timestamp}.png")
             plt.tight_layout()
             plt.savefig(img_path, dpi=300, bbox_inches='tight')
             plt.close()
             
+            # 創建宏平均F1和微平均F1圖表
+            self.status_message.emit(f"2. 開始處理「宏平均F1和微平均F1」區域（{f1_chart_type}）...", 3000)
+            self.progress_bar.setValue(70)
+            
+            macro_micro_dir = os.path.join(output_dir, "宏平均微平均F1")
+            os.makedirs(macro_micro_dir, exist_ok=True)
+            
+            # 生成宏平均F1和微平均F1數據
+            mechanisms = ['相似度注意力', '關鍵詞注意力', '自注意力', '綜合注意力']
+            macro_f1_values = np.random.uniform(0.6, 0.85, len(mechanisms))
+            micro_f1_values = np.random.uniform(0.65, 0.9, len(mechanisms))
+            
+            if f1_chart_type == "條形圖":
+                fig, ax = plt.subplots(figsize=(10, 6))
+                x = np.arange(len(mechanisms))
+                width = 0.35
+                
+                ax.bar(x - width/2, macro_f1_values, width, label='宏平均F1')
+                ax.bar(x + width/2, micro_f1_values, width, label='微平均F1')
+                
+                ax.set_ylabel('F1分數')
+                ax.set_title('不同注意力機制的宏平均F1和微平均F1')
+                ax.set_xticks(x)
+                ax.set_xticklabels(mechanisms)
+                ax.legend()
+                
+            elif f1_chart_type == "熱力圖":
+                # 創建包含兩種F1分數的熱力圖
+                data = np.vstack([macro_f1_values, micro_f1_values])
+                fig, ax = plt.subplots(figsize=(12, 4))
+                
+                im = ax.imshow(data, cmap="YlGnBu")
+                
+                # 設置坐標軸
+                ax.set_xticks(np.arange(len(mechanisms)))
+                ax.set_yticks([0, 1])
+                ax.set_xticklabels(mechanisms)
+                ax.set_yticklabels(['宏平均F1', '微平均F1'])
+                
+                # 添加顏色條和數值標籤
+                plt.colorbar(im)
+                
+                # 添加數值標籤
+                for i in range(len(['宏平均F1', '微平均F1'])):
+                    for j in range(len(mechanisms)):
+                        text = ax.text(j, i, f"{data[i, j]:.2f}",
+                                     ha="center", va="center", color="black")
+                
+                ax.set_title('不同注意力機制的宏平均F1和微平均F1熱力圖')
+            
+            # 保存F1圖表
+            f1_img_path = os.path.join(macro_micro_dir, f"sentiment_f1_{f1_chart_type}_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(f1_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            self.status_message.emit(f"✓ 「宏平均F1和微平均F1」區域處理完成", 3000)
+            self.progress_bar.setValue(100)
+            
+            # 返回第一張圖片的路徑
+            self.status_message.emit(f"✓ 所有情感分析性能可視化已完成", 5000)
             return img_path
             
         except Exception as e:
+            self.status_message.emit(f"生成情感分析性能指標可視化出錯: {str(e)}", 5000)
+            self.progress_bar.setValue(0)
             self.logger.error(f"生成情感分析性能指標可視化出錯: {str(e)}")
             self.logger.error(traceback.format_exc())
             return None
@@ -922,6 +1215,7 @@ class VisualizationTab(QWidget):
             # 獲取選項
             chart_type = self.attention_chart_combo.currentText()
             sample_id = self.sample_id_spin.value()
+            weight_chart_type = self.weight_chart_combo.currentText()
             
             # 創建示例數據（實際項目中應從模型結果獲取）
             import numpy as np
@@ -930,13 +1224,24 @@ class VisualizationTab(QWidget):
             import os
             import seaborn as sns
             
-            # 確保輸出目錄存在
-            output_dir = self.output_dir
+            # 創建對應的中文子目錄
+            output_dir = os.path.join(self.output_dir, "注意力機制評估")
             os.makedirs(output_dir, exist_ok=True)
             
             # 設置中文字體
             plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
             plt.rcParams['axes.unicode_minus'] = False
+            
+            self.status_message.emit("開始生成注意力機制評估可視化...", 3000)
+            self.progress_bar.setValue(5)
+            
+            # 1. 注意力分布可視化
+            self.status_message.emit(f"1. 開始處理「注意力分布」區域（{chart_type}）...", 3000)
+            self.progress_bar.setValue(20)
+            
+            # 創建「注意力分布」子目錄
+            attention_dist_dir = os.path.join(output_dir, "注意力分布")
+            os.makedirs(attention_dist_dir, exist_ok=True)
             
             if chart_type == "熱力圖":
                 # 生成模擬注意力矩陣數據
@@ -1014,16 +1319,93 @@ class VisualizationTab(QWidget):
                 ax.set_ylabel("關係強度 (%)")
                 ax.legend(title="面向")
             
-            # 保存圖片
+            # 保存注意力分布圖片
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_path = os.path.join(output_dir, f"attention_{chart_type}_{timestamp}.png")
+            dist_img_path = os.path.join(attention_dist_dir, f"attention_dist_{chart_type}_{timestamp}.png")
             plt.tight_layout()
-            plt.savefig(img_path, dpi=300, bbox_inches='tight')
+            plt.savefig(dist_img_path, dpi=300, bbox_inches='tight')
             plt.close()
             
-            return img_path
+            self.status_message.emit(f"✓ 「注意力分布」區域處理完成", 3000)
+            self.progress_bar.setValue(60)
+            
+            # 2. 注意力權重比較可視化
+            self.status_message.emit(f"2. 開始處理「注意力權重比較」區域（{weight_chart_type}）...", 3000)
+            
+            # 創建「注意力權重比較」子目錄
+            weight_compare_dir = os.path.join(output_dir, "注意力權重比較")
+            os.makedirs(weight_compare_dir, exist_ok=True)
+            
+            # 生成注意力權重比較數據
+            mechanisms = ['相似度注意力', '關鍵詞注意力', '自注意力']
+            topics = [f"主題{i+1}" for i in range(5)]
+            
+            if weight_chart_type == "平行坐標圖":
+                # 創建模擬數據
+                weight_data = []
+                for topic in topics:
+                    # 為每個主題創建隨機權重，但確保總和為1
+                    weights = np.random.rand(len(mechanisms))
+                    weights = weights / weights.sum()
+                    
+                    row = {'主題': topic}
+                    for i, mechanism in enumerate(mechanisms):
+                        row[mechanism] = weights[i]
+                    
+                    weight_data.append(row)
+                
+                weight_df = pd.DataFrame(weight_data)
+                
+                # 繪製平行坐標圖
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # 獲取顏色映射
+                colors = plt.cm.tab10(np.linspace(0, 1, len(topics)))
+                
+                # 繪製每個主題的線
+                for i, topic in enumerate(topics):
+                    row = weight_df[weight_df['主題'] == topic]
+                    values = [row[mechanism].values[0] for mechanism in mechanisms]
+                    ax.plot(mechanisms, values, marker='o', label=topic, color=colors[i])
+                
+                ax.set_title("各主題中不同注意力機制的權重分布")
+                ax.set_ylabel("權重值")
+                ax.set_ylim(0, 1)
+                ax.grid(True, linestyle='--', alpha=0.7)
+                ax.legend(title="主題")
+                
+            elif weight_chart_type == "相關性熱力圖":
+                # 創建模擬相關性矩陣
+                n_mechanisms = len(mechanisms)
+                correlation_matrix = np.random.uniform(-0.5, 1, (n_mechanisms, n_mechanisms))
+                np.fill_diagonal(correlation_matrix, 1)  # 對角線為1
+                
+                # 確保矩陣對稱
+                correlation_matrix = (correlation_matrix + correlation_matrix.T) / 2
+                
+                # 創建熱力圖
+                fig, ax = plt.subplots(figsize=(10, 8))
+                sns.heatmap(correlation_matrix, annot=True, fmt=".2f", cmap="coolwarm", 
+                          xticklabels=mechanisms, yticklabels=mechanisms, ax=ax, vmin=-1, vmax=1)
+                ax.set_title("注意力機制間的相關性熱力圖")
+            
+            # 保存權重比較圖片
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            weight_img_path = os.path.join(weight_compare_dir, f"attention_weight_{weight_chart_type}_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(weight_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            self.status_message.emit(f"✓ 「注意力權重比較」區域處理完成", 3000)
+            self.progress_bar.setValue(100)
+            
+            # 返回第一張圖片的路徑
+            self.status_message.emit(f"✓ 所有注意力機制評估可視化已完成", 5000)
+            return dist_img_path
             
         except Exception as e:
+            self.status_message.emit(f"生成注意力機制評估可視化出錯: {str(e)}", 5000)
+            self.progress_bar.setValue(0)
             self.logger.error(f"生成注意力機制評估可視化出錯: {str(e)}")
             self.logger.error(traceback.format_exc())
             return None
@@ -1037,6 +1419,7 @@ class VisualizationTab(QWidget):
         try:
             # 獲取選項
             chart_type = self.coherence_chart_combo.currentText()
+            topic_dist_chart_type = self.topic_dist_chart_combo.currentText()
             
             # 創建示例數據（實際項目中應從模型結果獲取）
             import numpy as np
@@ -1044,14 +1427,26 @@ class VisualizationTab(QWidget):
             import matplotlib.pyplot as plt
             import os
             from wordcloud import WordCloud
+            import seaborn as sns
             
-            # 確保輸出目錄存在
-            output_dir = self.output_dir
+            # 創建對應的中文子目錄
+            output_dir = os.path.join(self.output_dir, "主題模型評估")
             os.makedirs(output_dir, exist_ok=True)
             
             # 設置中文字體
             plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
             plt.rcParams['axes.unicode_minus'] = False
+            
+            self.status_message.emit("開始生成主題模型評估可視化...", 3000)
+            self.progress_bar.setValue(5)
+            
+            # 1. 主題連貫性圖表
+            self.status_message.emit(f"1. 開始處理「主題連貫性」區域（{chart_type}）...", 3000)
+            self.progress_bar.setValue(20)
+            
+            # 創建「主題連貫性」子目錄
+            coherence_dir = os.path.join(output_dir, "主題連貫性")
+            os.makedirs(coherence_dir, exist_ok=True)
             
             if chart_type == "條形圖":
                 # 模擬不同主題的連貫性分數
@@ -1104,16 +1499,111 @@ class VisualizationTab(QWidget):
                 
                 fig.suptitle('主題關鍵詞詞雲', fontsize=16)
             
-            # 保存圖片
+            # 保存主題連貫性圖表
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_path = os.path.join(output_dir, f"topic_model_{chart_type}_{timestamp}.png")
+            coherence_img_path = os.path.join(coherence_dir, f"topic_coherence_{chart_type}_{timestamp}.png")
             plt.tight_layout()
-            plt.savefig(img_path, dpi=300, bbox_inches='tight')
+            plt.savefig(coherence_img_path, dpi=300, bbox_inches='tight')
             plt.close()
             
-            return img_path
+            self.status_message.emit(f"✓ 「主題連貫性」區域處理完成", 3000)
+            self.progress_bar.setValue(60)
+            
+            # 2. 主題分布圖表
+            self.status_message.emit(f"2. 開始處理「主題分布」區域（{topic_dist_chart_type}）...", 3000)
+            
+            # 創建「主題分布」子目錄
+            topic_dist_dir = os.path.join(output_dir, "主題分布")
+            os.makedirs(topic_dist_dir, exist_ok=True)
+            
+            # 生成模擬數據
+            n_topics = 5
+            n_docs = 4
+            topic_names = [f"主題{i+1}" for i in range(n_topics)]
+            document_names = [f"文檔集{i+1}" for i in range(n_docs)]
+            
+            # 創建主題分布數據（確保每個文檔集中主題分布總和為1）
+            topic_dist_data = []
+            for doc in document_names:
+                # 創建隨機分布
+                dist = np.random.rand(n_topics)
+                dist = dist / dist.sum()  # 正規化
+                
+                for i, topic in enumerate(topic_names):
+                    topic_dist_data.append({
+                        '文檔集': doc,
+                        '主題': topic,
+                        '比例': dist[i]
+                    })
+            
+            # 轉換為DataFrame
+            topic_dist_df = pd.DataFrame(topic_dist_data)
+            
+            if topic_dist_chart_type == "堆疊柱狀圖":
+                # 繪製堆疊柱狀圖
+                fig, ax = plt.subplots(figsize=(10, 6))
+                
+                # 重塑數據以便繪圖
+                pivot_df = topic_dist_df.pivot(index='文檔集', columns='主題', values='比例')
+                
+                # 繪製堆疊條形圖
+                pivot_df.plot(kind='bar', stacked=True, ax=ax, colormap='tab10')
+                
+                ax.set_title('各文檔集的主題分布')
+                ax.set_ylabel('比例')
+                ax.set_ylim(0, 1.0)
+                ax.legend(title='主題')
+                
+            elif topic_dist_chart_type == "交互式氣泡圖":
+                # 由於交互式圖表在靜態圖像中無法實現，我們創建一個靜態的氣泡圖作為替代
+                fig, ax = plt.subplots(figsize=(12, 8))
+                
+                # 為每個主題創建不同顏色
+                colors = plt.cm.tab10(np.linspace(0, 1, len(topic_names)))
+                
+                # 繪製氣泡圖
+                for i, topic in enumerate(topic_names):
+                    topic_data = topic_dist_df[topic_dist_df['主題'] == topic]
+                    
+                    # 計算氣泡大小（比例轉換為點大小）
+                    sizes = topic_data['比例'] * 1000
+                    
+                    # 獲取文檔索引作為x值
+                    x_positions = [document_names.index(doc) for doc in topic_data['文檔集']]
+                    
+                    ax.scatter(x_positions, [i] * len(x_positions), s=sizes, 
+                             color=colors[i], alpha=0.7, label=topic)
+                    
+                    # 添加文本標籤
+                    for j, (x, proportion) in enumerate(zip(x_positions, topic_data['比例'])):
+                        ax.text(x, i, f"{proportion:.2f}", ha='center', va='center')
+                
+                ax.set_title('各文檔集的主題分布')
+                ax.set_xlabel('文檔集')
+                ax.set_ylabel('主題')
+                ax.set_xticks(range(len(document_names)))
+                ax.set_xticklabels(document_names)
+                ax.set_yticks(range(len(topic_names)))
+                ax.set_yticklabels(topic_names)
+                ax.grid(True, linestyle='--', alpha=0.7)
+            
+            # 保存主題分布圖表
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dist_img_path = os.path.join(topic_dist_dir, f"topic_distribution_{topic_dist_chart_type}_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(dist_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            self.status_message.emit(f"✓ 「主題分布」區域處理完成", 3000)
+            self.progress_bar.setValue(100)
+            
+            # 返回第一張圖片的路徑
+            self.status_message.emit(f"✓ 所有主題模型評估可視化已完成", 5000)
+            return coherence_img_path
             
         except Exception as e:
+            self.status_message.emit(f"生成主題模型評估可視化出錯: {str(e)}", 5000)
+            self.progress_bar.setValue(0)
             self.logger.error(f"生成主題模型評估可視化出錯: {str(e)}")
             self.logger.error(traceback.format_exc())
             return None
@@ -1137,13 +1627,24 @@ class VisualizationTab(QWidget):
             from sklearn.manifold import TSNE
             from sklearn.decomposition import PCA
             
-            # 確保輸出目錄存在
-            output_dir = self.output_dir
+            # 創建對應的中文子目錄
+            output_dir = os.path.join(self.output_dir, "綜合比較視覺化")
             os.makedirs(output_dir, exist_ok=True)
             
             # 設置中文字體
             plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Microsoft YaHei', 'SimHei', 'Arial Unicode MS', 'sans-serif']
             plt.rcParams['axes.unicode_minus'] = False
+            
+            self.status_message.emit("開始生成綜合比較視覺化...", 3000)
+            self.progress_bar.setValue(5)
+            
+            # 1. 降維可視化
+            self.status_message.emit(f"1. 開始處理「降維可視化」區域（{dim_method}，著色依據：{color_by}）...", 3000)
+            self.progress_bar.setValue(20)
+            
+            # 創建「降維可視化」子目錄
+            dim_reduction_dir = os.path.join(output_dir, "降維可視化")
+            os.makedirs(dim_reduction_dir, exist_ok=True)
             
             # 生成隨機向量數據
             n_samples = 200
@@ -1227,16 +1728,130 @@ class VisualizationTab(QWidget):
                 ax.legend()
                 ax.grid(True, linestyle='--', alpha=0.7)
             
-            # 保存圖片
+            # 保存降維可視化圖片
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            img_path = os.path.join(output_dir, f"comprehensive_{dim_method}_{timestamp}.png")
+            dim_img_path = os.path.join(dim_reduction_dir, f"comprehensive_{dim_method}_{timestamp}.png")
             plt.tight_layout()
-            plt.savefig(img_path, dpi=300, bbox_inches='tight')
+            plt.savefig(dim_img_path, dpi=300, bbox_inches='tight')
             plt.close()
             
-            return img_path
+            self.status_message.emit(f"✓ 「降維可視化」區域處理完成", 3000)
+            self.progress_bar.setValue(60)
+            
+            # 2. 多指標綜合視圖
+            multi_chart_type = self.multi_chart_combo.currentText()
+            self.status_message.emit(f"2. 開始處理「多指標綜合視圖」區域（{multi_chart_type}）...", 3000)
+            
+            # 創建「多指標綜合視圖」子目錄
+            multi_metrics_dir = os.path.join(output_dir, "多指標綜合視圖")
+            os.makedirs(multi_metrics_dir, exist_ok=True)
+            
+            # 獲取用戶選擇包含的指標
+            include_cohesion = self.cb_include_cohesion.isChecked()
+            include_separation = self.cb_include_separation.isChecked()
+            include_f1 = self.cb_include_f1.isChecked()
+            
+            # 統計實際包含的指標數量
+            included_metrics = []
+            if include_cohesion:
+                included_metrics.append("內聚度")
+            if include_separation:
+                included_metrics.append("分離度")
+            if include_f1:
+                included_metrics.append("F1分數")
+            
+            if not included_metrics:
+                included_metrics = ["內聚度", "分離度", "F1分數"]  # 如果用戶沒有選擇，默認包含所有指標
+            
+            # 生成示例指標數據
+            mechanisms = ['相似度注意力', '關鍵詞注意力', '自注意力', '綜合注意力']
+            metrics_data = {}
+            
+            for metric in included_metrics:
+                # 為每個機制創建隨機分數
+                metrics_data[metric] = np.random.uniform(0.5, 0.9, len(mechanisms))
+            
+            if multi_chart_type == "雷達圖組":
+                # 創建2x2子圖佈局繪製雷達圖
+                fig, axes = plt.subplots(2, 2, figsize=(12, 10), subplot_kw=dict(polar=True))
+                axes = axes.flatten()
+                
+                for i, mechanism in enumerate(mechanisms):
+                    if i >= len(axes):  # 防止超出子圖數量
+                        break
+                        
+                    ax = axes[i]
+                    # 準備數據
+                    values = [metrics_data[metric][i] for metric in included_metrics]
+                    # 確保閉合
+                    values = np.append(values, values[0])
+                    
+                    # 創建角度均勻分布
+                    angles = np.linspace(0, 2*np.pi, len(included_metrics), endpoint=False)
+                    angles = np.append(angles, angles[0])  # 閉合
+                    
+                    # 繪製雷達圖
+                    ax.plot(angles, values, 'o-', linewidth=2)
+                    ax.fill(angles, values, alpha=0.25)
+                    ax.set_title(mechanism)
+                    
+                    # 設置角度標籤
+                    ax.set_xticks(angles[:-1])
+                    ax.set_xticklabels(included_metrics)
+                    
+                    # 設置y軸範圍
+                    ax.set_ylim(0, 1)
+                
+                # 處理剩餘的空子圖
+                for i in range(len(mechanisms), len(axes)):
+                    axes[i].axis('off')
+                
+                fig.suptitle('不同注意力機制的多指標評估', fontsize=16)
+                
+            elif multi_chart_type == "交互式儀表板":
+                # 由於交互式儀表板在靜態圖片中無法實現，我們創建一個靜態組合圖表作為替代
+                fig, axes = plt.subplots(len(included_metrics), 1, figsize=(12, 4 * len(included_metrics)))
+                
+                # 如果只有一個指標，確保axes是一個數組
+                if len(included_metrics) == 1:
+                    axes = [axes]
+                
+                for i, metric in included_metrics:
+                    ax = axes[i]
+                    # 繪製條形圖
+                    bars = ax.bar(mechanisms, metrics_data[metric], color='skyblue')
+                    
+                    # 添加數值標籤
+                    for bar in bars:
+                        height = bar.get_height()
+                        ax.text(bar.get_x() + bar.get_width()/2., height + 0.01,
+                              f'{height:.2f}', ha='center', va='bottom')
+                    
+                    ax.set_ylim(0, 1.0)
+                    ax.set_ylabel(metric)
+                    ax.set_title(f'{metric}評估')
+                    ax.grid(axis='y', linestyle='--', alpha=0.7)
+                
+                fig.suptitle('多指標綜合評估儀表板', fontsize=16)
+                plt.tight_layout(rect=[0, 0, 1, 0.96])  # 為標題留出空間
+            
+            # 保存多指標圖片
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            multi_img_path = os.path.join(multi_metrics_dir, f"comprehensive_multi_{multi_chart_type}_{timestamp}.png")
+            plt.tight_layout()
+            plt.savefig(multi_img_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            self.status_message.emit(f"✓ 「多指標綜合視圖」區域處理完成", 3000)
+            self.progress_bar.setValue(100)
+            
+            # 返回第一張圖片的路徑
+            self.status_message.emit(f"✓ 所有綜合比較視覺化已完成", 5000)
+            return dim_img_path
             
         except Exception as e:
+            self.status_message.emit(f"生成綜合比較視覺化出錯: {str(e)}", 5000)
+            self.progress_bar.setValue(0)
             self.logger.error(f"生成綜合比較視覺化出錯: {str(e)}")
             self.logger.error(traceback.format_exc())
             return None
