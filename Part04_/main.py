@@ -26,19 +26,43 @@ try:
     import random
     import numpy as np
     import torch
+    import tensorflow as tf
+    from sklearn.utils import check_random_state
     
     # 設定固定的隨機種子
     RANDOM_SEED = 42
+    
+    # 設定Python內建的random模組
     random.seed(RANDOM_SEED)
+    
+    # 設定NumPy的隨機種子
     np.random.seed(RANDOM_SEED)
+    
+    # 設定PyTorch的隨機種子
     torch.manual_seed(RANDOM_SEED)
-    torch.cuda.manual_seed_all(RANDOM_SEED)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(RANDOM_SEED)
+        torch.cuda.manual_seed_all(RANDOM_SEED)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+    
+    # 設定TensorFlow的隨機種子（如果可用）
+    try:
+        tf.random.set_seed(RANDOM_SEED)
+    except:
+        pass
+    
+    # 設定scikit-learn的隨機種子
+    check_random_state(RANDOM_SEED)
+    
+    # 設定環境變數，確保某些庫也使用固定種子
+    os.environ['PYTHONHASHSEED'] = str(RANDOM_SEED)
+    
     print(f"已設定固定隨機種子: {RANDOM_SEED}")
+    print("已設定所有相關模組的隨機種子")
 except ImportError as e:
     print(f"隨機種子設置錯誤: {e}")
-    print("請確保已安裝必要的模組: pip install numpy torch")
+    print("請確保已安裝必要的模組: pip install numpy torch tensorflow scikit-learn")
 
 # 導入系統所需函式庫
 try:

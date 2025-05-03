@@ -65,11 +65,9 @@ class LDAModeler:
         self.iterations = self.config.get('iterations', 50)
         
         # 固定隨機種子，確保結果可重現
-        self.random_state = self.config.get('random_state', 42)
+        self.random_state = self.config.get('random_state', RANDOM_SEED)
         
         # 確保導入的模組也使用固定隨機種子
-        import random
-        import numpy as np
         random.seed(self.random_state)
         np.random.seed(self.random_state)
         

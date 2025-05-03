@@ -126,7 +126,160 @@ class Visualizer:
         
         # 確保輸出目錄存在
         os.makedirs(self.output_dir, exist_ok=True)
-    
+        
+    # 添加新方法：檢查並清理面向向量
+    def _clean_aspect_vectors(self, aspect_vectors):
+        """檢查面向向量並移除空向量
+        
+        Args:
+            aspect_vectors: 面向向量字典 {aspect_name: vector_data}
+            
+        Returns:
+            dict: 清理後的面向向量字典
+        """
+        if not aspect_vectors:
+            self.logger.warning("輸入的面向向量為空")
+            return {}
+            
+        cleaned_vectors = {}
+        for aspect, vector in aspect_vectors.items():
+            # 檢查向量是否為空
+            if vector and len(vector) > 0:
+                cleaned_vectors[aspect] = vector
+            else:
+                self.logger.warning(f"檢測到空向量: {aspect}，已忽略")
+                
+        if len(cleaned_vectors) == 0:
+            self.logger.error("所有向量均為空，無法繪製圖表")
+            
+        return cleaned_vectors
+
+    def plot_aspect_vectors_quality(self, aspect_vectors, metrics, title=None, output_filename=None):
+        """繪製面向向量質量評估圖
+        
+        Args:
+            aspect_vectors: 面向向量字典 {aspect_name: vector_data}
+            metrics: 評估指標字典，包含 coherence, separation, combined_score 等指標
+            title: 圖表標題
+            output_filename: 輸出文件名
+            
+        Returns:
+            str: 生成的圖片路徑
+        """
+        try:
+            self.logger.info(f"生成面向向量質量評估圖")
+            
+            # 清理面向向量，移除空向量
+            cleaned_vectors = self._clean_aspect_vectors(aspect_vectors)
+            if not cleaned_vectors:
+                raise ValueError("所有面向向量均為空，無法生成評估圖")
+                
+            # 檢查評估指標
+            if not metrics or not ('coherence' in metrics and 'separation' in metrics):
+                raise ValueError("缺少內容度或分離度數據，無法生成評估圖")
+                
+            # 提取指標數據
+            coherence = metrics.get('coherence')
+            separation = metrics.get('separation')
+            combined_score = metrics.get('combined_score', (coherence + separation) / 2)
+            
+            # 創建圖表：雙軸圖表
+            fig, ax1 = plt.subplots(figsize=self.figsize)
+            
+            # 設置主軸（左側）- 評估指標
+            ax1.set_xlabel('評估指標')
+            ax1.set_ylabel('指標分數', color='tab:blue')
+            
+            # 繪製評估指標條形圖
+            metrics_labels = ['內聚度', '分離度', '綜合得分']
+            metrics_values = [coherence, separation, combined_score]
+            x = np.arange(len(metrics_labels))
+            
+            bars = ax1.bar(x, metrics_values, width=0.4, color=['tab:blue', 'tab:orange', 'tab:green'])
+            
+            # 添加數值標籤
+            if self.show_values:
+                for bar in bars:
+                    height = bar.get_height()
+                    ax1.annotate(f'{height:.4f}',
+                             xy=(bar.get_x() + bar.get_width() / 2, height),
+                             xytext=(0, 3),  # 3點垂直偏移
+                             textcoords="offset points",
+                             ha='center', va='bottom', fontsize=9)
+            
+            # 設置刻度和標籤
+            ax1.set_xticks(x)
+            ax1.set_xticklabels(metrics_labels)
+            ax1.tick_params(axis='y', labelcolor='tab:blue')
+            
+            # 設置Y軸範圍（假設評分在0到1之間）
+            ax1.set_ylim(0, 1.05)
+            
+            # 創建第二個Y軸（右側）- 面向數量
+            ax2 = ax1.twinx()
+            ax2.set_ylabel('面向數量', color='tab:red')
+            
+            # 添加面向數量標記
+            ax2.plot([-0.5, 2.5], [len(cleaned_vectors), len(cleaned_vectors)], 'r--', label=f'面向數量: {len(cleaned_vectors)}')
+            ax2.text(1.5, len(cleaned_vectors) + 0.2, f'面向數量: {len(cleaned_vectors)}', 
+                   color='tab:red', ha='center', fontsize=10)
+            
+            # 設置第二個Y軸的範圍
+            ax2.set_ylim(0, max(10, len(cleaned_vectors) * 1.5))  # 確保有足夠的空間顯示標籤
+            ax2.tick_params(axis='y', labelcolor='tab:red')
+            
+            # 添加標題
+            if title:
+                plt.title(title, fontsize=14)
+            else:
+                plt.title('面向向量質量評估', fontsize=14)
+            
+            # 添加網格線（僅針對左側Y軸）
+            ax1.grid(True, axis='y', linestyle='--', alpha=0.7)
+            
+            plt.tight_layout()
+            
+            # 添加面向名稱列表
+            plt.figtext(0.02, 0.02, f"面向列表: {', '.join(cleaned_vectors.keys())}", 
+                     wrap=True, fontsize=8, ha='left')
+            
+            # 保存圖片
+            if output_filename is None:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                output_filename = f"aspect_vectors_quality_{timestamp}.png"
+                
+            output_path = os.path.join(self.output_dir, output_filename)
+            plt.savefig(output_path, dpi=self.dpi)
+            plt.close()
+            
+            self.logger.info(f"面向向量質量評估圖已保存至: {output_path}")
+            
+            # 顯示成功通知視窗
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showinfo("輸出成功", f"面向向量質量評估圖已成功生成！\n\n保存路徑：\n{output_path}")
+                root.destroy()
+            except Exception as e:
+                self.logger.error(f"顯示通知視窗時出錯: {str(e)}")
+                
+            return output_path
+            
+        except Exception as e:
+            self.logger.error(f"生成面向向量質量評估圖時出錯: {str(e)}")
+            # 顯示錯誤通知
+            try:
+                root = tk.Tk()
+                root.withdraw()  # 隱藏主視窗
+                messagebox.showerror("錯誤", f"無法生成面向向量質量評估圖：{str(e)}")
+                root.destroy()
+            except Exception as msg_e:
+                self.logger.error(f"顯示錯誤通知視窗時出錯: {str(msg_e)}")
+                
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
+
     def update_config(self, config):
         """更新視覺化器配置
         
