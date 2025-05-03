@@ -1,25 +1,45 @@
 """
-數據處理模組 - 負責數據的加載、清洗和預處理
+數據處理模組 - 負責數據的載入、清洗和預處理
 """
 
 import os
 import re
+import sys
 import json
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
-import logging
 from bs4 import BeautifulSoup
-import nltk
-from nltk.tokenize import word_tokenize
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
+import numpy as np
+import pandas as pd
+import logging
+import traceback
+from datetime import datetime
+from tqdm import tqdm
+from pathlib import Path
+import time
+import random
+from sklearn.model_selection import train_test_split
+
+# 導入NLTK相關套件
+try:
+    import nltk
+    from nltk.corpus import stopwords
+    from nltk.tokenize import word_tokenize
+    from nltk.stem import WordNetLemmatizer
+    nltk_available = True
+except ImportError:
+    nltk_available = False
 
 # 導入系統日誌模組
 from utils.logger import get_logger
 
 # 獲取logger
 logger = get_logger("data_processor")
+
+# 固定所有隨機種子，確保結果可重現
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+# 如果存在pandas的random_seed方法也設置
+pd.Series([]).sample(frac=1, random_state=RANDOM_SEED)
 
 class DataProcessor:
     """數據處理基類，定義了通用的數據處理接口"""

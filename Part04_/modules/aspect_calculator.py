@@ -1,26 +1,33 @@
 """
-面向向量計算模組 - 負責計算面向相關句子的平均向量
+面向向量計算模組 - 負責計算主題面向的向量表示
 """
 
 import os
+import json
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.manifold import TSNE  # 添加TSNE的導入
 from tqdm import tqdm
-from sklearn.manifold import TSNE
-import json
 import pickle
 import logging
 import time
+import random
 
-# 導入系統模組
+# 導入系統日誌模組
 from utils.logger import get_logger
-
-# 導入系統自定義模組
-from modules.attention_mechanism import create_attention_mechanism, apply_attention_mechanism
 
 # 獲取logger
 logger = get_logger("aspect_calculator")
+
+# 固定所有隨機種子，確保結果可重現
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+
+# 導入系統自定義模組
+from modules.attention_mechanism import create_attention_mechanism, apply_attention_mechanism
 
 class AspectCalculator:
     """面向向量計算器 - 使用多種注意力機制計算面向向量"""
@@ -668,9 +675,20 @@ class AspectCalculator:
                     "aspect_vectors": {}
                 }
                 
-                # 添加面向向量
+                # 添加面向向量 - 修改主題標籤處理
                 for i, topic in enumerate(topics):
-                    json_data["aspect_vectors"][topic] = vectors[i].tolist()
+                    # 檢查主題標籤格式，如果是英文格式 "Topic_X_標籤"，轉換為 "X_標籤"
+                    if topic.startswith("Topic_"):
+                        # 嘗試移除 "Topic_" 前綴
+                        parts = topic.split("_", 1)
+                        if len(parts) > 1:
+                            topic_key = parts[1]  # 得到 "X_標籤" 部分
+                        else:
+                            topic_key = topic  # 如果無法分割，保持原樣
+                    else:
+                        topic_key = topic
+                        
+                    json_data["aspect_vectors"][topic_key] = vectors[i].tolist()
                 
                 output_path = os.path.join(self.output_dir, f"{base_name_without_ext}_result.json")
                 with open(output_path, 'w', encoding='utf-8') as f:

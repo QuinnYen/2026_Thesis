@@ -1,22 +1,37 @@
 """
-注意力機制模組 - 提供多種注意力機制的實現和組合
+注意力機制模組 - 提供各種注意力機制實現
 """
 
+import os
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 from sklearn.metrics.pairwise import cosine_similarity
-import math
-import logging
 import json
+import logging
+import time
+import random
+import torch
+import torch.nn.functional as F
+import math
+
+# 固定所有隨機種子，確保結果可重現
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
 
 # 導入系統日誌模組
 from utils.logger import get_logger
 
 # 獲取logger
 logger = get_logger("attention_mechanism")
+
+# 固定PyTorch隨機種子
+torch.manual_seed(RANDOM_SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(RANDOM_SEED)
+    torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 class AttentionMechanism:
     """注意力機制基類"""
@@ -507,6 +522,7 @@ def apply_attention_mechanism(attention_type, embeddings, metadata,
 
 # 測試代碼
 if __name__ == "__main__":
+
     # 配置日誌級別
     logger.setLevel(logging.INFO)
     

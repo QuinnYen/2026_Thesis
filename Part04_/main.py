@@ -21,6 +21,25 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 print(f"模組搜尋路徑已添加: {current_dir}")
 
+# 設定固定隨機種子，確保每次執行結果一致
+try:
+    import random
+    import numpy as np
+    import torch
+    
+    # 設定固定的隨機種子
+    RANDOM_SEED = 42
+    random.seed(RANDOM_SEED)
+    np.random.seed(RANDOM_SEED)
+    torch.manual_seed(RANDOM_SEED)
+    torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print(f"已設定固定隨機種子: {RANDOM_SEED}")
+except ImportError as e:
+    print(f"隨機種子設置錯誤: {e}")
+    print("請確保已安裝必要的模組: pip install numpy torch")
+
 # 導入系統所需函式庫
 try:
     print("正在導入必要的模組...")

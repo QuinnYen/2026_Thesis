@@ -907,6 +907,9 @@ class AnalysisTab(QWidget):
         vectors_html = "<style>table {border-collapse: collapse; width: 100%;} th, td {border: 1px solid #dddddd; text-align: left; padding: 8px;} th {background-color: #f2f2f2;} tr:nth-child(even) {background-color: #f9f9f9;}</style>"
         vectors_html += "<h3>面向向量概述</h3>"
         
+        # 導入主題標籤轉換函數
+        from utils.settings.topic_labels import convert_topic_key_to_chinese
+        
         # 檢查 aspect_vectors 是字典還是 NumPy 數組
         if isinstance(self.aspect_vectors, dict):
             # 處理字典格式的 aspect_vectors
@@ -922,11 +925,14 @@ class AnalysisTab(QWidget):
                 vectors_html += "<table><tr><th>主題</th><th>向量值(前10維)</th></tr>"
                 
                 for i, topic in enumerate(topics[:5]):
+                    # 將英文主題標籤轉換為中文格式
+                    chinese_topic = convert_topic_key_to_chinese(topic, self.current_dataset_name, self.topic_count_spin.value())
+                    
                     vector = self.aspect_vectors[topic]
                     vector_preview = ", ".join(f"{val:.4f}" for val in vector[:10])
                     if len(vector) > 10:
                         vector_preview += "..."
-                    vectors_html += f"<tr><td>{topic}</td><td>{vector_preview}</td></tr>"
+                    vectors_html += f"<tr><td>{chinese_topic}</td><td>{vector_preview}</td></tr>"
             else:
                 vectors_html += "<p>未找到面向向量</p>"
         else:
@@ -1042,13 +1048,20 @@ class AnalysisTab(QWidget):
                     elif isinstance(first_vector, (list, np.ndarray)):
                         results["vector_shape"].append(len(first_vector))
                         
-                # 將向量轉換為可序列化的格式
+                # 將向量轉換為可序列化的格式，確保使用中文標籤
                 serialized_vectors = {}
+                
+                # 導入主題標籤轉換函數
+                from utils.settings.topic_labels import convert_topic_key_to_chinese
+                
                 for topic, vector in self.aspect_vectors.items():
+                    # 將英文主題標籤轉換為中文格式
+                    chinese_topic = convert_topic_key_to_chinese(topic, self.current_dataset_name, self.topic_count_spin.value())
+                    
                     if isinstance(vector, np.ndarray):
-                        serialized_vectors[topic] = vector.tolist()
+                        serialized_vectors[chinese_topic] = vector.tolist()
                     else:
-                        serialized_vectors[topic] = vector
+                        serialized_vectors[chinese_topic] = vector
                 results["aspect_vectors"] = serialized_vectors
             else:
                 # NumPy 陣列類型的 aspect_vectors

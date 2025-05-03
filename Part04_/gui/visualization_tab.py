@@ -10,6 +10,8 @@ import pandas as pd
 from datetime import datetime
 import traceback
 from pathlib import Path
+import matplotlib.pyplot as plt  # 添加 matplotlib.pyplot 導入
+import seaborn as sns  # 添加 seaborn 導入，因為代碼中多處使用
 
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -55,8 +57,8 @@ class VisualizationTab(QWidget):
         # 設置 logger
         self.logger = logger
 
-        # 默認輸出目錄 - 更新為使用 Part04_/1_output/visualizations 目錄
-        self.output_dir = os.path.join("Part04_", "1_output", "visualizations")
+        # 默認輸出目錄 - 更新為直接使用 1_output/visualizations 目錄，避免多層 Part04_ 路徑
+        self.output_dir = os.path.join("1_output", "visualizations")
         # 嘗試從文件管理器獲取正確路徑
         if file_manager is not None and hasattr(file_manager, "visualizations_dir"):
             self.output_dir = file_manager.visualizations_dir
@@ -1422,12 +1424,27 @@ class VisualizationTab(QWidget):
             topic_dist_chart_type = self.topic_dist_chart_combo.currentText()
             
             # 創建示例數據（實際項目中應從模型結果獲取）
-            import numpy as np
-            import pandas as pd
-            import matplotlib.pyplot as plt
-            import os
             from wordcloud import WordCloud
-            import seaborn as sns
+            
+            # 從主題標籤設定獲取自訂主題名稱
+            try:
+                from utils.settings.topic_labels import get_topic_labels
+                
+                # 嘗試從結果獲取資料集名稱
+                dataset_name = 'default'
+                if self.current_dataset:
+                    for key in ['imdb', 'amazon', 'yelp']:
+                        if key in self.current_dataset.lower():
+                            dataset_name = key
+                            break
+                
+                # 獲取主題標籤
+                topic_labels = get_topic_labels(dataset_name, 'zh', num_topics=8)
+                topic_names = [topic_labels[i] for i in range(8)]
+            except Exception as e:
+                self.logger.warning(f"無法獲取自訂主題名稱: {str(e)}，使用默認名稱")
+                # 使用默認主題名稱
+                topic_names = [f"主題{i+1}" for i in range(8)]
             
             # 創建對應的中文子目錄
             output_dir = os.path.join(self.output_dir, "主題模型評估")
@@ -1451,12 +1468,11 @@ class VisualizationTab(QWidget):
             if chart_type == "條形圖":
                 # 模擬不同主題的連貫性分數
                 n_topics = 8
-                topic_ids = [f"主題{i+1}" for i in range(n_topics)]
                 coherence_scores = np.random.uniform(0.3, 0.8, n_topics)
                 
                 # 創建條形圖
                 fig, ax = plt.subplots(figsize=(10, 6))
-                bars = ax.bar(topic_ids, coherence_scores, color='skyblue')
+                bars = ax.bar(topic_names, coherence_scores, color='skyblue')
                 
                 # 在條形上添加具體數值
                 for bar in bars:
@@ -1472,10 +1488,10 @@ class VisualizationTab(QWidget):
             elif chart_type == "詞雲":
                 # 創建模擬的主題關鍵詞數據
                 topics_keywords = {
-                    "主題1": {"服務": 0.9, "態度": 0.8, "員工": 0.7, "專業": 0.6, "熱情": 0.5, "禮貌": 0.4},
-                    "主題2": {"價格": 0.85, "便宜": 0.75, "實惠": 0.65, "優惠": 0.55, "划算": 0.45, "貴": 0.35},
-                    "主題3": {"味道": 0.95, "好吃": 0.85, "美味": 0.75, "口感": 0.65, "可口": 0.55, "鮮": 0.45},
-                    "主題4": {"環境": 0.9, "整潔": 0.8, "舒適": 0.7, "裝修": 0.6, "安靜": 0.5, "氛圍": 0.4}
+                    topic_names[0]: {"服務": 0.9, "態度": 0.8, "員工": 0.7, "專業": 0.6, "熱情": 0.5, "禮貌": 0.4},
+                    topic_names[1]: {"價格": 0.85, "便宜": 0.75, "實惠": 0.65, "優惠": 0.55, "划算": 0.45, "貴": 0.35},
+                    topic_names[2]: {"味道": 0.95, "好吃": 0.85, "美味": 0.75, "口感": 0.65, "可口": 0.55, "鮮": 0.45},
+                    topic_names[3]: {"環境": 0.9, "整潔": 0.8, "舒適": 0.7, "裝修": 0.6, "安靜": 0.5, "氛圍": 0.4}
                 }
                 
                 # 創建2x2子圖佈局繪製詞雲
@@ -1517,16 +1533,14 @@ class VisualizationTab(QWidget):
             os.makedirs(topic_dist_dir, exist_ok=True)
             
             # 生成模擬數據
-            n_topics = 5
             n_docs = 4
-            topic_names = [f"主題{i+1}" for i in range(n_topics)]
             document_names = [f"文檔集{i+1}" for i in range(n_docs)]
             
-            # 創建主題分布數據（確保每個文檔集中主題分布總和為1）
+            # 創建主題分布數據（確保每個文檔集中主題分布總和為1）。
             topic_dist_data = []
             for doc in document_names:
                 # 創建隨機分布
-                dist = np.random.rand(n_topics)
+                dist = np.random.rand(len(topic_names))
                 dist = dist / dist.sum()  # 正規化
                 
                 for i, topic in enumerate(topic_names):

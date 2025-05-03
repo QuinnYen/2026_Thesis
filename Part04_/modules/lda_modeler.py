@@ -15,6 +15,7 @@ from wordcloud import WordCloud
 import logging
 import time
 import tempfile
+import random
 
 # 設置臨時目錄環境變數
 os.environ['JOBLIB_TEMP_FOLDER'] = tempfile.gettempdir()
@@ -23,8 +24,16 @@ os.environ['JOBLIB_MULTIPROCESSING'] = '0'  # 禁用多處理
 # 導入系統日誌模組
 from utils.logger import get_logger
 
+# 導入主題標籤設定
+from utils.settings.topic_labels import get_topic_labels
+
 # 獲取logger
 logger = get_logger("lda_modeler")
+
+# 固定所有隨機種子，確保結果可重現
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
 
 class LDAModeler:
     """使用LDA算法進行主題建模和面向切割"""
@@ -41,6 +50,8 @@ class LDAModeler:
                 - iterations: 迭代次數
                 - random_state: 隨機種子
                 - output_dir: 輸出目錄
+                - dataset_name: 資料集名稱（用於獲取主題標籤）
+                - language: 語言（'zh'或'en'）
         """
         self.config = config or {}
         self.logger = logger
@@ -52,8 +63,28 @@ class LDAModeler:
         self.eta = None if self.config.get('eta', 'auto') == 'auto' else self.config.get('eta')
         self.passes = self.config.get('passes', 10)
         self.iterations = self.config.get('iterations', 50)
+        
+        # 固定隨機種子，確保結果可重現
         self.random_state = self.config.get('random_state', 42)
+        
+        # 確保導入的模組也使用固定隨機種子
+        import random
+        import numpy as np
+        random.seed(self.random_state)
+        np.random.seed(self.random_state)
+        
         self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '1_output', 'topics'))
+        
+        # 保存資料集名稱和語言設定
+        self.dataset_name = self.config.get('dataset_name', 'default')
+        self.language = self.config.get('language', 'zh')
+        
+        # 獲取主題標籤
+        self.topic_labels = get_topic_labels(
+            dataset_name=self.dataset_name,
+            language=self.language,
+            num_topics=self.num_topics
+        )
         
         # 確保輸出目錄存在
         os.makedirs(self.output_dir, exist_ok=True)
@@ -86,6 +117,19 @@ class LDAModeler:
             self.random_state = self.config.get('random_state', self.random_state)
             self.output_dir = self.config.get('output_dir', self.output_dir)
             
+            # 更新資料集名稱和語言設定
+            if 'dataset_name' in new_config:
+                self.dataset_name = new_config['dataset_name']
+            if 'language' in new_config:
+                self.language = new_config['language']
+                
+            # 更新主題標籤
+            self.topic_labels = get_topic_labels(
+                dataset_name=self.dataset_name,
+                language=self.language,
+                num_topics=self.num_topics
+            )
+            
             # 確保輸出目錄存在
             os.makedirs(self.output_dir, exist_ok=True)
             os.makedirs(self.vis_dir, exist_ok=True)
@@ -93,6 +137,29 @@ class LDAModeler:
             self.logger.debug(f"LDA模型配置更新完成")
         else:
             self.logger.warning(f"無效的配置格式: {type(new_config)}")
+            
+    def get_topic_label(self, topic_id):
+        """獲取指定主題ID的標籤名稱
+        
+        Args:
+            topic_id: 主題ID
+            
+        Returns:
+            str: 主題標籤名稱
+        """
+        if isinstance(topic_id, (int, np.integer)) and topic_id in self.topic_labels:
+            return self.topic_labels[topic_id]
+        else:
+            # 如果找不到對應標籤，返回默認格式
+            try:
+                topic_id = int(topic_id)
+                if topic_id in self.topic_labels:
+                    return self.topic_labels[topic_id]
+            except (ValueError, TypeError):
+                pass
+                
+            # 無論當前語言設定如何，始終使用中文標籤格式
+            return f"主題 {topic_id+1}"
     
     def train(self, texts, progress_callback=None):
         """訓練LDA模型 (與 build_topic_model 相容的介面方法)
@@ -106,6 +173,25 @@ class LDAModeler:
         """
         try:
             self.logger.info(f"開始訓練LDA模型，使用 {self.num_topics} 個主題")
+            
+            # 判斷資料集類型 - 檢查電影相關詞彙來偵測是否為IMDB電影評論
+            sample_texts = " ".join(texts[:min(100, len(texts))]).lower()
+            if 'movie' in sample_texts or 'film' in sample_texts or 'actor' in sample_texts or 'cinema' in sample_texts:
+                self.dataset_name = 'imdb'
+                self.logger.info(f"自動檢測到電影評論資料集，使用IMDB標籤")
+            elif 'restaurant' in sample_texts or 'food' in sample_texts or 'service' in sample_texts or 'menu' in sample_texts:
+                self.dataset_name = 'yelp'
+                self.logger.info(f"自動檢測到餐廳評論資料集，使用Yelp標籤")
+            elif 'product' in sample_texts or 'purchase' in sample_texts or 'bought' in sample_texts or 'shipping' in sample_texts:
+                self.dataset_name = 'amazon'
+                self.logger.info(f"自動檢測到產品評論資料集，使用Amazon標籤")
+            
+            # 更新主題標籤
+            self.topic_labels = get_topic_labels(
+                dataset_name=self.dataset_name,
+                language='zh',
+                num_topics=self.num_topics
+            )
             
             # 使用TF-IDF向量化文本
             self.logger.info(f"正在向量化文本...")
@@ -173,21 +259,16 @@ class LDAModeler:
             n_top_words = 15
             topic_top_words = {}
             
-            # 使用自定義主題標籤（如果提供）
-            use_custom_labels = (self.config.get('topic_labels') is not None and 
-                                len(self.config.get('topic_labels')) >= self.num_topics)
-            
             for topic_idx, topic in enumerate(topic_word_distributions):
                 # 獲取前n_top_words個詞
                 top_word_indices = topic.argsort()[:-n_top_words - 1:-1]
                 top_words = [feature_names[i] for i in top_word_indices]
                 
-                # 獲取主題標籤
-                if use_custom_labels and topic_idx in self.config.get('topic_labels'):
-                    topic_label = self.config.get('topic_labels')[topic_idx]
-                    topic_key = f"Topic_{topic_idx+1}_{topic_label}"
-                else:
-                    topic_key = f"Topic_{topic_idx+1}"
+                # 獲取主題標籤 - 更有描述性的中文標籤
+                topic_label = self.get_topic_label(topic_idx)
+                
+                # 不論語言設定，一律使用中文標籤格式："主題編號_中文標籤"
+                topic_key = f"{topic_idx+1}_{topic_label}"
                     
                 topic_top_words[topic_key] = top_words
                 self.logger.info(f"{topic_key}: {', '.join(top_words[:10])}")
@@ -303,21 +384,16 @@ class LDAModeler:
             n_top_words = 15
             topic_top_words = {}
             
-            # 使用自定義主題標籤（如果提供）
-            use_custom_labels = (self.config.get('topic_labels') is not None and 
-                                len(self.config.get('topic_labels')) >= self.num_topics)
-            
             for topic_idx, topic in enumerate(topic_word_distributions):
                 # 獲取前n_top_words個詞
                 top_word_indices = topic.argsort()[:-n_top_words - 1:-1]
                 top_words = [feature_names[i] for i in top_word_indices]
                 
                 # 獲取主題標籤
-                if use_custom_labels and topic_idx in self.config.get('topic_labels'):
-                    topic_label = self.config.get('topic_labels')[topic_idx]
-                    topic_key = f"Topic_{topic_idx+1}_{topic_label}"
-                else:
-                    topic_key = f"Topic_{topic_idx+1}"
+                topic_label = self.get_topic_label(topic_idx)
+                
+                # 不論語言設定，一律使用中文標籤格式："主題編號_中文標籤"
+                topic_key = f"{topic_idx+1}_{topic_label}"
                     
                 topic_top_words[topic_key] = top_words
                 self.logger.info(f"{topic_key}: {', '.join(top_words[:10])}")
@@ -332,16 +408,8 @@ class LDAModeler:
             # 獲取每個文檔的主要主題
             doc_main_topics = np.argmax(doc_topic_distributions, axis=1)
             
-            # 創建主題標籤映射
-            if use_custom_labels:
-                topic_id_to_label = {idx: f"Topic_{idx+1}_{self.config.get('topic_labels')[idx]}" 
-                                     for idx in range(self.num_topics) if idx in self.config.get('topic_labels')}
-            else:
-                topic_id_to_label = {idx: f"Topic_{idx+1}" for idx in range(self.num_topics)}
-                
             # 為每個文檔分配主題標籤
-            df['main_topic'] = [topic_id_to_label.get(topic_idx, f"Topic_{topic_idx+1}") 
-                              for topic_idx in doc_main_topics]
+            df['main_topic'] = [self.get_topic_label(topic_idx) for topic_idx in doc_main_topics]
             
             # 計算每個主題的文檔數量
             topic_counts = df['main_topic'].value_counts().to_dict()
@@ -486,7 +554,7 @@ class LDAModeler:
         
         Args:
             lda_model: LDA模型
-            feature_names: 特徵名稱（詞彙表）
+            feature_names: 特徵名稱（詞彙表） 
             n_top_words: 每個主題顯示的詞語數量
             base_name: 基礎文件名
             
@@ -508,10 +576,8 @@ class LDAModeler:
                 ax.barh(top_features, weights)
                 
                 # 設置標題
-                topic_label = ""
-                if self.config.get('topic_labels') and topic_idx in self.config.get('topic_labels'):
-                    topic_label = f": {self.config.get('topic_labels')[topic_idx]}"
-                ax.set_title(f'主題 {topic_idx+1}{topic_label}', fontsize=12)
+                topic_label = self.get_topic_label(topic_idx)
+                ax.set_title(f'主題 {topic_idx+1}: {topic_label}', fontsize=12)
                 
                 # 設置字體大小
                 ax.tick_params(axis='y', labelsize=10)
@@ -551,11 +617,8 @@ class LDAModeler:
             x = np.arange(self.num_topics)
             plt.bar(x, topic_counts)
             
-            # 使用自定義標籤（如果提供）
-            if self.config.get('topic_labels'):
-                x_labels = [f'主題 {i+1}\n{self.config.get("topic_labels").get(i, "")}' for i in range(self.num_topics)]
-            else:
-                x_labels = [f'主題 {i+1}' for i in range(self.num_topics)]
+            # 使用自定義標籤
+            x_labels = [self.get_topic_label(i) for i in range(self.num_topics)]
             
             plt.xlabel('主題')
             plt.ylabel('文檔數量')
@@ -611,11 +674,8 @@ class LDAModeler:
             plt.xlabel('主題')
             plt.ylabel('主題')
             
-            # 使用自定義標籤（如果提供）
-            if self.config.get('topic_labels'):
-                topic_label_texts = [f'主題 {i+1}\n{self.config.get("topic_labels").get(i, "")}' for i in range(n_topics)]
-            else:
-                topic_label_texts = [f'主題 {i+1}' for i in range(n_topics)]
+            # 使用自定義標籤
+            topic_label_texts = [self.get_topic_label(i) for i in range(n_topics)]
                 
             plt.xticks(range(n_topics), topic_label_texts, rotation=45, ha='right')
             plt.yticks(range(n_topics), topic_label_texts)
@@ -773,7 +833,7 @@ class LDAModeler:
 
 
 def build_lda_model(data_path, output_dir='./output/topics', num_topics=10, 
-                  alpha='auto', eta='auto', iterations=50, topic_labels=None, progress_callback=None):
+                  alpha='auto', eta='auto', iterations=50, dataset_name='default', language='zh', progress_callback=None):
     """構建LDA主題模型的方便函數
     
     Args:
@@ -783,7 +843,8 @@ def build_lda_model(data_path, output_dir='./output/topics', num_topics=10,
         alpha: 文檔-主題分佈的先驗參數
         eta: 主題-詞分佈的先驗參數
         iterations: 最大迭代次數
-        topic_labels: 主題標籤字典
+        dataset_name: 資料集名稱
+        language: 語言（'zh'或'en'）
         progress_callback: 進度回調函數
         
     Returns:
@@ -796,7 +857,8 @@ def build_lda_model(data_path, output_dir='./output/topics', num_topics=10,
         'eta': eta,
         'iterations': iterations,
         'output_dir': output_dir,
-        'topic_labels': topic_labels
+        'dataset_name': dataset_name,
+        'language': language
     }
     
     # 創建LDA建模器
@@ -823,6 +885,8 @@ if __name__ == "__main__":
         result = build_lda_model(
             test_file,
             num_topics=10,
+            dataset_name='example_dataset',
+            language='zh',
             progress_callback=progress_callback
         )
         

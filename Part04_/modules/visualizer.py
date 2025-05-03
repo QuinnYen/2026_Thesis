@@ -781,6 +781,18 @@ class Visualizer:
             separation_scores = metrics_df['separation'].tolist()
             combined_scores = metrics_df['combined_score'].tolist()
             
+            # 轉換英文注意力機制名稱為中文
+            chinese_attention_types = []
+            for att_type in attention_types:
+                if 'similarity' in att_type.lower():
+                    chinese_attention_types.append("相似度注意力")
+                elif 'keyword' in att_type.lower():
+                    chinese_attention_types.append("關鍵詞注意力")
+                elif 'self' in att_type.lower():
+                    chinese_attention_types.append("自注意力")
+                else:
+                    chinese_attention_types.append(att_type)
+            
             # 設置柱的位置
             x = np.arange(len(attention_types))
             width = 0.25
@@ -802,7 +814,7 @@ class Visualizer:
             else:
                 plt.title('不同注意力機制的評估指標比較', fontsize=14)
                 
-            plt.xticks(x, attention_types)
+            plt.xticks(x, chinese_attention_types)
             plt.legend()
             
             # 添加數值標籤

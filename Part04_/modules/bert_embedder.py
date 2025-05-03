@@ -1,16 +1,28 @@
 """
-BERT嵌入模組 - 負責使用BERT模型提取文本的語義表示
+BERT 嵌入模組 - 負責使用BERT模型生成文本嵌入
 """
 
 import os
-import torch
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
+import torch
 from transformers import AutoTokenizer, AutoModel
 from torch.utils.data import Dataset, DataLoader
 import logging
 import time
+import random
+from tqdm import tqdm  # 添加缺少的 tqdm 導入
+
+# 固定所有隨機種子，確保結果可重現
+RANDOM_SEED = 42
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+torch.manual_seed(RANDOM_SEED)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed(RANDOM_SEED)
+    torch.cuda.manual_seed_all(RANDOM_SEED)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 # 導入系統日誌模組
 from utils.logger import get_logger
@@ -68,6 +80,7 @@ class BertEmbedder:
                 - max_length: 最大序列長度
                 - use_gpu: 是否使用GPU
                 - output_dir: 輸出目錄
+                - random_seed: 隨機種子
         """
         self.config = config or {}
         self.logger = logger
@@ -76,8 +89,21 @@ class BertEmbedder:
         self.model_name = self.config.get('model_name', 'bert-base-chinese')
         self.batch_size = self.config.get('batch_size', 32)
         self.max_length = self.config.get('max_length', 128)
-        self.use_gpu = self.config.get('use_gpu', True)
+        self.use_gpu = self.config.get('use_gpu', torch.cuda.is_available())
         self.output_dir = self.config.get('output_dir', os.path.join('Part04_', '1_output', 'embeddings'))
+        self.random_seed = self.config.get('random_seed', 42)
+        
+        # 固定隨機種子，確保結果可重現
+        import random
+        import numpy as np
+        random.seed(self.random_seed)
+        np.random.seed(self.random_seed)
+        torch.manual_seed(self.random_seed)
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed(self.random_seed)
+            torch.cuda.manual_seed_all(self.random_seed)
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
         
         # 檢查CUDA可用性
         self.cuda_available = torch.cuda.is_available()
