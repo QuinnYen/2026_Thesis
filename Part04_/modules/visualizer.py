@@ -8,6 +8,8 @@ import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
+import json
+import traceback  # 添加 traceback 模組用於詳細錯誤報告
 from matplotlib.colors import LinearSegmentedColormap
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.manifold import TSNE
@@ -154,6 +156,95 @@ class Visualizer:
             
         return cleaned_vectors
 
+    def _normalize_metrics(self, metrics):
+        """標準化評估指標格式
+        
+        Args:
+            metrics: 評估指標字典
+        
+        Returns:
+            dict: 標準化後的指標字典
+        """
+        if not metrics:
+            self.logger.warning("提供的評估指標為空")
+            return {}
+        
+        normalized_metrics = {}
+        base_metrics = ['coherence', 'separation', 'combined_score']
+        topic_level_metrics = ['topic_coherence', 'topic_separation']
+        
+        # 列印實際收到的評估指標供調試
+        self.logger.info(f"原始評估指標: {metrics}")
+        
+        # 檢查是否有基本指標
+        has_base_metrics = any(metric in metrics for metric in base_metrics)
+        
+        # 檢查是否有主題級別指標
+        has_topic_metrics = any(metric in metrics for metric in topic_level_metrics)
+        
+        if has_base_metrics:
+            # 使用基本指標
+            for metric in base_metrics:
+                if metric in metrics:
+                    normalized_metrics[metric] = metrics[metric]
+        elif has_topic_metrics:
+            # 處理主題級別指標
+            if 'topic_coherence' in metrics:
+                topic_value = metrics['topic_coherence']
+                if isinstance(topic_value, dict) and topic_value:
+                    # 如果是字典，計算平均值
+                    normalized_metrics['coherence'] = sum(topic_value.values()) / len(topic_value)
+                    self.logger.info(f"從字典計算得到 coherence: {normalized_metrics['coherence']}")
+                else:
+                    # 如果是單一值，直接使用
+                    normalized_metrics['coherence'] = float(topic_value)
+                    self.logger.info(f"直接使用單一值 topic_coherence 作為 coherence: {topic_value}")
+            
+            if 'topic_separation' in metrics:
+                topic_value = metrics['topic_separation']
+                if isinstance(topic_value, dict) and topic_value:
+                    # 如果是字典，計算平均值
+                    normalized_metrics['separation'] = sum(topic_value.values()) / len(topic_value)
+                    self.logger.info(f"從字典計算得到 separation: {normalized_metrics['separation']}")
+                else:
+                    # 如果是單一值，直接使用
+                    normalized_metrics['separation'] = float(topic_value)
+                    self.logger.info(f"直接使用單一值 topic_separation 作為 separation: {topic_value}")
+            
+            # 處理組合得分
+            if 'combined_score' in metrics:
+                normalized_metrics['combined_score'] = metrics['combined_score']
+            elif 'coherence' in normalized_metrics and 'separation' in normalized_metrics:
+                normalized_metrics['combined_score'] = (normalized_metrics['coherence'] + normalized_metrics['separation']) / 2
+                self.logger.info(f"計算得到的 combined_score: {normalized_metrics['combined_score']}")
+        
+        # 如果標準化後沒有必需的指標，嘗試提取更多信息
+        if not ('coherence' in normalized_metrics and 'separation' in normalized_metrics):
+            self.logger.warning(f"標準化後缺少必要指標，嘗試其它方式提取")
+            
+            # 嘗試一些常見的替代鍵名
+            alt_keys = {
+                'coherence': ['topic_coherence_avg', 'avg_coherence', 'coherence_score'],
+                'separation': ['topic_separation_avg', 'avg_separation', 'separation_score'],
+                'combined_score': ['overall_score', 'total_score', 'final_score']
+            }
+            
+            for target_key, alt_key_list in alt_keys.items():
+                if target_key not in normalized_metrics:
+                    for alt_key in alt_key_list:
+                        if alt_key in metrics:
+                            normalized_metrics[target_key] = metrics[alt_key]
+                            self.logger.info(f"使用替代鍵 {alt_key} 作為 {target_key}: {metrics[alt_key]}")
+                            break
+        
+        # 最終檢查結果
+        if not ('coherence' in normalized_metrics and 'separation' in normalized_metrics):
+            self.logger.error(f"標準化後仍缺少必要指標: 標準化結果={normalized_metrics}")
+        else:
+            self.logger.info(f"標準化後的指標: {normalized_metrics}")
+            
+        return normalized_metrics
+
     def plot_aspect_vectors_quality(self, aspect_vectors, metrics, title=None, output_filename=None):
         """繪製面向向量質量評估圖
         
@@ -174,14 +265,16 @@ class Visualizer:
             if not cleaned_vectors:
                 raise ValueError("所有面向向量均為空，無法生成評估圖")
                 
-            # 檢查評估指標
-            if not metrics or not ('coherence' in metrics and 'separation' in metrics):
+            # 檢查評估指標並進行格式轉換
+            norm_metrics = self._normalize_metrics(metrics)
+            if not norm_metrics or not ('coherence' in norm_metrics and 'separation' in norm_metrics):
+                self.logger.error(f"提供的評估指標不完整: {metrics}")
                 raise ValueError("缺少內容度或分離度數據，無法生成評估圖")
                 
             # 提取指標數據
-            coherence = metrics.get('coherence')
-            separation = metrics.get('separation')
-            combined_score = metrics.get('combined_score', (coherence + separation) / 2)
+            coherence = norm_metrics.get('coherence')
+            separation = norm_metrics.get('separation')
+            combined_score = norm_metrics.get('combined_score', (coherence + separation) / 2)
             
             # 創建圖表：雙軸圖表
             fig, ax1 = plt.subplots(figsize=self.figsize)
@@ -276,7 +369,6 @@ class Visualizer:
             except Exception as msg_e:
                 self.logger.error(f"顯示錯誤通知視窗時出錯: {str(msg_e)}")
                 
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
 
@@ -312,7 +404,6 @@ class Visualizer:
                              f"figsize={self.figsize}, cmap={self.cmap}, show_values={self.show_values}")
         except Exception as e:
             self.logger.error(f"更新視覺化器配置時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             
     def plot_bar_chart(self, data, x_column, y_columns, title, output_filename=None, 
@@ -407,7 +498,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成條形圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -500,7 +590,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成折線圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -590,7 +679,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成雷達圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -663,7 +751,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成熱力圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -746,7 +833,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成3D散點圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -910,7 +996,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成詞雲圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -1011,7 +1096,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成面向向量比較圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -1077,7 +1161,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成注意力權重熱力圖時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return None
     
@@ -1274,7 +1357,6 @@ class Visualizer:
                     
                 except Exception as viz_error:
                     self.logger.error(f"生成評估指標圖表時出錯: {str(viz_error)}")
-                    import traceback
                     self.logger.error(traceback.format_exc())
             
             # 生成HTML內容
@@ -1306,7 +1388,6 @@ class Visualizer:
             
         except Exception as e:
             self.logger.error(f"生成評估指標視覺化時出錯: {str(e)}")
-            import traceback
             self.logger.error(traceback.format_exc())
             return f"<h2>錯誤</h2><p>{str(e)}</p>", None, f"<h2>錯誤</h2><p>{str(e)}</p>"
 

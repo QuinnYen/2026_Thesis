@@ -971,25 +971,63 @@ class VisualizationTab(QWidget):
             # 從評估結果中獲取指標
             metrics = self.evaluation_results
             aspect_names = list(self.aspect_vectors.keys())
-            
+
+            # 記錄評估結果中的所有可用欄位，以幫助診斷問題
+            self.logger.debug(f"評估結果包含以下欄位: {list(metrics.keys())}")
+
             # 1. 內聚度與分離度圖表
             self.status_message.emit(f"1. 開始處理「內聚度與分離度」區域（{cohesion_chart_type}）...", 3000)
             self.progress_bar.setValue(15)
-            
+
             # 從評估結果中獲取內聚度和分離度
             cohesion_values = []
             separation_values = []
-            
-            for aspect in aspect_names:
-                if 'cohesion' in metrics and aspect in metrics['cohesion']:
-                    cohesion_values.append(metrics['cohesion'][aspect])
-                if 'separation' in metrics and aspect in metrics['separation']:
-                    separation_values.append(metrics['separation'][aspect])
-            
+
+            # 首先檢查是否有單一值的 topic_coherence 和 topic_separation
+            if 'topic_coherence' in metrics and isinstance(metrics['topic_coherence'], (int, float)):
+                # 如果是單一值，則所有面向共用相同的值
+                self.logger.info(f"檢測到單一值的 topic_coherence: {metrics['topic_coherence']}")
+                cohesion_values = [metrics['topic_coherence']] * len(aspect_names)
+                
+            if 'topic_separation' in metrics and isinstance(metrics['topic_separation'], (int, float)):
+                # 如果是單一值，則所有面向共用相同的值
+                self.logger.info(f"檢測到單一值的 topic_separation: {metrics['topic_separation']}")
+                separation_values = [metrics['topic_separation']] * len(aspect_names)
+
+            # 如果沒有找到單一值，再檢查是否有字典格式的 cohesion/coherence 和 separation
+            if not cohesion_values:
+                for aspect in aspect_names:
+                    if 'cohesion' in metrics and aspect in metrics['cohesion']:
+                        cohesion_values.append(metrics['cohesion'][aspect])
+                    elif 'topic_coherence' in metrics and isinstance(metrics['topic_coherence'], dict) and aspect in metrics['topic_coherence']:
+                        cohesion_values.append(metrics['topic_coherence'][aspect])
+                    else:
+                        # 如果找不到指定面向的內聚度值，使用默認值
+                        cohesion_values.append(0.5)  # 使用默認值0.5
+                        self.logger.warning(f"面向 {aspect} 的內聚度數據未找到，使用默認值 0.5")
+                    
+            if not separation_values:
+                for aspect in aspect_names:
+                    if 'separation' in metrics and aspect in metrics['separation']:
+                        separation_values.append(metrics['separation'][aspect])
+                    elif 'topic_separation' in metrics and isinstance(metrics['topic_separation'], dict) and aspect in metrics['topic_separation']:
+                        separation_values.append(metrics['topic_separation'][aspect])
+                    else:
+                        # 如果找不到指定面向的分離度值，使用默認值
+                        separation_values.append(0.1)  # 使用默認值0.1
+                        self.logger.warning(f"面向 {aspect} 的分離度數據未找到，使用默認值 0.1")
+
+            # 記錄提取的數據，以幫助診斷問題
+            self.logger.info(f"共提取了 {len(cohesion_values)} 個內聚度值和 {len(separation_values)} 個分離度值")
+            self.logger.debug(f"內聚度值: {cohesion_values}")
+            self.logger.debug(f"分離度值: {separation_values}")
+
+            # 確保兩個列表有值，如果仍然沒有值則報錯
             if not cohesion_values or not separation_values:
                 QMessageBox.warning(self, "數據缺失", "缺少內聚度或分離度數據")
+                self.logger.error(f"未找到內聚度或分離度數據，可用指標: {list(metrics.keys())}")
                 return None
-            
+
             # 創建「內聚度與分離度」子目錄
             cohesion_dir = os.path.join(output_dir, "內聚度與分離度")
             os.makedirs(cohesion_dir, exist_ok=True)
@@ -2170,14 +2208,7 @@ class VisualizationTab(QWidget):
                 return None
             
             # 導入必要的模組
-            import os
-            import numpy as np
-            import pandas as pd
-            import matplotlib.pyplot as plt
-            import seaborn as sns
             from datetime import datetime
-            import traceback
-            import plotly.graph_objects as go
             from mpl_toolkits.mplot3d import Axes3D
             
             # 創建對應的中文子目錄
@@ -2206,10 +2237,12 @@ class VisualizationTab(QWidget):
             # 嘗試提取面向向量的值進行降維
             vectors = []
             for aspect, vector in aspect_vectors.items():
-                if isinstance(vector, list):
+                if isinstance(vector, list) or isinstance(vector, np.ndarray):
                     vectors.append(vector)
                 elif isinstance(vector, dict) and 'vector' in vector:
                     vectors.append(vector['vector'])
+                else:
+                    self.logger.warning(f"無法處理的面向向量格式: {type(vector)} 對於面向 {aspect}")
             
             # 1. 降維可視化
             self.status_message.emit(f"1. 開始處理「降維可視化」區域（{dim_method}）...", 3000)
@@ -2220,340 +2253,134 @@ class VisualizationTab(QWidget):
             os.makedirs(dim_reduction_dir, exist_ok=True)
             
             # 如果有面向向量數據，執行降維可視化
-            if vectors:
-                # 將向量統一轉為numpy數組
+            if vectors and len(vectors) > 0:
+                # 將向量轉換為numpy數組
                 vectors_array = np.array(vectors)
                 
-                # 創建顏色標記
-                if color_by == "主題":
-                    # 根據主題分配顏色，如果有主題分配數據
-                    if 'topic_assignment' in metrics:
-                        topic_assignments = metrics['topic_assignment']
-                        color_labels = [topic_assignments.get(aspect, 0) for aspect in aspect_names]
-                    else:
-                        # 創建隨機主題分配
-                        color_labels = np.random.randint(0, 5, len(aspect_names))
-                elif color_by == "注意力機制":
-                    # 根據注意力機制分配顏色
-                    if 'attention_mechanisms' in metrics:
-                        attention_mechanisms = metrics['attention_mechanisms']
-                        color_map = {mech: i for i, mech in enumerate(set(attention_mechanisms))}
-                        color_labels = [color_map.get(metrics.get('attention_type', 'default'), 0)] * len(aspect_names)
-                    else:
-                        # 使用默認顏色
-                        color_labels = [0] * len(aspect_names)
-                else:  # 聚類結果
-                    # 根據聚類結果分配顏色
-                    if 'clusters' in metrics:
-                        clusters = metrics['clusters']
-                        color_labels = [clusters.get(aspect, 0) for aspect in aspect_names]
-                    else:
-                        # 創建隨機聚類
-                        color_labels = np.random.randint(0, 3, len(aspect_names))
-                
-                # 根據選擇的降維方法生成可視化
-                if dim_method == "t-SNE":
-                    from sklearn.manifold import TSNE
+                # 檢查向量維度是否足夠進行降維
+                if vectors_array.shape[0] < 3:
+                    self.logger.warning(f"面向數量過少 ({vectors_array.shape[0]})，難以進行有意義的降維可視化")
+                    self.status_message.emit(f"面向數量過少 ({vectors_array.shape[0]})，難以進行有意義的降維可視化", 5000)
                     
-                    # 執行t-SNE降維
-                    tsne = TSNE(n_components=2, random_state=42)
-                    vectors_2d = tsne.fit_transform(vectors_array)
-                    
-                    # 創建t-SNE散點圖
-                    plt.figure(figsize=(10, 8))
-                    scatter = plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], 
-                                        c=color_labels, cmap='viridis', 
-                                        s=100, alpha=0.8)
-                    
-                    # 添加標籤
-                    for i, aspect in enumerate(aspect_names):
-                        plt.annotate(aspect, (vectors_2d[i, 0], vectors_2d[i, 1]),
-                                   textcoords="offset points", xytext=(0, 5),
-                                   ha='center')
-                    
-                    plt.colorbar(scatter, label=color_by)
-                    plt.title(f't-SNE降維可視化（按{color_by}著色）')
-                    plt.grid(True, linestyle='--', alpha=0.7)
-                    
-                elif dim_method == "UMAP":
-                    try:
-                        from umap import UMAP
-                        
-                        # 執行UMAP降維
-                        umap_model = UMAP(n_components=2, random_state=42)
-                        vectors_2d = umap_model.fit_transform(vectors_array)
-                        
-                        # 創建UMAP散點圖
-                        plt.figure(figsize=(10, 8))
-                        scatter = plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], 
-                                            c=color_labels, cmap='viridis', 
-                                            s=100, alpha=0.8)
-                        
-                        # 添加標籤
-                        for i, aspect in enumerate(aspect_names):
-                            plt.annotate(aspect, (vectors_2d[i, 0], vectors_2d[i, 1]),
-                                       textcoords="offset points", xytext=(0, 5),
-                                       ha='center')
-                        
-                        plt.colorbar(scatter, label=color_by)
-                        plt.title(f'UMAP降維可視化（按{color_by}著色）')
-                        plt.grid(True, linestyle='--', alpha=0.7)
-                    except ImportError:
-                        plt.figure(figsize=(8, 6))
-                        plt.text(0.5, 0.5, "未安裝UMAP庫，無法執行UMAP降維", 
-                               ha='center', va='center', fontsize=14)
-                        plt.axis('off')
-                    
-                elif dim_method == "PCA":
-                    from sklearn.decomposition import PCA
-                    
-                    # 執行PCA降維
-                    pca = PCA(n_components=2)
-                    vectors_2d = pca.fit_transform(vectors_array)
-                    
-                    # 創建PCA散點圖
-                    plt.figure(figsize=(10, 8))
-                    scatter = plt.scatter(vectors_2d[:, 0], vectors_2d[:, 1], 
-                                        c=color_labels, cmap='viridis', 
-                                        s=100, alpha=0.8)
-                    
-                    # 添加標籤
-                    for i, aspect in enumerate(aspect_names):
-                        plt.annotate(aspect, (vectors_2d[i, 0], vectors_2d[i, 1]),
-                                   textcoords="offset points", xytext=(0, 5),
-                                   ha='center')
-                    
-                    # 計算解釋方差
-                    explained_variance = pca.explained_variance_ratio_
-                    plt.xlabel(f'第一主成分 ({explained_variance[0]:.2%})')
-                    plt.ylabel(f'第二主成分 ({explained_variance[1]:.2%})')
-                    
-                    plt.colorbar(scatter, label=color_by)
-                    plt.title(f'PCA降維可視化（按{color_by}著色）')
-                    plt.grid(True, linestyle='--', alpha=0.7)
-                    
-                elif dim_method == "3D散點圖":
-                    from sklearn.decomposition import PCA
-                    
-                    # 執行PCA降維到3D
-                    pca = PCA(n_components=3)
-                    vectors_3d = pca.fit_transform(vectors_array)
-                    
-                    # 創建3D散點圖
-                    fig = plt.figure(figsize=(12, 10))
-                    ax = fig.add_subplot(111, projection='3d')
-                    
-                    # 繪製3D散點
-                    scatter = ax.scatter(vectors_3d[:, 0], vectors_3d[:, 1], vectors_3d[:, 2],
-                                       c=color_labels, cmap='viridis', 
-                                       s=100, alpha=0.8)
-                    
-                    # 添加標籤
-                    for i, aspect in enumerate(aspect_names):
-                        ax.text(vectors_3d[i, 0], vectors_3d[i, 1], vectors_3d[i, 2],
-                              aspect, fontsize=8)
-                    
-                    # 計算解釋方差
-                    explained_variance = pca.explained_variance_ratio_
-                    ax.set_xlabel(f'第一主成分 ({explained_variance[0]:.2%})')
-                    ax.set_ylabel(f'第二主成分 ({explained_variance[1]:.2%})')
-                    ax.set_zlabel(f'第三主成分 ({explained_variance[2]:.2%})')
-                    
-                    plt.colorbar(scatter, ax=ax, label=color_by)
-                    plt.title(f'3D PCA可視化（按{color_by}著色）')
-            else:
-                # 如果沒有向量數據，創建提示圖
-                plt.figure(figsize=(8, 6))
-                plt.text(0.5, 0.5, "缺少可用於降維的面向向量數據", 
-                       ha='center', va='center', fontsize=14)
-                plt.axis('off')
-            
-            # 添加數據來源信息
-            self._add_data_source_caption(fig, plt, title="降維可視化")
-            
-            # 保存降維可視化圖表
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            dim_reduction_img_path = os.path.join(dim_reduction_dir, f"dim_reduction_{dim_method}_{timestamp}.png")
-            plt.tight_layout()
-            plt.savefig(dim_reduction_img_path, dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            self.status_message.emit(f"✓ 「降維可視化」區域處理完成", 3000)
-            self.progress_bar.setValue(60)
-            
-            # 2. 多指標綜合視圖
-            self.status_message.emit(f"2. 開始處理「多指標綜合視圖」區域（{multi_chart_type}）...", 3000)
-            
-            # 創建多指標綜合視圖子目錄
-            multi_metrics_dir = os.path.join(output_dir, "多指標綜合視圖")
-            os.makedirs(multi_metrics_dir, exist_ok=True)
-            
-            # 收集選中的指標
-            selected_metrics = []
-            if self.cb_include_cohesion.isChecked():
-                selected_metrics.append("內聚度")
-            if self.cb_include_separation.isChecked():
-                selected_metrics.append("分離度")
-            if self.cb_include_f1.isChecked():
-                selected_metrics.append("F1分數")
-            
-            # 如果沒有選中任何指標，使用默認指標
-            if not selected_metrics:
-                selected_metrics = ["內聚度", "分離度", "F1分數"]
-            
-            # 從評估結果中提取指標數據
-            metric_data = {}
-            for metric_name in selected_metrics:
-                if metric_name == "內聚度" and "cohesion" in metrics:
-                    metric_data["內聚度"] = [metrics["cohesion"].get(aspect, 0) for aspect in aspect_names]
-                elif metric_name == "分離度" and "separation" in metrics:
-                    metric_data["分離度"] = [metrics["separation"].get(aspect, 0) for aspect in aspect_names]
-                elif metric_name == "F1分數" and "f1" in metrics:
-                    metric_data["F1分數"] = [metrics["f1"].get(aspect, 0) for aspect in aspect_names]
-            
-            if multi_chart_type == "雷達圖組":
-                if metric_data:
-                    # 計算需要的雷達圖數量
-                    n_aspects = len(aspect_names)
-                    n_cols = min(3, n_aspects)
-                    n_rows = (n_aspects + n_cols - 1) // n_cols
-                    
-                    # 創建雷達圖組
-                    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows), 
-                                           subplot_kw=dict(polar=True))
-                    
-                    # 如果只有一個面向，確保axes是二維數組
-                    if n_aspects == 1:
-                        axes = np.array([[axes]])
-                    elif n_rows == 1:
-                        axes = axes.reshape(1, -1)
-                    
-                    # 獲取所有指標名稱
-                    metric_names = list(metric_data.keys())
-                    
-                    # 為每個面向創建雷達圖
-                    for i, aspect in enumerate(aspect_names):
-                        row = i // n_cols
-                        col = i % n_cols
-                        ax = axes[row, col]
-                        
-                        # 設置角度
-                        theta = np.linspace(0, 2*np.pi, len(metric_names), endpoint=False)
-                        
-                        # 獲取該面向的所有指標值
-                        values = [metric_data[metric][i] for metric in metric_names]
-                        
-                        # 閉合雷達圖
-                        theta = np.append(theta, theta[0])
-                        values = np.append(values, values[0])
-                        
-                        # 繪製雷達圖
-                        ax.plot(theta, values, 'o-', linewidth=2)
-                        ax.fill(theta, values, alpha=0.25)
-                        ax.set_xticks(theta[:-1])
-                        ax.set_xticklabels(metric_names)
-                        ax.set_ylim(0, 1)
-                        ax.set_title(f'面向: {aspect}')
-                    
-                    # 隱藏多餘的子圖
-                    for i in range(n_aspects, n_rows * n_cols):
-                        row = i // n_cols
-                        col = i % n_cols
-                        axes[row, col].axis('off')
-                else:
-                    # 如果沒有指標數據，創建提示圖
-                    plt.figure(figsize=(8, 6))
-                    plt.text(0.5, 0.5, "缺少所選指標的數據", 
+                    # 創建提示圖
+                    fig, ax = plt.subplots(figsize=(8, 6))
+                    ax.text(0.5, 0.5, f"面向數量過少 ({vectors_array.shape[0]})，難以進行有意義的降維可視化", 
                            ha='center', va='center', fontsize=14)
-                    plt.axis('off')
-                
-                # 添加數據來源信息
-                self._add_data_source_caption(fig, plt, title="多指標綜合視圖")
-                
-                # 保存雷達圖組
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                radar_img_path = os.path.join(multi_metrics_dir, f"multi_metrics_radar_{timestamp}.png")
-                plt.tight_layout()
-                plt.savefig(radar_img_path, dpi=300, bbox_inches='tight')
-                plt.close()
-                
-                # 返回降維可視化圖片的路徑
-                self.status_message.emit("✓ 綜合比較可視化已完成", 5000)
-                self.progress_bar.setValue(100)
-                return dim_reduction_img_path
-                
-            elif multi_chart_type == "交互式儀表板":
-                if metric_data:
-                    # 創建交互式儀表板
-                    fig = go.Figure()
+                    ax.axis('off')
+                else:
+                    # 根據選擇的降維方法執行降維
+                    if dim_method == "t-SNE":
+                        from sklearn.manifold import TSNE
+                        model = TSNE(n_components=2, perplexity=min(30, len(vectors_array)-1), random_state=42)
+                        reduced_data = model.fit_transform(vectors_array)
+                    elif dim_method == "PCA":
+                        from sklearn.decomposition import PCA
+                        model = PCA(n_components=2)
+                        reduced_data = model.fit_transform(vectors_array)
+                    elif dim_method == "UMAP":
+                        try:
+                            import umap
+                            model = umap.UMAP(n_components=2, random_state=42)
+                            reduced_data = model.fit_transform(vectors_array)
+                        except ImportError:
+                            self.logger.error("UMAP模組未安裝，切換到PCA")
+                            self.status_message.emit("UMAP模組未安裝，切換到PCA", 5000)
+                            from sklearn.decomposition import PCA
+                            model = PCA(n_components=2)
+                            reduced_data = model.fit_transform(vectors_array)
+                    else:
+                        # 默認使用PCA
+                        from sklearn.decomposition import PCA
+                        model = PCA(n_components=2)
+                        reduced_data = model.fit_transform(vectors_array)
                     
-                    # 添加每個面向的雷達圖
-                    for i, aspect in enumerate(aspect_names):
-                        # 獲取該面向的所有指標值
-                        values = [metric_data[metric][i] for metric in metric_data.keys()]
-                        
-                        # 創建雷達圖
-                        fig.add_trace(go.Scatterpolar(
-                            r=values,
-                            theta=list(metric_data.keys()),
-                            fill='toself',
-                            name=aspect
-                        ))
+                    # 創建散點圖
+                    fig, ax = plt.subplots(figsize=(10, 8))
                     
-                    # 更新布局
-                    fig.update_layout(
-                        polar=dict(
-                            radialaxis=dict(
-                                visible=True,
-                                range=[0, 1]
-                            )
-                        ),
-                        showlegend=True,
-                        title='多指標綜合評估儀表板',
-                        template='plotly_white'
+                    # 獲取著色數據
+                    if color_by == "內聚度" and 'topic_coherence' in metrics:
+                        if isinstance(metrics['topic_coherence'], dict):
+                            colors = [metrics['topic_coherence'].get(aspect, 0) for aspect in aspect_names]
+                        else:
+                            self.logger.warning("主題內聚度不是字典格式，無法用於著色")
+                            colors = None
+                    elif color_by == "分離度" and 'topic_separation' in metrics:
+                        if isinstance(metrics['topic_separation'], dict):
+                            colors = [metrics['topic_separation'].get(aspect, 0) for aspect in aspect_names]
+                        else:
+                            self.logger.warning("主題分離度不是字典格式，無法用於著色")
+                            colors = None
+                    else:
+                        colors = None
+                    
+                    # 繪製散點圖
+                    scatter = ax.scatter(
+                        reduced_data[:, 0], 
+                        reduced_data[:, 1],
+                        c=colors,
+                        cmap='viridis' if colors is not None else None,
+                        s=100,
+                        alpha=0.7
                     )
                     
-                    # 保存為HTML和PNG
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    dashboard_html_path = os.path.join(multi_metrics_dir, f"multi_metrics_dashboard_{timestamp}.html")
-                    dashboard_img_path = os.path.join(multi_metrics_dir, f"multi_metrics_dashboard_{timestamp}.png")
+                    # 添加顏色條
+                    if colors is not None:
+                        plt.colorbar(scatter, ax=ax, label=color_by)
                     
-                    # 保存HTML版本
-                    fig.write_html(dashboard_html_path)
+                    # 為每個點添加標籤
+                    for i, aspect in enumerate(aspect_names):
+                        ax.annotate(
+                            aspect,
+                            (reduced_data[i, 0], reduced_data[i, 1]),
+                            fontsize=9,
+                            ha='center',
+                            va='bottom',
+                            xytext=(0, 5),
+                            textcoords='offset points'
+                        )
                     
-                    # 保存PNG版本
-                    fig.write_image(dashboard_img_path, width=1200, height=800)
-                    
-                    # 返回降維可視化圖片的路徑
-                    self.status_message.emit("✓ 綜合比較可視化已完成", 5000)
-                    self.progress_bar.setValue(100)
-                    return dim_reduction_img_path
-                else:
-                    # 如果沒有指標數據，創建提示圖
-                    plt.figure(figsize=(8, 6))
-                    plt.text(0.5, 0.5, "缺少所選指標的數據", 
-                           ha='center', va='center', fontsize=14)
-                    plt.axis('off')
-                    
-                    # 保存提示圖表
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    missing_img_path = os.path.join(multi_metrics_dir, f"multi_metrics_missing_{timestamp}.png")
-                    plt.tight_layout()
-                    plt.savefig(missing_img_path, dpi=300, bbox_inches='tight')
-                    plt.close()
-                    
-                    # 返回降維可視化圖片的路徑
-                    self.status_message.emit("✓ 綜合比較可視化已完成", 5000)
-                    self.progress_bar.setValue(100)
-                    return dim_reduction_img_path
-            
-            # 保存多指標綜合視圖
-            self.status_message.emit(f"✓ 「多指標綜合視圖」區域處理完成", 3000)
-            self.progress_bar.setValue(100)
-            
-            # 返回降維可視化圖片的路徑
-            self.status_message.emit("✓ 綜合比較可視化已完成", 5000)
-            return dim_reduction_img_path
+                    # 添加標題和軸標籤
+                    plt.title(f"面向向量{dim_method}降維可視化", fontsize=14)
+                    plt.xlabel("第一維度", fontsize=12)
+                    plt.ylabel("第二維度", fontsize=12)
+                    plt.grid(True, linestyle='--', alpha=0.7)
+                
+                # 添加數據來源信息
+                self._add_data_source_caption(fig, plt, title="降維可視化")
+                
+                # 保存圖片
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                dim_reduction_img_path = os.path.join(dim_reduction_dir, f"dim_reduction_{timestamp}.png")
+                plt.savefig(dim_reduction_img_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                
+                self.status_message.emit(f"✓ 「降維可視化」區域處理完成", 3000)
+                self.progress_bar.setValue(50)
+                
+                # 返回降維可視化圖片路徑
+                self.status_message.emit("✓ 綜合比較可視化已完成", 5000)
+                return dim_reduction_img_path
+            else:
+                self.logger.error("無法提取有效的面向向量數據進行降維可視化")
+                self.status_message.emit("無法提取有效的面向向量數據進行降維可視化", 5000)
+                
+                # 創建提示圖
+                fig, ax = plt.subplots(figsize=(8, 6))
+                ax.text(0.5, 0.5, "無法提取有效的面向向量數據進行降維可視化", 
+                       ha='center', va='center', fontsize=14)
+                ax.axis('off')
+                
+                # 添加數據來源信息
+                self._add_data_source_caption(fig, plt, title="錯誤")
+                
+                # 保存圖片
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                error_img_path = os.path.join(dim_reduction_dir, f"error_{timestamp}.png")
+                plt.savefig(error_img_path, dpi=300, bbox_inches='tight')
+                plt.close()
+                
+                self.progress_bar.setValue(0)
+                return None
             
         except Exception as e:
             self.status_message.emit(f"生成綜合比較可視化出錯: {str(e)}", 5000)
