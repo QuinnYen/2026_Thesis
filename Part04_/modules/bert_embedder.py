@@ -86,7 +86,7 @@ class BertEmbedder:
         self.logger = logger
         
         # 設置默認配置
-        self.model_name = self.config.get('model_name', 'bert-base-chinese')
+        self.model_name = self.config.get('model_name', 'bert-base-uncased')
         self.batch_size = self.config.get('batch_size', 32)
         self.max_length = self.config.get('max_length', 128)
         self.use_gpu = self.config.get('use_gpu', torch.cuda.is_available())
