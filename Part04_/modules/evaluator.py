@@ -50,7 +50,7 @@ class AttentionEvaluator:
         self.vis_dir = os.path.join(self.output_dir, 'visualizations')
         os.makedirs(self.vis_dir, exist_ok=True)
     
-    def evaluate_model(self, topics=None, vectors=None, texts=None):
+    def evaluate_model(self, topics=None, vectors=None, texts=None, attention_metrics=None):
         """評估模型效能
         
         這是一個與「evaluate_attention_mechanisms」方法相容的簡化版評估方法，
@@ -60,6 +60,7 @@ class AttentionEvaluator:
             topics: 主題詞字典，格式為{topic_id: [word1, word2, ...]}
             vectors: 面向向量數組，形狀為[n_topics, vector_dim]
             texts: 處理後的文本列表
+            attention_metrics: 從注意力機制直接獲取的評估指標（包含面向特定的內聚度值）
             
         Returns:
             dict: 包含評估指標的字典
@@ -75,6 +76,47 @@ class AttentionEvaluator:
         }
         
         try:
+            # 如果提供了注意力機制的評估指標，優先使用
+            if attention_metrics and isinstance(attention_metrics, dict):
+                self.logger.info("使用注意力機制提供的評估指標")
+                
+                # 獲取整體內聚度
+                if 'coherence' in attention_metrics:
+                    evaluation_results['topic_coherence'] = attention_metrics['coherence']
+                    
+                # 獲取整體分離度
+                if 'separation' in attention_metrics:
+                    evaluation_results['topic_separation'] = attention_metrics['separation']
+                    
+                # 獲取綜合得分
+                if 'combined_score' in attention_metrics:
+                    evaluation_results['combined_score'] = attention_metrics['combined_score']
+                    
+                # 保存面向特定的內聚度數據
+                if 'topic_coherence' in attention_metrics and isinstance(attention_metrics['topic_coherence'], dict):
+                    self.logger.info(f"找到面向特定的內聚度數據，共 {len(attention_metrics['topic_coherence'])} 個面向")
+                    evaluation_results['details']['topic_coherence'] = attention_metrics['topic_coherence']
+                    # 添加到直接結果中，使其更容易被訪問
+                    evaluation_results['topic_coherence_dict'] = attention_metrics['topic_coherence']
+                
+                # 保存面向特定的分離度數據
+                if 'topic_separation' in attention_metrics and isinstance(attention_metrics['topic_separation'], dict):
+                    self.logger.info(f"找到面向特定的分離度數據，共 {len(attention_metrics['topic_separation'])} 項")
+                    evaluation_results['details']['topic_separation'] = attention_metrics['topic_separation']
+                    # 添加到直接結果中，使其更容易被訪問
+                    evaluation_results['topic_separation_dict'] = attention_metrics['topic_separation']
+                
+                self.logger.info(f"使用注意力機制提供的評估指標: 一致性 = {evaluation_results['topic_coherence']:.4f}, "
+                               f"分離度 = {evaluation_results['topic_separation']:.4f}, "
+                               f"綜合得分 = {evaluation_results['combined_score']:.4f}")
+                
+                # 將剩餘的指標添加到 details 中
+                for key, value in attention_metrics.items():
+                    if key not in ['coherence', 'separation', 'combined_score', 'topic_coherence', 'topic_separation'] and key not in evaluation_results['details']:
+                        evaluation_results['details'][key] = value
+                
+                return evaluation_results
+            
             # 檢查輸入
             if topics is None and vectors is None:
                 self.logger.error("沒有提供評估所需的主題詞或面向向量")

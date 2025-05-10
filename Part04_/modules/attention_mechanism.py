@@ -132,6 +132,9 @@ class AttentionMechanism:
         coherence = 0.0
         doc_count = 0
         
+        # 為每個面向存儲單獨的內聚度值
+        topic_coherence_dict = {}
+        
         for topic in topics:
             aspect_vec = aspect_vectors[topic]
             
@@ -139,6 +142,8 @@ class AttentionMechanism:
             doc_indices = metadata.index[metadata['main_topic'] == topic].tolist()
             
             if not doc_indices:
+                self.logger.warning(f"面向 {topic} 沒有相關文檔，無法計算內聚度")
+                topic_coherence_dict[topic] = 0.0
                 continue
                 
             # 獲取該主題的嵌入向量
@@ -154,6 +159,11 @@ class AttentionMechanism:
                 topic_coherence /= len(topic_embeddings)
                 coherence += topic_coherence * len(topic_embeddings)
                 doc_count += len(topic_embeddings)
+                
+                # 存儲該面向的內聚度值
+                topic_coherence_dict[topic] = float(topic_coherence)
+            else:
+                topic_coherence_dict[topic] = 0.0
         
         if doc_count > 0:
             coherence /= doc_count
@@ -162,10 +172,15 @@ class AttentionMechanism:
         separation = 0.0
         pair_count = 0
         
+        # 為每對面向存儲分離度值
+        topic_separation_dict = {}
+        
         for i in range(len(topics)):
             for j in range(i+1, len(topics)):
-                vec_i = aspect_vectors[topics[i]]
-                vec_j = aspect_vectors[topics[j]]
+                topic_i = topics[i]
+                topic_j = topics[j]
+                vec_i = aspect_vectors[topic_i]
+                vec_j = aspect_vectors[topic_j]
                 
                 # 計算餘弦距離 (1 - 相似度)
                 similarity = np.dot(vec_i, vec_j) / (np.linalg.norm(vec_i) * np.linalg.norm(vec_j))
@@ -173,6 +188,10 @@ class AttentionMechanism:
                 
                 separation += distance
                 pair_count += 1
+                
+                # 存儲該對面向的分離度
+                pair_key = f"{topic_i}_{topic_j}"
+                topic_separation_dict[pair_key] = float(distance)
         
         if pair_count > 0:
             separation /= pair_count
@@ -184,9 +203,11 @@ class AttentionMechanism:
             
         # 返回評估指標
         metrics = {
-            "coherence": coherence,   # 越高越好，表示面向內部一致性
-            "separation": separation,  # 越高越好，表示面向之間差異性
-            "combined_score": combined_score  # 綜合分數
+            "coherence": coherence,   # 整體內聚度，越高越好，表示面向內部一致性
+            "separation": separation,  # 整體分離度，越高越好，表示面向之間差異性
+            "combined_score": combined_score,  # 綜合分數
+            "topic_coherence": topic_coherence_dict,  # 每個面向的內聚度
+            "topic_separation": topic_separation_dict  # 每對面向的分離度
         }
         
         return metrics

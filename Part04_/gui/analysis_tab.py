@@ -980,14 +980,50 @@ class AnalysisTab(QWidget):
             eval_html += "<h4>綜合評分</h4>"
             eval_html += f"<p>綜合性能分數: {self.evaluation_results['combined_score']:.4f}</p>"
         
+        # 顯示面向特定的內聚度（如果有）
+        if 'details' in self.evaluation_results and 'topic_coherence' in self.evaluation_results['details'] and isinstance(self.evaluation_results['details']['topic_coherence'], dict):
+            eval_html += "<h4>各面向內聚度</h4>"
+            eval_html += "<table><tr><th>面向</th><th>內聚度</th></tr>"
+            
+            # 導入主題標籤轉換函數
+            from utils.settings.topic_labels import convert_topic_key_to_chinese
+            
+            for topic, coherence in self.evaluation_results['details']['topic_coherence'].items():
+                # 將英文主題標籤轉換為中文格式
+                chinese_topic = convert_topic_key_to_chinese(topic, self.current_dataset_name, self.topic_count_spin.value())
+                eval_html += f"<tr><td>{chinese_topic}</td><td>{coherence:.4f}</td></tr>"
+                
+            eval_html += "</table>"
+            
+        # 直接從評估結果中獲取面向特定的內聚度（如果有）
+        elif 'topic_coherence_dict' in self.evaluation_results and isinstance(self.evaluation_results['topic_coherence_dict'], dict):
+            eval_html += "<h4>各面向內聚度</h4>"
+            eval_html += "<table><tr><th>面向</th><th>內聚度</th></tr>"
+            
+            # 導入主題標籤轉換函數
+            from utils.settings.topic_labels import convert_topic_key_to_chinese
+            
+            for topic, coherence in self.evaluation_results['topic_coherence_dict'].items():
+                # 將英文主題標籤轉換為中文格式
+                chinese_topic = convert_topic_key_to_chinese(topic, self.current_dataset_name, self.topic_count_spin.value())
+                eval_html += f"<tr><td>{chinese_topic}</td><td>{coherence:.4f}</td></tr>"
+                
+            eval_html += "</table>"
+        
         # 顯示詳細指標（如果有）
         if 'details' in self.evaluation_results:
             eval_html += "<h4>詳細指標</h4>"
             eval_html += "<table><tr><th>指標名稱</th><th>數值</th></tr>"
             
             for metric, value in self.evaluation_results['details'].items():
+                # 跳過已經專門顯示的指標
+                if metric in ['topic_coherence', 'topic_separation']:
+                    continue
+                    
                 if isinstance(value, float):
                     eval_html += f"<tr><td>{metric}</td><td>{value:.4f}</td></tr>"
+                elif isinstance(value, dict):
+                    eval_html += f"<tr><td>{metric}</td><td>字典類型，包含 {len(value)} 個條目</td></tr>"
                 else:
                     eval_html += f"<tr><td>{metric}</td><td>{value}</td></tr>"
                     
@@ -1082,9 +1118,27 @@ class AnalysisTab(QWidget):
                     "combined_score": self.evaluation_results.get('combined_score', 0.0)
                 }
                 
-                # 如果有詳細指標，也一併保存
+                # 添加面向特定的內聚度和分離度數據
                 if 'details' in self.evaluation_results:
+                    # 保存詳細評估指標
                     results["metrics_details"] = self.evaluation_results['details']
+                    
+                    # 如果有面向特定的內聚度數據，直接加入主要 metrics 字典中
+                    if 'topic_coherence' in self.evaluation_results['details'] and isinstance(self.evaluation_results['details']['topic_coherence'], dict):
+                        self.logger.info("正在保存面向特定的內聚度數據...")
+                        results["metrics"]["topic_coherence"] = self.evaluation_results['details']['topic_coherence']
+                    
+                    # 如果有面向特定的分離度數據，也加入主要 metrics 字典中
+                    if 'topic_separation' in self.evaluation_results['details'] and isinstance(self.evaluation_results['details']['topic_separation'], dict):
+                        self.logger.info("正在保存面向特定的分離度數據...")
+                        results["metrics"]["topic_separation"] = self.evaluation_results['details']['topic_separation']
+                
+                # 如果評估結果中直接有面向特定的內聚度和分離度
+                if 'topic_coherence_dict' in self.evaluation_results and isinstance(self.evaluation_results['topic_coherence_dict'], dict):
+                    results["metrics"]["topic_coherence"] = self.evaluation_results['topic_coherence_dict']
+                
+                if 'topic_separation_dict' in self.evaluation_results and isinstance(self.evaluation_results['topic_separation_dict'], dict):
+                    results["metrics"]["topic_separation"] = self.evaluation_results['topic_separation_dict']
             
             # 保存結果到JSON文件
             with open(file_path, 'w', encoding='utf-8') as f:
@@ -1545,11 +1599,24 @@ class AnalysisThread(QThread):
             
             evaluator = self.modules['evaluator']
             
-            # 評估結果
+            # 獲取來自注意力機制的評估指標（如果有）
+            attention_metrics = None
+            if aspect_result and 'metrics' in aspect_result:
+                self.logger.info("從面向計算結果中獲取評估指標")
+                attention_metrics = aspect_result['metrics']
+                
+                # 檢查是否有面向特定的內聚度和分離度
+                if 'topic_coherence' in attention_metrics and isinstance(attention_metrics['topic_coherence'], dict):
+                    self.logger.info(f"找到面向特定的內聚度指標，共 {len(attention_metrics['topic_coherence'])} 個面向")
+                if 'topic_separation' in attention_metrics and isinstance(attention_metrics['topic_separation'], dict):
+                    self.logger.info(f"找到面向特定的分離度指標，共 {len(attention_metrics['topic_separation'])} 項")
+            
+            # 評估結果，傳遞注意力機制產生的指標
             evaluation = evaluator.evaluate_model(
                 topics=topics,
                 vectors=aspect_vectors,
-                texts=processed_texts
+                texts=processed_texts,
+                attention_metrics=attention_metrics
             )
             
             results['evaluation'] = evaluation

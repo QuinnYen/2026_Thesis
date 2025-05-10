@@ -983,39 +983,77 @@ class VisualizationTab(QWidget):
             cohesion_values = []
             separation_values = []
 
-            # 首先檢查是否有單一值的 topic_coherence 和 topic_separation
-            if 'topic_coherence' in metrics and isinstance(metrics['topic_coherence'], (int, float)):
-                # 如果是單一值，則所有面向共用相同的值
-                self.logger.info(f"檢測到單一值的 topic_coherence: {metrics['topic_coherence']}")
-                cohesion_values = [metrics['topic_coherence']] * len(aspect_names)
-                
-            if 'topic_separation' in metrics and isinstance(metrics['topic_separation'], (int, float)):
-                # 如果是單一值，則所有面向共用相同的值
-                self.logger.info(f"檢測到單一值的 topic_separation: {metrics['topic_separation']}")
-                separation_values = [metrics['topic_separation']] * len(aspect_names)
-
-            # 如果沒有找到單一值，再檢查是否有字典格式的 cohesion/coherence 和 separation
-            if not cohesion_values:
+            # 優先檢查是否存在面向特定的內聚度與分離度數據
+            if 'topic_coherence' in metrics and isinstance(metrics['topic_coherence'], dict):
+                self.logger.info("找到面向特定的內聚度數據")
+                # 從字典中獲取每個面向的內聚度
                 for aspect in aspect_names:
-                    if 'cohesion' in metrics and aspect in metrics['cohesion']:
-                        cohesion_values.append(metrics['cohesion'][aspect])
-                    elif 'topic_coherence' in metrics and isinstance(metrics['topic_coherence'], dict) and aspect in metrics['topic_coherence']:
+                    if aspect in metrics['topic_coherence']:
                         cohesion_values.append(metrics['topic_coherence'][aspect])
                     else:
-                        # 如果找不到指定面向的內聚度值，使用默認值
-                        cohesion_values.append(0.5)  # 使用默認值0.5
                         self.logger.warning(f"面向 {aspect} 的內聚度數據未找到，使用默認值 0.5")
-                    
-            if not separation_values:
+                        cohesion_values.append(0.5)
+            # 次優先檢查是否存在 cohesion 字典
+            elif 'cohesion' in metrics and isinstance(metrics['cohesion'], dict):
+                self.logger.info("找到 cohesion 字典數據")
                 for aspect in aspect_names:
-                    if 'separation' in metrics and aspect in metrics['separation']:
-                        separation_values.append(metrics['separation'][aspect])
-                    elif 'topic_separation' in metrics and isinstance(metrics['topic_separation'], dict) and aspect in metrics['topic_separation']:
-                        separation_values.append(metrics['topic_separation'][aspect])
+                    if aspect in metrics['cohesion']:
+                        cohesion_values.append(metrics['cohesion'][aspect])
                     else:
-                        # 如果找不到指定面向的分離度值，使用默認值
-                        separation_values.append(0.1)  # 使用默認值0.1
-                        self.logger.warning(f"面向 {aspect} 的分離度數據未找到，使用默認值 0.1")
+                        self.logger.warning(f"面向 {aspect} 的內聚度數據未找到，使用默認值 0.5")
+                        cohesion_values.append(0.5)
+            # 再次檢查是否有單一值的 coherence 或 cohesion
+            elif 'coherence' in metrics and isinstance(metrics['coherence'], (int, float)):
+                self.logger.info(f"使用全局內聚度值: {metrics['coherence']}")
+                cohesion_values = [metrics['coherence']] * len(aspect_names)
+            elif 'cohesion' in metrics and isinstance(metrics['cohesion'], (int, float)):
+                self.logger.info(f"使用全局內聚度值: {metrics['cohesion']}")
+                cohesion_values = [metrics['cohesion']] * len(aspect_names)
+            else:
+                self.logger.warning("未找到任何內聚度數據，所有面向將使用默認值 0.5")
+                cohesion_values = [0.5] * len(aspect_names)
+            
+            # 優先檢查 topic_separation 字典
+            # 注意：topic_separation 可能存儲的是面向對之間的分離度
+            # 我們需要計算每個面向與其他所有面向的平均分離度
+            if 'topic_separation' in metrics and isinstance(metrics['topic_separation'], dict):
+                self.logger.info("找到面向對的分離度數據")
+                aspect_separation_values = {aspect: [] for aspect in aspect_names}
+                
+                # 收集每個面向的所有分離度值
+                for pair_key, separation_value in metrics['topic_separation'].items():
+                    parts = pair_key.split('_')
+                    if len(parts) >= 2:  # 確保格式為 "aspect1_aspect2"
+                        aspect1 = parts[0]
+                        aspect2 = '_'.join(parts[1:])  # 處理面向名稱中可能包含下劃線的情況
+                        
+                        if aspect1 in aspect_names and aspect2 in aspect_names:
+                            aspect_separation_values[aspect1].append(separation_value)
+                            aspect_separation_values[aspect2].append(separation_value)
+                
+                # 計算每個面向的平均分離度
+                for aspect in aspect_names:
+                    if aspect_separation_values[aspect]:
+                        separation_values.append(np.mean(aspect_separation_values[aspect]))
+                    else:
+                        self.logger.warning(f"面向 {aspect} 的分離度數據未找到，使用默認值 0.3")
+                        separation_values.append(0.3)
+            # 檢查 separation 字典
+            elif 'separation' in metrics and isinstance(metrics['separation'], dict):
+                self.logger.info("找到 separation 字典數據")
+                for aspect in aspect_names:
+                    if aspect in metrics['separation']:
+                        separation_values.append(metrics['separation'][aspect])
+                    else:
+                        self.logger.warning(f"面向 {aspect} 的分離度數據未找到，使用默認值 0.3")
+                        separation_values.append(0.3)
+            # 檢查單一值的 separation
+            elif 'separation' in metrics and isinstance(metrics['separation'], (int, float)):
+                self.logger.info(f"使用全局分離度值: {metrics['separation']}")
+                separation_values = [metrics['separation']] * len(aspect_names)
+            else:
+                self.logger.warning("未找到任何分離度數據，所有面向將使用默認值 0.3")
+                separation_values = [0.3] * len(aspect_names)
 
             # 記錄提取的數據，以幫助診斷問題
             self.logger.info(f"共提取了 {len(cohesion_values)} 個內聚度值和 {len(separation_values)} 個分離度值")
@@ -1099,9 +1137,52 @@ class VisualizationTab(QWidget):
             
             # 從評估結果中獲取所有相關指標
             all_metrics = {}
-            for metric_name in ['cohesion', 'separation', 'silhouette', 'f1']:
+            
+            # 處理內聚度指標
+            if 'topic_coherence' in metrics and isinstance(metrics['topic_coherence'], dict):
+                self.logger.info("使用面向特定的內聚度數據")
+                all_metrics['coherence'] = [metrics['topic_coherence'].get(aspect, 0) for aspect in aspect_names]
+            elif 'cohesion' in metrics and isinstance(metrics['cohesion'], dict):
+                all_metrics['coherence'] = [metrics['cohesion'].get(aspect, 0) for aspect in aspect_names]
+            elif 'coherence' in metrics and isinstance(metrics['coherence'], (int, float)):
+                all_metrics['coherence'] = [metrics['coherence']] * len(aspect_names)
+            
+            # 處理分離度指標
+            if 'topic_separation' in metrics and isinstance(metrics['topic_separation'], dict):
+                self.logger.info("使用面向特定的分離度數據")
+                # 需要計算每個面向的平均分離度
+                aspect_separation_values = {aspect: [] for aspect in aspect_names}
+                
+                # 收集每個面向的所有分離度值
+                for pair_key, separation_value in metrics['topic_separation'].items():
+                    parts = pair_key.split('_')
+                    if len(parts) >= 2:
+                        aspect1 = parts[0]
+                        aspect2 = '_'.join(parts[1:])
+                        
+                        if aspect1 in aspect_names and aspect2 in aspect_names:
+                            aspect_separation_values[aspect1].append(separation_value)
+                            aspect_separation_values[aspect2].append(separation_value)
+                
+                # 計算每個面向的平均分離度
+                all_metrics['separation'] = []
+                for aspect in aspect_names:
+                    if aspect_separation_values[aspect]:
+                        all_metrics['separation'].append(np.mean(aspect_separation_values[aspect]))
+                    else:
+                        all_metrics['separation'].append(0.3)
+            elif 'separation' in metrics and isinstance(metrics['separation'], dict):
+                all_metrics['separation'] = [metrics['separation'].get(aspect, 0) for aspect in aspect_names]
+            elif 'separation' in metrics and isinstance(metrics['separation'], (int, float)):
+                all_metrics['separation'] = [metrics['separation']] * len(aspect_names)
+            
+            # 處理其他指標
+            for metric_name in ['silhouette', 'f1']:
                 if metric_name in metrics:
-                    all_metrics[metric_name] = [metrics[metric_name].get(aspect, 0) for aspect in aspect_names]
+                    if isinstance(metrics[metric_name], dict):
+                        all_metrics[metric_name] = [metrics[metric_name].get(aspect, 0) for aspect in aspect_names]
+                    else:
+                        all_metrics[metric_name] = [metrics[metric_name]] * len(aspect_names)
             
             if not all_metrics:
                 QMessageBox.warning(self, "數據缺失", "缺少必要的評估指標數據")
@@ -1129,7 +1210,7 @@ class VisualizationTab(QWidget):
                 ax.set_title('不同面向的綜合性能得分')
                 ax.set_xticklabels(aspect_names, rotation=45, ha='right')
                 ax.grid(axis='y', linestyle='--', alpha=0.7)
-                
+            
             elif combined_chart_type == "熱力圖":
                 fig, ax = plt.subplots(figsize=(10, 8))
                 
@@ -1163,11 +1244,24 @@ class VisualizationTab(QWidget):
             os.makedirs(silhouette_dir, exist_ok=True)
             
             # 從評估結果中獲取輪廓係數
-            if 'silhouette' not in metrics:
-                QMessageBox.warning(self, "數據缺失", "缺少輪廓係數數據")
-                return None
+            silhouette_values = []
             
-            silhouette_values = [metrics['silhouette'].get(aspect, 0) for aspect in aspect_names]
+            # 檢查是否有輪廓係數數據
+            if 'silhouette' in metrics:
+                if isinstance(metrics['silhouette'], dict):
+                    silhouette_values = [metrics['silhouette'].get(aspect, 0) for aspect in aspect_names]
+                else:
+                    # 如果是單一值，則所有面向共用相同的值
+                    self.logger.info(f"檢測到單一值的輪廓係數: {metrics['silhouette']}")
+                    silhouette_values = [metrics['silhouette']] * len(aspect_names)
+            else:
+                # 如果找不到輪廓係數數據，使用默認值
+                self.logger.warning("未找到輪廓係數數據，所有面向將使用默認值 0.4")
+                silhouette_values = [0.4] * len(aspect_names)
+            
+            # 記錄提取的數據
+            self.logger.info(f"共提取了 {len(silhouette_values)} 個輪廓係數值")
+            self.logger.debug(f"輪廓係數值: {silhouette_values}")
             
             if silhouette_chart_type == "輪廓圖":
                 fig, ax = plt.subplots(figsize=(10, 6))
