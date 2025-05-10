@@ -1034,6 +1034,9 @@ class AnalysisTab(QWidget):
     def save_results(self):
         """保存分析結果"""
         try:
+            # 導入主題標籤轉換函數
+            from utils.settings.topic_labels import convert_topic_key_to_chinese
+            
             # 檢查是否有結果可以保存
             if self.aspect_vectors is None:
                 QMessageBox.warning(self, "保存失敗", "沒有可保存的向量結果")
@@ -1054,6 +1057,13 @@ class AnalysisTab(QWidget):
             results = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "data_source": self.current_dataset_name,
+                "description": "面向向量分析結果",
+                "sections": {
+                    "attention_mechanisms": "各種注意力機制的分析結果",
+                    "best_attention": "最佳注意力機制",
+                    "metrics": "評估指標",
+                    "aspect_vectors": "面向向量數據"
+                }
             }
             
             # 從分析結果中獲取所有注意力機制的結果
@@ -1062,7 +1072,10 @@ class AnalysisTab(QWidget):
                 if aspect_result:
                     # 保存所有注意力機制的結果
                     if 'all_results' in aspect_result:
-                        results["attention_mechanisms"] = {}
+                        results["attention_mechanisms"] = {
+                            "description": "各種注意力機制的詳細分析結果",
+                            "mechanisms": {}
+                        }
                         for attention_type, mechanism_result in aspect_result['all_results'].items():
                             # 轉換 metrics 中的 NumPy 數組
                             metrics = mechanism_result.get('metrics', {})
@@ -1079,22 +1092,37 @@ class AnalysisTab(QWidget):
                             if isinstance(vectors, dict):
                                 for k, v in vectors.items():
                                     if isinstance(v, np.ndarray):
-                                        serialized_vectors[str(k)] = v.tolist()
+                                        # 使用中文標籤轉換
+                                        chinese_key = convert_topic_key_to_chinese(
+                                            str(k), 
+                                            self.current_dataset_name, 
+                                            self.topic_count_spin.value()
+                                        )
+                                        serialized_vectors[chinese_key] = v.tolist()
                                     else:
-                                        serialized_vectors[str(k)] = v
+                                        chinese_key = convert_topic_key_to_chinese(
+                                            str(k), 
+                                            self.current_dataset_name, 
+                                            self.topic_count_spin.value()
+                                        )
+                                        serialized_vectors[chinese_key] = v
                             elif isinstance(vectors, np.ndarray):
                                 serialized_vectors = vectors.tolist()
                             
-                            results["attention_mechanisms"][attention_type] = {
+                            results["attention_mechanisms"]["mechanisms"][attention_type] = {
+                                "description": f"{attention_type} 注意力機制的分析結果",
                                 "metrics": serialized_metrics,
                                 "aspect_vectors": serialized_vectors
                             }
                         
-                        self.logger.info(f"正在保存 {len(results['attention_mechanisms'])} 種注意力機制的結果")
+                        self.logger.info(f"正在保存 {len(results['attention_mechanisms']['mechanisms'])} 種注意力機制的結果")
                     
                     # 保存最佳注意力機制的信息
                     if 'best_attention' in aspect_result:
-                        results["best_attention"] = aspect_result['best_attention']
+                        results["best_attention"] = {
+                            "description": "表現最佳的注意力機制",
+                            "mechanism": aspect_result['best_attention']
+                        }
                         
                     # 保存總體評估指標
                     if 'metrics' in aspect_result:
@@ -1104,14 +1132,19 @@ class AnalysisTab(QWidget):
                             if isinstance(v, np.ndarray):
                                 serialized_metrics[k] = v.tolist()
                             elif isinstance(v, dict):
+                                # 轉換字典中的鍵為中文標籤
                                 serialized_metrics[k] = {
-                                    str(dk): dv.tolist() if isinstance(dv, np.ndarray) else dv
+                                    convert_topic_key_to_chinese(str(dk), self.current_dataset_name, self.topic_count_spin.value()): 
+                                    dv.tolist() if isinstance(dv, np.ndarray) else dv
                                     for dk, dv in v.items()
                                 }
                             else:
                                 serialized_metrics[k] = v
                                 
-                        results["metrics"] = serialized_metrics
+                        results["metrics"] = {
+                            "description": "模型評估指標，包含內聚度、分離度等",
+                            "values": serialized_metrics
+                        }
             
             # 正確處理不同類型的 aspect_vectors
             if isinstance(self.aspect_vectors, dict):
@@ -1140,12 +1173,19 @@ class AnalysisTab(QWidget):
                         serialized_vectors[chinese_topic] = vector.tolist()
                     else:
                         serialized_vectors[chinese_topic] = vector
-                results["aspect_vectors"] = serialized_vectors
+                        
+                results["aspect_vectors"] = {
+                    "description": "各面向的向量表示",
+                    "vectors": serialized_vectors
+                }
             else:
                 # NumPy 陣列類型的 aspect_vectors
                 results["vector_type"] = "numpy_array"
                 results["vector_shape"] = list(self.aspect_vectors.shape) if self.aspect_vectors is not None else []
-                results["aspect_vectors"] = self.aspect_vectors.tolist() if self.aspect_vectors is not None else []
+                results["aspect_vectors"] = {
+                    "description": "面向向量的數組表示",
+                    "vectors": self.aspect_vectors.tolist() if self.aspect_vectors is not None else []
+                }
             
             # 保存結果
             self.logger.info("正在保存結果...")
