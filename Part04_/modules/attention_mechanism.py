@@ -127,6 +127,7 @@ class AttentionMechanism:
             metrics: 評估指標字典
         """
         topics = list(aspect_vectors.keys())
+        self.logger.info(f"開始評估，共有 {len(topics)} 個面向")
         
         # 計算面向內聚度（面向內文檔與面向向量的平均相似度）
         coherence = 0.0
@@ -136,13 +137,14 @@ class AttentionMechanism:
         topic_coherence_dict = {}
         
         for topic in topics:
+            self.logger.info(f"\n正在計算面向 '{topic}' 的內聚度...")
             aspect_vec = aspect_vectors[topic]
             
             # 獲取該主題的文檔索引
             doc_indices = metadata.index[metadata['main_topic'] == topic].tolist()
             
             if not doc_indices:
-                self.logger.warning(f"面向 {topic} 沒有相關文檔，無法計算內聚度")
+                self.logger.warning(f"面向 '{topic}' 沒有相關文檔，無法計算內聚度")
                 topic_coherence_dict[topic] = 0.0
                 continue
                 
@@ -162,11 +164,14 @@ class AttentionMechanism:
                 
                 # 存儲該面向的內聚度值
                 topic_coherence_dict[topic] = float(topic_coherence)
+                self.logger.info(f"面向 '{topic}' 的內聚度: {topic_coherence:.4f} (文檔數: {len(topic_embeddings)})")
             else:
                 topic_coherence_dict[topic] = 0.0
         
         if doc_count > 0:
             coherence /= doc_count
+            
+        self.logger.info(f"\n總體內聚度: {coherence:.4f}")
         
         # 計算面向分離度（不同面向間向量的平均餘弦距離）
         separation = 0.0
@@ -174,6 +179,11 @@ class AttentionMechanism:
         
         # 為每對面向存儲分離度值
         topic_separation_dict = {}
+        
+        # 為每個面向計算平均分離度
+        aspect_separation_values = {topic: [] for topic in topics}
+        
+        self.logger.info("\n開始計算面向間的分離度...")
         
         for i in range(len(topics)):
             for j in range(i+1, len(topics)):
@@ -192,23 +202,80 @@ class AttentionMechanism:
                 # 存儲該對面向的分離度
                 pair_key = f"{topic_i}_{topic_j}"
                 topic_separation_dict[pair_key] = float(distance)
+                
+                # 為兩個面向都添加這個分離度值
+                aspect_separation_values[topic_i].append(distance)
+                aspect_separation_values[topic_j].append(distance)
+                
+                self.logger.info(f"面向 '{topic_i}' 和 '{topic_j}' 的分離度: {distance:.4f}")
         
         if pair_count > 0:
             separation /= pair_count
+            
+        self.logger.info(f"\n總體分離度: {separation:.4f}")
+            
+        # 計算每個面向的平均分離度
+        aspect_avg_separation = {}
+        for topic in topics:
+            if aspect_separation_values[topic]:
+                aspect_avg_separation[topic] = float(np.mean(aspect_separation_values[topic]))
+                self.logger.info(f"面向 '{topic}' 的平均分離度: {aspect_avg_separation[topic]:.4f}")
+            else:
+                aspect_avg_separation[topic] = 0.0
             
         # 計算綜合得分
         coherence_weight = self.config.get('coherence_weight', 0.5)
         separation_weight = self.config.get('separation_weight', 0.5)
         combined_score = coherence_weight * coherence + separation_weight * separation
+        
+        self.logger.info(f"\n綜合得分: {combined_score:.4f} (內聚度權重: {coherence_weight}, 分離度權重: {separation_weight})")
             
         # 返回評估指標
         metrics = {
-            "coherence": coherence,   # 整體內聚度，越高越好，表示面向內部一致性
-            "separation": separation,  # 整體分離度，越高越好，表示面向之間差異性
-            "combined_score": combined_score,  # 綜合分數
+            # 總體指標
+            "coherence": float(coherence),   # 整體內聚度
+            "separation": float(separation),  # 整體分離度
+            "combined_score": float(combined_score),  # 綜合分數
+            
+            # 面向特定指標
             "topic_coherence": topic_coherence_dict,  # 每個面向的內聚度
-            "topic_separation": topic_separation_dict  # 每對面向的分離度
+            "topic_separation": topic_separation_dict,  # 每對面向的分離度
+            "aspect_separation": aspect_avg_separation,  # 每個面向的平均分離度
+            
+            # 詳細指標
+            "metrics_details": {
+                "weights": {
+                    "coherence_weight": coherence_weight,
+                    "separation_weight": separation_weight
+                },
+                "per_aspect": {
+                    "coherence": topic_coherence_dict,  # 每個面向的內聚度
+                    "separation": aspect_avg_separation,  # 每個面向的平均分離度
+                    "pairwise_separation": topic_separation_dict  # 每對面向的分離度
+                }
+            }
         }
+        
+        # 輸出詳細的評估結果
+        self.logger.info("\n=== 詳細評估結果 ===")
+        self.logger.info("總體指標:")
+        self.logger.info(f"  - 內聚度: {coherence:.4f}")
+        self.logger.info(f"  - 分離度: {separation:.4f}")
+        self.logger.info(f"  - 綜合得分: {combined_score:.4f}")
+        
+        self.logger.info("\n每個面向的內聚度:")
+        for topic, coh in topic_coherence_dict.items():
+            self.logger.info(f"  - {topic}: {coh:.4f}")
+        
+        self.logger.info("\n每個面向的平均分離度:")
+        for topic, sep in aspect_avg_separation.items():
+            self.logger.info(f"  - {topic}: {sep:.4f}")
+        
+        self.logger.info("\n權重設定:")
+        self.logger.info(f"  - 內聚度權重: {coherence_weight}")
+        self.logger.info(f"  - 分離度權重: {separation_weight}")
+        
+        self.logger.info("\n=== 評估完成 ===\n")
         
         return metrics
 

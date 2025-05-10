@@ -1056,20 +1056,62 @@ class AnalysisTab(QWidget):
                 "data_source": self.current_dataset_name,
             }
             
-            # 正確地設置 attention_type (從分析結果中獲取)
-            if hasattr(self, 'analysis_thread') and hasattr(self.analysis_thread, 'aspect_result') and self.analysis_thread.aspect_result:
-                results["attention_type"] = self.analysis_thread.aspect_result.get('attention_type', "未知類型")
-            elif hasattr(self, 'analysis_thread') and hasattr(self.analysis_thread, 'params'):
-                # 備用方案：從參數中獲取
-                results["attention_type"] = self.analysis_thread.params.get('attention_mechanisms', "未知類型")
-            else:
-                # 這裡我們嘗試獲取最佳注意力類型，而不是使用「未知類型」
-                best_attention_type = None
-                if hasattr(self, 'evaluation_results') and self.evaluation_results and 'details' in self.evaluation_results:
-                    details = self.evaluation_results['details']
-                    if 'best_attention_type' in details:
-                        best_attention_type = details['best_attention_type']
-                results["attention_type"] = best_attention_type or "未知類型"
+            # 從分析結果中獲取所有注意力機制的結果
+            if hasattr(self, 'analysis_thread') and hasattr(self.analysis_thread, 'aspect_result'):
+                aspect_result = self.analysis_thread.aspect_result
+                if aspect_result:
+                    # 保存所有注意力機制的結果
+                    if 'all_results' in aspect_result:
+                        results["attention_mechanisms"] = {}
+                        for attention_type, mechanism_result in aspect_result['all_results'].items():
+                            # 轉換 metrics 中的 NumPy 數組
+                            metrics = mechanism_result.get('metrics', {})
+                            serialized_metrics = {}
+                            for k, v in metrics.items():
+                                if isinstance(v, np.ndarray):
+                                    serialized_metrics[k] = v.tolist()
+                                else:
+                                    serialized_metrics[k] = v
+                            
+                            # 轉換 aspect_vectors 中的 NumPy 數組
+                            vectors = mechanism_result.get('aspect_vectors', {})
+                            serialized_vectors = {}
+                            if isinstance(vectors, dict):
+                                for k, v in vectors.items():
+                                    if isinstance(v, np.ndarray):
+                                        serialized_vectors[str(k)] = v.tolist()
+                                    else:
+                                        serialized_vectors[str(k)] = v
+                            elif isinstance(vectors, np.ndarray):
+                                serialized_vectors = vectors.tolist()
+                            
+                            results["attention_mechanisms"][attention_type] = {
+                                "metrics": serialized_metrics,
+                                "aspect_vectors": serialized_vectors
+                            }
+                        
+                        self.logger.info(f"正在保存 {len(results['attention_mechanisms'])} 種注意力機制的結果")
+                    
+                    # 保存最佳注意力機制的信息
+                    if 'best_attention' in aspect_result:
+                        results["best_attention"] = aspect_result['best_attention']
+                        
+                    # 保存總體評估指標
+                    if 'metrics' in aspect_result:
+                        metrics = aspect_result['metrics']
+                        serialized_metrics = {}
+                        for k, v in metrics.items():
+                            if isinstance(v, np.ndarray):
+                                serialized_metrics[k] = v.tolist()
+                            elif isinstance(v, dict):
+                                serialized_metrics[k] = {
+                                    str(dk): dv.tolist() if isinstance(dv, np.ndarray) else dv
+                                    for dk, dv in v.items()
+                                }
+                            else:
+                                serialized_metrics[k] = v
+                                
+                        results["metrics"] = serialized_metrics
             
             # 正確處理不同類型的 aspect_vectors
             if isinstance(self.aspect_vectors, dict):
@@ -1103,44 +1145,14 @@ class AnalysisTab(QWidget):
                 # NumPy 陣列類型的 aspect_vectors
                 results["vector_type"] = "numpy_array"
                 results["vector_shape"] = list(self.aspect_vectors.shape) if self.aspect_vectors is not None else []
-                
-                # 將 NumPy 陣列轉換為列表
-                if self.aspect_vectors is not None:
-                    results["aspect_vectors"] = self.aspect_vectors.tolist()
-                else:
-                    results["aspect_vectors"] = []
+                results["aspect_vectors"] = self.aspect_vectors.tolist() if self.aspect_vectors is not None else []
             
-            # 保存評估指標
-            if hasattr(self, 'evaluation_results') and self.evaluation_results is not None:
-                results["metrics"] = {
-                    "coherence": self.evaluation_results.get('topic_coherence', 0.0),
-                    "separation": self.evaluation_results.get('topic_separation', 0.0),
-                    "combined_score": self.evaluation_results.get('combined_score', 0.0)
-                }
-                
-                # 添加面向特定的內聚度和分離度數據
-                if 'details' in self.evaluation_results:
-                    # 保存詳細評估指標
-                    results["metrics_details"] = self.evaluation_results['details']
-                    
-                    # 如果有面向特定的內聚度數據，直接加入主要 metrics 字典中
-                    if 'topic_coherence' in self.evaluation_results['details'] and isinstance(self.evaluation_results['details']['topic_coherence'], dict):
-                        self.logger.info("正在保存面向特定的內聚度數據...")
-                        results["metrics"]["topic_coherence"] = self.evaluation_results['details']['topic_coherence']
-                    
-                    # 如果有面向特定的分離度數據，也加入主要 metrics 字典中
-                    if 'topic_separation' in self.evaluation_results['details'] and isinstance(self.evaluation_results['details']['topic_separation'], dict):
-                        self.logger.info("正在保存面向特定的分離度數據...")
-                        results["metrics"]["topic_separation"] = self.evaluation_results['details']['topic_separation']
-                
-                # 如果評估結果中直接有面向特定的內聚度和分離度
-                if 'topic_coherence_dict' in self.evaluation_results and isinstance(self.evaluation_results['topic_coherence_dict'], dict):
-                    results["metrics"]["topic_coherence"] = self.evaluation_results['topic_coherence_dict']
-                
-                if 'topic_separation_dict' in self.evaluation_results and isinstance(self.evaluation_results['topic_separation_dict'], dict):
-                    results["metrics"]["topic_separation"] = self.evaluation_results['topic_separation_dict']
+            # 保存結果
+            self.logger.info("正在保存結果...")
+            self.logger.info(f"評估結果包含以下鍵值: {list(self.evaluation_results.keys()) if hasattr(self, 'evaluation_results') and self.evaluation_results else []}")
+            if hasattr(self, 'evaluation_results') and self.evaluation_results and 'details' in self.evaluation_results:
+                self.logger.info(f"評估結果的 details 包含以下鍵值: {list(self.evaluation_results['details'].keys())}")
             
-            # 保存結果到JSON文件
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(results, f, ensure_ascii=False, indent=2)
                 
@@ -1148,8 +1160,7 @@ class AnalysisTab(QWidget):
             QMessageBox.information(self, "保存成功", f"結果已保存至:\n{file_path}")
             
         except Exception as e:
-            self.logger.error(f"保存結果出錯: {str(e)}")
-            self.logger.error(traceback.format_exc())
+            self.logger.error(f"保存結果時出錯: {str(e)}")
             QMessageBox.critical(self, "保存失敗", f"保存結果時出錯:\n{str(e)}")
     
     def export_report(self, file_path):
@@ -1627,26 +1638,49 @@ class AnalysisThread(QThread):
             # 確保保存目錄存在
             os.makedirs(os.path.dirname(eval_path), exist_ok=True)
             
+            # 保存評估結果為JSON - 確保可序列化
             with open(eval_path, 'w', encoding='utf-8') as f:
-                # 將評估結果轉換為可JSON序列化的格式
-                serializable_eval = {}
-                for key, value in evaluation.items():
-                    if isinstance(value, np.ndarray):
-                        serializable_eval[key] = value.tolist()
-                    elif isinstance(value, dict):
-                        serializable_eval[key] = {}
-                        for k, v in value.items():
-                            if isinstance(v, np.ndarray):
-                                serializable_eval[key][k] = v.tolist()
-                            else:
-                                serializable_eval[key][k] = v
-                    else:
-                        serializable_eval[key] = value
-                        
-                json.dump(serializable_eval, f, ensure_ascii=False, indent=2)
+                json.dump(evaluation, f, ensure_ascii=False, indent=2)
                 
             self.logger.info(f"評估結果已保存至: {eval_path}")
             self.status_updated.emit(f"評估結果已保存至: {os.path.basename(eval_path)}")
+            
+            # 將評估結果中的面向特定指標合併到 aspect_result 中
+            if aspect_result and 'metrics' in aspect_result and evaluation:
+                # 檢查是否有面向特定的內聚度數據
+                if 'topic_coherence_dict' in evaluation:
+                    aspect_result['metrics']['topic_coherence'] = evaluation['topic_coherence_dict']
+                    self.logger.info(f"已將面向特定的內聚度數據合併到 aspect_result 中，共 {len(evaluation['topic_coherence_dict'])} 個面向")
+                
+                # 檢查是否有面向特定的分離度數據
+                if 'topic_separation_dict' in evaluation:
+                    aspect_result['metrics']['topic_separation'] = evaluation['topic_separation_dict']
+                    self.logger.info(f"已將面向特定的分離度數據合併到 aspect_result 中，共 {len(evaluation['topic_separation_dict'])} 項")
+            
+            # 保存完整的aspect_result，包含所有相關信息
+            result_path = os.path.join(self.output_dirs['aspect_vectors'], f"{file_base_name}_aspect_result.json")
+            
+            # 準備可序列化的完整結果 - 改進版本，確保所有嵌套的numpy數組都被轉換
+            def convert_to_serializable(obj):
+                """遞迴轉換所有numpy數組為列表"""
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, dict):
+                    return {str(k): convert_to_serializable(v) for k, v in obj.items()}
+                elif isinstance(obj, list) or isinstance(obj, tuple):
+                    return [convert_to_serializable(item) for item in obj]
+                else:
+                    return obj
+            
+            # 使用遞迴轉換函數處理完整結果
+            serializable_result = convert_to_serializable(aspect_result)
+            
+            # 保存為JSON
+            with open(result_path, 'w', encoding='utf-8') as f:
+                json.dump(serializable_result, f, ensure_ascii=False, indent=2)
+                
+            self.logger.info(f"面向向量已保存至: {result_path}")
+            self.status_updated.emit(f"面向向量已保存至: {os.path.basename(result_path)}")
             
             # 發送完成信號
             self.status_updated.emit("分析完成")
