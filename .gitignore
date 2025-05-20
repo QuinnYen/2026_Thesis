@@ -58,6 +58,7 @@ venv.bak/
 .spyderproject
 .spyproject
 .ropeproject
+/Part04_/resources/fonts/
 
 # Jupyter Notebook
 .ipynb_checkpoints

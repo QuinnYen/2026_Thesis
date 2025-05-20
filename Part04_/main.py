@@ -21,12 +21,18 @@ if current_dir not in sys.path:
     sys.path.append(current_dir)
 print(f"模組搜尋路徑已添加: {current_dir}")
 
+# 設定字體目錄
+FONTS_DIR = os.path.join(current_dir, "resources", "fonts")
+os.environ["QT_QPA_FONTDIR"] = FONTS_DIR
+
+# 設定 Qt 平台插件
+os.environ["QT_QPA_PLATFORM"] = "windows:fontengine=freetype"  # Windows 平台使用 freetype 引擎
+
 # 設定固定隨機種子，確保每次執行結果一致
 try:
     import random
     import numpy as np
     import torch
-    import tensorflow as tf
     from sklearn.utils import check_random_state
     
     # 設定固定的隨機種子
@@ -46,12 +52,6 @@ try:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
     
-    # 設定TensorFlow的隨機種子（如果可用）
-    try:
-        tf.random.set_seed(RANDOM_SEED)
-    except:
-        pass
-    
     # 設定scikit-learn的隨機種子
     check_random_state(RANDOM_SEED)
     
@@ -62,7 +62,7 @@ try:
     print("已設定所有相關模組的隨機種子")
 except ImportError as e:
     print(f"隨機種子設置錯誤: {e}")
-    print("請確保已安裝必要的模組: pip install numpy torch tensorflow scikit-learn")
+    print("請確保已安裝必要的模組: pip install numpy torch scikit-learn")
 
 # 導入系統所需函式庫
 try:
@@ -278,22 +278,21 @@ def main():
     
     # 創建 Qt 應用程式
     app = QApplication(sys.argv)
+    
+    # 設置應用程式屬性
+    app.setAttribute(Qt.AA_EnableHighDpiScaling)  # 啟用高 DPI 縮放
+    app.setAttribute(Qt.AA_UseHighDpiPixmaps)     # 使用高 DPI 圖像
+    
+    # 設置應用程式信息
     app.setApplicationName("文本分析系統")
     app.setOrganizationName("論文研究項目")
     
-    # 設置應用程式圖示
-    app_icon = os.path.join(resources_dir, "icon.png")
-    if os.path.exists(app_icon):
-        app.setWindowIcon(QIcon(app_icon))
-    
     # 設置應用程式樣式
-    app.setStyle("Fusion")
-    
-    # 配置全域異常處理
-    sys.excepthook = show_error_dialog
+    app.setStyle("Fusion")  # 使用 Fusion 樣式
     
     # 顯示啟動畫面
     splash = show_splash_screen(app, resources_dir)
+    app.processEvents()  # 確保啟動畫面顯示
     
     try:
         # 載入配置文件
@@ -306,7 +305,7 @@ def main():
                           Qt.black)
         app.processEvents()
         
-        # 使用延時模擬載入過程（在實際應用中可以根據需要移除）
+        # 使用延時模擬載入過程
         QTimer.singleShot(1000, lambda: None)
         
         # 更新啟動畫面
@@ -321,6 +320,7 @@ def main():
         # 窗口準備完畢，隱藏啟動畫面並顯示主窗口
         splash.finish(main_window)
         main_window.show()
+        main_window.raise_()  # 確保窗口在最前面
         
         # 記錄啟動完成
         logger.info("應用程式界面初始化完成")

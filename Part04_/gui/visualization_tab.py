@@ -15,15 +15,23 @@ import seaborn as sns  # 添加 seaborn 導入，因為代碼中多處使用
 import random
 import plotly.graph_objects as go
 
+# 導入 PyQt 模組
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
     QComboBox, QTabWidget, QFileDialog, QGroupBox, QCheckBox,
     QRadioButton, QButtonGroup, QSplitter, QScrollArea,
     QSlider, QSpinBox, QListWidget, QListWidgetItem, QMessageBox, QProgressBar
 )
 from PyQt5.QtGui import QPixmap, QImage, QFont, QTextCursor
 from PyQt5.QtCore import Qt, pyqtSignal, QThread, QSize, QUrl
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+
+# 嘗試導入 QWebEngineView，但不讓它阻止程式運行
+WEB_ENGINE_AVAILABLE = False
+try:
+    from PyQt5.QtWebEngineWidgets import QWebEngineView
+    WEB_ENGINE_AVAILABLE = True
+except ImportError:
+    print("PyQt5.QtWebEngineWidgets 或其依賴庫無法導入，互動式圖表功能將被禁用")
 
 # 導入模組
 from modules.visualizer import Visualizer
@@ -35,6 +43,69 @@ from utils.file_manager import FileManager
 
 # 獲取logger
 logger = get_logger("visualization_tab")
+
+# 修改 Plotly 相關函數，以支援無 WebEngine 環境
+def write_figure_safely(fig, html_path=None, img_path=None, width=1200, height=800):
+    """安全地將 Plotly 圖形儲存為檔案
+    
+    根據環境支持情況，儲存為 HTML 和/或 PNG 格式
+    
+    Args:
+        fig: Plotly 圖形對象
+        html_path: HTML 輸出路徑，如果為 None 則不儲存 HTML
+        img_path: 圖片輸出路徑，如果為 None 則不儲存圖片
+        width: 圖片寬度，預設 1200
+        height: 圖片高度，預設 800
+        
+    Returns:
+        str: 成功儲存的檔案路徑，優先返回 img_path
+    """
+    saved_path = None
+    
+    # 儲存 PNG 版本（總是嘗試）
+    if img_path:
+        try:
+            fig.write_image(img_path, width=width, height=height)
+            saved_path = img_path
+        except Exception as e:
+            logger.error(f"無法將圖表儲存為圖片: {str(e)}")
+            
+    # 如果環境支持，儲存 HTML 版本
+    if html_path and WEB_ENGINE_AVAILABLE:
+        try:
+            fig.write_html(html_path)
+            # 如果沒有成功儲存圖片，則返回 HTML 路徑
+            if not saved_path:
+                saved_path = html_path
+        except Exception as e:
+            logger.error(f"無法將圖表儲存為 HTML: {str(e)}")
+    
+    return saved_path
+
+# 改為用一個函數處理通用的儲存功能
+def save_plotly_figure(fig, directory, base_name, timestamp=None):
+    """將 Plotly 圖形儲存到指定目錄
+    
+    Args:
+        fig: Plotly 圖形對象
+        directory: 儲存目錄
+        base_name: 基本檔名
+        timestamp: 時間戳，如果為 None 則自動產生
+        
+    Returns:
+        tuple: (img_path, html_path)，如果儲存失敗則為 None
+    """
+    if timestamp is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+    html_path = os.path.join(directory, f"{base_name}_{timestamp}.html")
+    img_path = os.path.join(directory, f"{base_name}_{timestamp}.png")
+    
+    saved_path = write_figure_safely(fig, html_path, img_path)
+    
+    if saved_path:
+        return img_path, (html_path if WEB_ENGINE_AVAILABLE else None)
+    return None, None
 
 class VisualizationTab(QWidget):
     """可視化頁面類，實現各種數據可視化和圖表展示功能"""
@@ -1833,15 +1904,22 @@ class VisualizationTab(QWidget):
                 ]
             )
             
-            # 保存圖表為HTML和PNG
-            dashboard_html_path = os.path.join(dashboard_dir, f"attention_evaluation_{timestamp}.html")
-            dashboard_img_path = os.path.join(dashboard_dir, f"attention_evaluation_{timestamp}.png")
+            # 保存圖表為HTML和PNG（根據環境支援情況）
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            dashboard_dir = os.path.join(output_dir, "評估儀表盤")
+            os.makedirs(dashboard_dir, exist_ok=True)
             
-            # 保存HTML版本
-            fig.write_html(dashboard_html_path)
+            img_path, html_path = save_plotly_figure(
+                fig, 
+                dashboard_dir, 
+                "attention_evaluation",
+                timestamp
+            )
             
-            # 保存PNG版本
-            fig.write_image(dashboard_img_path, width=1200, height=800)
+            if not img_path:
+                self.logger.error("無法儲存注意力機制評估儀表盤圖表")
+                self.status_message.emit("無法儲存注意力機制評估儀表盤圖表", 5000)
+                return None
             
             self.status_message.emit(f"✓ 注意力機制評估儀表盤已生成", 3000)
             self.progress_bar.setValue(50)
@@ -1918,7 +1996,7 @@ class VisualizationTab(QWidget):
             
             # 返回第一張圖片的路徑
             self.status_message.emit("✓ 注意力機制評估可視化已完成", 5000)
-            return dashboard_img_path
+            return img_path
             
         except Exception as e:
             self.status_message.emit(f"生成注意力機制評估可視化出錯: {str(e)}", 5000)
@@ -2228,36 +2306,33 @@ class VisualizationTab(QWidget):
                             template='plotly_white'
                         )
                         
-                        # 保存為HTML和PNG
+                        # 保存為HTML和PNG（根據環境支援情況）
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                        bubble_html_path = os.path.join(topic_dist_dir, f"topic_distribution_bubble_{timestamp}.html")
-                        bubble_img_path = os.path.join(topic_dist_dir, f"topic_distribution_bubble_{timestamp}.png")
+                        topic_dist_dir = os.path.join(output_dir, "主題分布")
+                        os.makedirs(topic_dist_dir, exist_ok=True)
                         
-                        # 保存HTML版本
-                        fig.write_html(bubble_html_path)
+                        img_path, html_path = save_plotly_figure(
+                            fig, 
+                            topic_dist_dir, 
+                            "topic_distribution_bubble",
+                            timestamp
+                        )
                         
-                        # 保存PNG版本
-                        fig.write_image(bubble_img_path, width=1200, height=800)
-                        
-                        # 關閉互動式圖，返回圖片路徑
-                        plt.close()
-                        
-                        self.status_message.emit(f"✓ 「主題分布」區域處理完成", 3000)
-                        self.progress_bar.setValue(100)
-                        
-                        # 返回主題連貫性圖片路徑
-                        self.status_message.emit("✓ 主題模型評估可視化已完成", 5000)
-                        return coherence_img_path
-                        
-                    else:
-                        # 如果沒有主題分布數據，創建提示圖
-                        fig, ax = plt.subplots(figsize=(8, 6))
-                        ax.text(0.5, 0.5, "主題分布數據格式不支持創建交互式氣泡圖", ha='center', va='center', fontsize=14)
-                        ax.axis('off')
+                        if img_path:
+                            self.status_message.emit(f"✓ 「主題分布」區域處理完成", 3000)
+                            self.progress_bar.setValue(100)
+                            
+                            # 返回主題連貫性圖片路徑
+                            self.status_message.emit("✓ 主題模型評估可視化已完成", 5000)
+                            return coherence_img_path
+                        else:
+                            # 如果沒有成功儲存圖片，顯示錯誤
+                            self.logger.error("無法儲存主題分布氣泡圖")
+                            self.status_message.emit("無法儲存主題分布氣泡圖，使用靜態圖表代替", 5000)
                 else:
                     # 如果沒有主題分布數據，創建提示圖
                     fig, ax = plt.subplots(figsize=(8, 6))
-                    ax.text(0.5, 0.5, "缺少主題分布數據", ha='center', va='center', fontsize=14)
+                    ax.text(0.5, 0.5, "主題分布數據格式不支持創建交互式氣泡圖", ha='center', va='center', fontsize=14)
                     ax.axis('off')
             else:
                 # 如果沒有主題分布數據，創建提示圖
