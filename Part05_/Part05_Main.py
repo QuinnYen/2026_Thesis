@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 BERT情感分析系統 - 主程式
+整合注意力機制分析功能
 """
 
 import sys
@@ -9,13 +10,14 @@ import os
 import logging
 import pandas as pd
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict
 
 # 添加當前目錄到Python路徑
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, current_dir)
 
 from modules.run_manager import RunManager
+from modules.attention_processor import AttentionProcessor
 
 # 配置日誌
 logging.basicConfig(
@@ -79,6 +81,96 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
         logger.error(f"BERT編碼過程中發生錯誤: {str(e)}")
         raise
 
+def process_attention_analysis(input_file: Optional[str] = None, 
+                             output_dir: Optional[str] = None,
+                             attention_types: Optional[List[str]] = None,
+                             topics_path: Optional[str] = None,
+                             attention_weights: Optional[Dict] = None) -> Dict:
+    """
+    執行注意力機制分析
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        attention_types: 要測試的注意力機制類型
+        topics_path: 關鍵詞文件路徑
+        attention_weights: 組合注意力權重配置
+        
+    Returns:
+        Dict: 分析結果
+    """
+    try:
+        # 初始化注意力處理器
+        processor = AttentionProcessor(output_dir=output_dir)
+        
+        # 檢查輸入文件
+        if input_file is None or not os.path.exists(input_file):
+            raise FileNotFoundError(f"找不到輸入文件：{input_file}")
+        
+        # 設定預設的注意力機制類型
+        if attention_types is None:
+            attention_types = ['no', 'similarity', 'keyword', 'self', 'combined']
+        
+        logger.info(f"開始注意力機制分析...")
+        logger.info(f"測試的注意力機制: {', '.join(attention_types)}")
+        
+        # 執行注意力分析
+        results = processor.process_with_attention(
+            input_file=input_file,
+            attention_types=attention_types,
+            topics_path=topics_path,
+            attention_weights=attention_weights,
+            save_results=True
+        )
+        
+        # 輸出結果摘要
+        if 'comparison' in results and 'summary' in results['comparison']:
+            summary = results['comparison']['summary']
+            logger.info(f"分析完成！最佳注意力機制: {summary.get('best_mechanism', 'N/A')}")
+            logger.info(f"最佳綜合得分: {summary.get('best_score', 0):.4f}")
+        
+        logger.info(f"結果保存在: {output_dir}")
+        return results
+        
+    except Exception as e:
+        logger.error(f"注意力機制分析過程中發生錯誤: {str(e)}")
+        raise
+
+def compare_attention_mechanisms(input_file: Optional[str] = None,
+                               output_dir: Optional[str] = None,
+                               attention_types: Optional[List[str]] = None) -> Dict:
+    """
+    專門用於比較不同注意力機制效果
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        attention_types: 要比較的注意力機制類型
+        
+    Returns:
+        Dict: 比較結果
+    """
+    try:
+        # 初始化注意力處理器
+        processor = AttentionProcessor(output_dir=output_dir)
+        
+        # 執行比較
+        results = processor.compare_attention_mechanisms(
+            input_file=input_file,
+            attention_types=attention_types
+        )
+        
+        # 生成可讀的比較報告
+        if output_dir:
+            report_file = os.path.join(output_dir, "attention_comparison_report.txt")
+            processor.export_comparison_report(results, report_file)
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"注意力機制比較過程中發生錯誤: {str(e)}")
+        raise
+
 def main():
     """
     主程式入口點
@@ -89,6 +181,22 @@ def main():
             if sys.argv[1] == '--process':
                 # 執行BERT編碼處理
                 process_bert_encoding()
+            elif sys.argv[1] == '--attention':
+                # 執行注意力機制分析
+                if len(sys.argv) > 2:
+                    input_file = sys.argv[2]
+                else:
+                    input_file = None
+                process_attention_analysis(input_file=input_file)
+            elif sys.argv[1] == '--compare':
+                # 比較注意力機制
+                if len(sys.argv) > 2:
+                    input_file = sys.argv[2]
+                else:
+                    input_file = None
+                compare_attention_mechanisms(input_file=input_file)
+            elif sys.argv[1] == '--help':
+                print_help()
             elif sys.argv[1] == '--new-run':
                 # 清除上次執行的記錄，強制創建新的run目錄
                 pass  # 已移除clear_last_run，保留佔位
@@ -104,6 +212,40 @@ def main():
     except Exception as e:
         print(f"執行錯誤: {e}")
         input("按Enter鍵退出...")
+
+def print_help():
+    """輸出幫助信息"""
+    help_text = """
+BERT情感分析系統 - 使用說明
+
+基本用法:
+    python Part05_Main.py                    # 啟動GUI介面
+    python Part05_Main.py --help            # 顯示此幫助信息
+
+命令行選項:
+    --process                               # 執行BERT編碼處理
+    --attention [input_file]               # 執行注意力機制分析
+    --compare [input_file]                 # 比較不同注意力機制效果
+    --new-run                              # 創建新的執行目錄
+
+注意力機制分析:
+    系統支援以下注意力機制類型:
+    - no/none: 無注意力機制（平均）
+    - similarity: 基於相似度的注意力機制
+    - keyword: 基於關鍵詞的注意力機制  
+    - self: 自注意力機制
+    - combined: 組合型注意力機制
+
+範例:
+    python Part05_Main.py --attention data.csv
+    python Part05_Main.py --compare processed_data.csv
+
+注意：
+    - input_file 應該是經過預處理的CSV文件
+    - 系統會自動檢測文本欄位（processed_text, clean_text, text, review）
+    - 結果會保存在自動生成的輸出目錄中
+    """
+    print(help_text)
 
 if __name__ == "__main__":
     main() 
