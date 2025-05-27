@@ -168,6 +168,10 @@ class MainApplication:
         self.encoding_btn = ttk.Button(encoding_frame, text="開始編碼", command=self.start_encoding)
         self.encoding_btn.pack(side='left')
         
+        # 新增導入按鈕
+        self.import_encoding_btn = ttk.Button(encoding_frame, text="導入編碼", command=self.import_encoding)
+        self.import_encoding_btn.pack(side='left', padx=(10, 0))
+        
         self.encoding_status = ttk.Label(step4_frame, text="狀態: 待處理", foreground="orange")
         self.encoding_status.pack(anchor='w', pady=(10, 0))
         
@@ -640,6 +644,39 @@ class MainApplication:
         
         self.analysis_status.config(text=STATUS_TEXT['analysis_complete'], foreground=COLORS['success'])
         self.step_states['analysis_done'] = True
+
+    def import_encoding(self):
+        """導入已有的BERT編碼檔案"""
+        try:
+            file_path = filedialog.askopenfilename(
+                title="選擇BERT編碼檔案",
+                initialdir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "output"),
+                filetypes=[("NumPy檔案", "*.npy"), ("所有檔案", "*.*")]
+            )
+            
+            if file_path:
+                from modules.bert_encoder import BertEncoder
+                bert = BertEncoder()
+                
+                try:
+                    # 使用quick_load_embeddings載入檔案
+                    embeddings = bert.quick_load_embeddings(file_path)
+                    
+                    success_msg = f"成功導入編碼檔案：{os.path.basename(file_path)}"
+                    self.encoding_status.config(
+                        text=success_msg,
+                        foreground=COLORS['success']
+                    )
+                    
+                    # 更新狀態
+                    self.step_states['encoding_done'] = True
+                    self.update_button_states()
+                    
+                except Exception as e:
+                    messagebox.showerror("錯誤", f"載入編碼檔案時發生錯誤：{str(e)}")
+                
+        except Exception as e:
+            messagebox.showerror("錯誤", f"導入編碼時發生錯誤：{str(e)}")
 
 def main():
     root = tk.Tk()

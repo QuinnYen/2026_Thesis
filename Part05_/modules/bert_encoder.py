@@ -36,6 +36,47 @@ class BertEncoder:
             self.logger.error(f"載入BERT模型時發生錯誤: {str(e)}")
             raise
     
+    def load_embeddings(self, file_path: str) -> np.ndarray:
+        """
+        載入先前保存的BERT特徵向量
+        
+        Args:
+            file_path: .npy檔案的路徑
+            
+        Returns:
+            np.ndarray: 載入的特徵向量矩陣，shape為(n_samples, 768)
+        """
+        try:
+            # 檢查檔案是否存在
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"找不到特徵向量檔案：{file_path}")
+            
+            # 載入.npy檔案
+            embeddings = np.load(file_path)
+            self.logger.info(f"成功載入特徵向量，形狀為：{embeddings.shape}")
+            
+            # 檢查維度是否正確（BERT base模型輸出為768維）
+            if embeddings.shape[1] != 768:
+                raise ValueError(f"特徵向量維度不正確：預期為768，實際為{embeddings.shape[1]}")
+            
+            return embeddings
+            
+        except Exception as e:
+            self.logger.error(f"載入特徵向量時發生錯誤：{str(e)}")
+            raise
+    
+    def quick_load_embeddings(self, file_path: str) -> np.ndarray:
+        """
+        快速載入.npy特徵向量檔案，不進行額外檢查
+        
+        Args:
+            file_path: .npy檔案的完整路徑
+            
+        Returns:
+            np.ndarray: 載入的特徵向量矩陣
+        """
+        return np.load(file_path)
+    
     def encode(self, texts: Union[str, List[str], pd.Series], batch_size: int = 32) -> np.ndarray:
         """
         使用BERT模型編碼文本，提取[CLS]標記的768維特徵向量
