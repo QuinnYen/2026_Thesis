@@ -28,15 +28,39 @@ STATUS_TEXT = {
     'encoding_complete': '狀態: 編碼完成',
     'analysis_pending': '狀態: 待分析',
     'analysis_processing': '狀態: 分析中...',
-    'analysis_complete': '狀態: 分析完成'
+    'analysis_complete': '狀態: 分析完成',
+    # 預處理狀態
+    'cleaning': '狀態: 文本清理中...',
+    'tokenizing': '狀態: 分詞處理中...',
+    'normalizing': '狀態: 標準化處理中...',
+    'removing_tags': '狀態: 移除標籤中...',
+    'preprocessing_complete': '狀態: 預處理完成'
+}
+
+# 數據集設定
+DATASETS = {
+    'IMDB': {
+        'name': 'IMDB影評數據集',
+        'file_type': 'csv',
+        'description': 'IMDB電影評論數據集'
+    },
+    'Yelp': {
+        'name': 'Yelp評論數據集',
+        'file_type': 'csv',
+        'description': 'Yelp商家評論數據集'
+    },
+    'Amazon': {
+        'name': 'Amazon評論數據集',
+        'file_type': 'json',
+        'description': 'Amazon商品評論數據集'
+    }
 }
 
 # 支援的檔案類型
 SUPPORTED_FILE_TYPES = [
-    ("Text files", "*.txt"),
-    ("CSV files", "*.csv"),
-    ("JSON files", "*.json"),
-    ("All files", "*.*")
+    ("CSV檔案 (IMDB/Yelp)", "*.csv"),
+    ("JSON檔案 (Amazon)", "*.json"),
+    ("所有檔案", "*.*")
 ]
 
 # 字體設定
@@ -61,4 +85,28 @@ SIMULATION_DELAYS = {
     'bert_encoding': 3000,
     'attention_test': 2000,
     'analysis': 3000
+}
+
+# 預處理步驟設定
+PREPROCESSING_STEPS = {
+    'text_cleaning': {
+        'name': '文本清理',
+        'description': '移除特殊字符、多餘空格等',
+        'delay': 500  # 模擬處理時間（毫秒）
+    },
+    'tokenization': {
+        'name': '分詞處理',
+        'description': '將文本分割為單詞/字元',
+        'delay': 800
+    },
+    'normalization': {
+        'name': '標準化處理',
+        'description': '統一大小寫、標點符號等',
+        'delay': 600
+    },
+    'tag_removal': {
+        'name': '移除標籤',
+        'description': '移除HTML標籤等標記',
+        'delay': 400
+    }
 } 
