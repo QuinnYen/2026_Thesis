@@ -8,6 +8,7 @@ from modules.text_preprocessor import TextPreprocessor
 import threading
 import queue
 import torch
+from modules.run_manager import RunManager
 
 class MainApplication:
     def __init__(self, root):
@@ -18,6 +19,9 @@ class MainApplication:
         
         # 設定資料庫目錄路徑
         self.database_dir = self.get_database_dir()
+        
+        # 初始化RunManager
+        self.run_manager = RunManager(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         
         # 初始化數據集類型
         self.dataset_type = tk.StringVar()
@@ -41,9 +45,6 @@ class MainApplication:
         # 保存最後一次預處理的 run 目錄
         self.last_run_dir = None
         
-        # 將視窗置中於螢幕
-        self.center_window()
-        
         # 創建筆記本控件（分頁）
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=15, pady=15)
@@ -53,24 +54,24 @@ class MainApplication:
         self.create_attention_testing_tab()
         self.create_comparison_analysis_tab()
         
+        # 添加當前run目錄標籤
+        self.create_run_dir_label()
+        
         # 初始化按鈕狀態
         self.update_button_states()
+        
+        # 最後將視窗置中於螢幕（在所有UI元素創建完成後）
+        self.root.after(100, self.center_window)
     
     def center_window(self):
         """將視窗置中於螢幕"""
-        # 更新視窗以獲取實際尺寸
+        # 強制更新視窗以獲取實際尺寸
         self.root.update_idletasks()
         
-        # 獲取視窗尺寸
-        window_width = self.root.winfo_width()
-        window_height = self.root.winfo_height()
-        
-        # 如果視窗尺寸為1（還未完全初始化），使用配置中的預設值
-        if window_width <= 1 or window_height <= 1:
-            # 從WINDOW_SIZE解析寬度和高度
-            size_parts = WINDOW_SIZE.split('x')
-            window_width = int(size_parts[0])
-            window_height = int(size_parts[1])
+        # 從WINDOW_SIZE配置獲取視窗尺寸
+        size_parts = WINDOW_SIZE.split('x')
+        window_width = int(size_parts[0])
+        window_height = int(size_parts[1])
         
         # 獲取螢幕尺寸
         screen_width = self.root.winfo_screenwidth()
@@ -80,13 +81,21 @@ class MainApplication:
         x = (screen_width - window_width) // 2
         y = (screen_height - window_height) // 2
         
-        # 設定視窗位置
+        # 確保視窗不會超出螢幕邊界
+        x = max(0, x)
+        y = max(0, y)
+        
+        # 設定視窗大小和位置
         self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
         
+        # 確保視窗顯示在最前面
+        self.root.lift()
+        self.root.focus_force()
+    
     def create_data_processing_tab(self):
         """第一分頁：資料處理"""
         frame1 = ttk.Frame(self.notebook)
-        self.notebook.add(frame1, text="第一分頁 - 資料處理")
+        self.notebook.add(frame1, text=" 資料處理 ")
         
         # 主要容器
         main_frame = ttk.Frame(frame1)
@@ -181,7 +190,7 @@ class MainApplication:
     def create_attention_testing_tab(self):
         """第二分頁：注意力機制測試"""
         frame2 = ttk.Frame(self.notebook)
-        self.notebook.add(frame2, text="第二分頁 - 注意力機制測試")
+        self.notebook.add(frame2, text=" 注意力機制測試 ")
         
         main_frame = ttk.Frame(frame2)
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
@@ -324,7 +333,7 @@ class MainApplication:
     def create_comparison_analysis_tab(self):
         """第三分頁：比對分析"""
         frame3 = ttk.Frame(self.notebook)
-        self.notebook.add(frame3, text="第三分頁 - 比對分析")
+        self.notebook.add(frame3, text=" 比對分析 ")
         
         main_frame = ttk.Frame(frame3)
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
@@ -490,32 +499,30 @@ class MainApplication:
             messagebox.showerror("錯誤", f"選擇檔案時發生錯誤：{str(e)}")
 
     def start_processing(self):
-        """開始處理"""
-        if not self.file_path_var.get():
-            messagebox.showwarning("警告", "請先選擇檔案")
+        """開始文本處理"""
+        if not self.step_states['file_imported']:
+            messagebox.showerror("錯誤", "請先導入檔案")
             return
+            
+        # 更新run目錄
+        self.update_run_dir_label()
         
         # 禁用處理按鈕
-        self.process_btn['state'] = 'disabled'
-        self.process_status.config(text=STATUS_TEXT['processing'], 
-                                 foreground=COLORS['processing'])
+        self.process_btn.config(state='disabled')
+        self.process_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
         
         # 重置進度條
         self.progress_var.set(0)
         
-        # 在新執行緒中執行預處理
-        processing_thread = threading.Thread(target=self._run_preprocessing)
-        processing_thread.daemon = True
-        processing_thread.start()
-        
-        # 定期檢查處理進度
+        # 開始處理
+        threading.Thread(target=self._run_preprocessing, daemon=True).start()
         self.root.after(100, self._check_processing_progress)
     
     def _run_preprocessing(self):
         """在背景執行緒中執行預處理"""
         try:
-            # 初始化文本預處理器
-            preprocessor = TextPreprocessor()
+            # 初始化文本預處理器，傳入預處理目錄
+            preprocessor = TextPreprocessor(output_dir=self.run_manager.get_preprocessing_dir())
             
             # 讀取檔案
             file_path = self.file_path_var.get()
@@ -533,8 +540,18 @@ class MainApplication:
             self.process_queue.put(('progress', 20))
             self.process_queue.put(('status', 'text_cleaning'))
             
+            # 自動偵測文本欄位
+            text_column_candidates = ['processed_text', 'clean_text', 'text', 'review', 'content', 'comment', 'description']
+            text_column = None
+            for col in text_column_candidates:
+                if col in df.columns:
+                    text_column = col
+                    break
+            if text_column is None:
+                raise ValueError(f"無法自動識別文本欄位，請確認檔案內容。可用欄位有：{', '.join(df.columns)}")
+            
             # 執行預處理
-            processed_df = preprocessor.preprocess(df)
+            processed_df = preprocessor.preprocess(df, text_column)
             
             # 更新進度
             self.process_queue.put(('progress', 60))
@@ -544,8 +561,8 @@ class MainApplication:
             self.process_queue.put(('progress', 100))
             self.process_queue.put(('status', 'success'))
             
-            # 獲取最新的 run 目錄路徑
-            run_dir = preprocessor.run_dir
+            # 獲取預處理目錄路徑
+            run_dir = self.run_manager.get_preprocessing_dir()
             self.process_queue.put(('result', run_dir))
             
             # 保存最後一次預處理的 run 目錄
@@ -590,41 +607,49 @@ class MainApplication:
             self.root.after(100, self._check_processing_progress)
 
     def start_encoding(self):
-        """開始編碼"""
-        self.encoding_btn['state'] = 'disabled'
-        self.encoding_status.config(text=STATUS_TEXT['encoding_processing'], foreground=COLORS['processing'])
+        """開始BERT編碼"""
+        if not self.step_states['processing_done']:
+            messagebox.showerror("錯誤", "請先完成文本處理")
+            return
+            
+        # 更新run目錄
+        self.update_run_dir_label()
         
-        # 在新執行緒中執行BERT編碼
-        encoding_thread = threading.Thread(target=self._run_encoding)
-        encoding_thread.daemon = True
-        encoding_thread.start()
+        # 禁用編碼按鈕
+        self.encoding_btn.config(state='disabled')
+        self.encoding_status.config(text="狀態: 處理中", foreground="blue")
         
-        # 定期檢查編碼進度
+        # 開始編碼
+        threading.Thread(target=self._run_encoding, daemon=True).start()
         self.root.after(100, self._check_encoding_progress)
     
     def _run_encoding(self):
         """在背景執行緒中執行BERT編碼"""
         try:
-            from Part05_Main import process_bert_encoding
+            from modules.bert_encoder import BertEncoder
             
             # 檢查是否有最後一次預處理的 run 目錄
             if self.last_run_dir is None:
                 raise ValueError("請先執行文本預處理步驟")
             
             # 使用最後一次預處理的檔案
-            input_file = os.path.join(self.last_run_dir, "01_processed_dataframe.csv")
+            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
             
             # 檢查檔案是否存在
             if not os.path.exists(input_file):
                 raise FileNotFoundError(f"找不到預處理檔案：{input_file}")
             
-            # 執行BERT編碼，傳入相同的輸出目錄
-            output_dir = process_bert_encoding(
-                input_file=input_file,
-                output_dir=os.path.dirname(self.last_run_dir)  # 使用相同的基礎目錄
-            )
+            # 讀取預處理後的數據
+            df = pd.read_csv(input_file)
+            
+            # 初始化BERT編碼器，傳入BERT編碼目錄
+            encoder = BertEncoder(output_dir=self.run_manager.get_bert_encoding_dir())
+            
+            # 執行BERT編碼
+            embeddings = encoder.encode(df['processed_text'])
             
             # 將結果放入佇列
+            output_dir = self.run_manager.get_bert_encoding_dir()
             self.encoding_queue.put(('success', output_dir))
             
         except Exception as e:
@@ -761,9 +786,34 @@ class MainApplication:
         except Exception as e:
             messagebox.showerror("錯誤", f"導入編碼時發生錯誤：{str(e)}")
 
+    def create_run_dir_label(self):
+        """創建顯示當前run目錄的標籤"""
+        run_dir_frame = ttk.Frame(self.root)
+        run_dir_frame.pack(side='top', fill='x', padx=15, pady=5)
+        
+        self.run_dir_label = ttk.Label(
+            run_dir_frame,
+            text=f"當前執行目錄：{self.run_manager.get_run_dir()}",
+            font=FONTS['small']
+        )
+        self.run_dir_label.pack(side='right')
+
+    def update_run_dir_label(self):
+        """更新run目錄標籤"""
+        self.run_dir_label.config(text=f"當前執行目錄：{self.run_manager.get_run_dir()}")
+
 def main():
     root = tk.Tk()
+    
+    # 確保視窗在前台顯示
+    root.lift()
+    root.attributes('-topmost', True)
+    root.after_idle(root.attributes, '-topmost', False)
+    
+    # 創建應用程式
     app = MainApplication(root)
+    
+    # 啟動主迴圈
     root.mainloop()
 
 if __name__ == "__main__":

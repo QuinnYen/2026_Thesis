@@ -23,24 +23,20 @@ logging.basicConfig(
     ]
 )
 
+logger = logging.getLogger(__name__)
+
 class TextPreprocessor:
     """文本預處理類，提供完整的文本清理和預處理功能"""
     
-    def __init__(self, language: str = 'english', output_dir: str = "D:\\Project\\2026_Thesis\\Part05_"):
+    def __init__(self, output_dir: Optional[str] = None):
         """
         初始化文本預處理器
         
         Args:
-            language: 文本語言，預設為英文
-            output_dir: 輸出目錄的基礎路徑
+            output_dir: 輸出目錄路徑，如果為None則使用預設路徑
         """
-        self.language = language
+        self.output_dir = output_dir
         self.logger = logging.getLogger(__name__)
-        
-        # 使用RunManager管理輸出目錄
-        self.run_manager = RunManager(output_dir)
-        self.run_dir = self.run_manager.get_run_dir()
-        self.logger.info(f"本次執行的輸出目錄：{self.run_dir}")
         
         # 初始化NLTK組件
         try:
@@ -50,48 +46,49 @@ class TextPreprocessor:
                 try:
                     nltk.data.find(f'tokenizers/{resource}')
                 except LookupError:
-                    print(f"正在下載 NLTK 資源: {resource}")
-                    nltk.download(resource, quiet=True)
+                    try:
+                        nltk.data.find(f'corpora/{resource}')
+                    except LookupError:
+                        print(f"正在下載 NLTK 資源: {resource}")
+                        nltk.download(resource, quiet=True)
             
-            self.stop_words = set(stopwords.words(language))
+            self.stop_words = set(stopwords.words('english'))
             self.lemmatizer = WordNetLemmatizer()
             print("NLTK 資源初始化完成")
             
         except Exception as e:
             print(f"NLTK 初始化錯誤: {str(e)}")
             print("請確保網路連接正常，並重新執行程式")
-            raise
+            # 如果NLTK初始化失敗，使用空集合作為停用詞
+            self.stop_words = set()
+            self.lemmatizer = None
     
-    def preprocess(self, data: Union[pd.DataFrame, str], text_column: Optional[str] = None) -> Union[pd.DataFrame, str]:
+    def preprocess(self, df: pd.DataFrame, text_column: str) -> pd.DataFrame:
         """
-        預處理文本數據
+        對文本進行預處理
         
         Args:
-            data: 輸入數據，可以是DataFrame或字串
-            text_column: 如果輸入是DataFrame，指定要處理的文本列名
+            df: 輸入的DataFrame
+            text_column: 要處理的文本欄位名稱
             
         Returns:
-            處理後的數據，格式與輸入相同
+            pd.DataFrame: 處理後的DataFrame
         """
-        processed_data = None
+        # 複製DataFrame以避免修改原始數據
+        df = df.copy()
         
-        if isinstance(data, str):
-            processed_data = self._process_single_text(data)
-            # 保存處理後的單一文本
-            self.save_output(processed_data, "processed_text.txt")
-        elif isinstance(data, pd.DataFrame):
-            processed_data = self._process_dataframe(data, text_column)
-            # 保存處理後的DataFrame
-            self.save_output(processed_data, "01_processed_dataframe.csv")
-        else:
-            raise ValueError("輸入數據必須是DataFrame或字串")
-            
-        # 顯示處理完成訊息
-        self.logger.info(f"處理完成，結果已存至：{os.path.basename(self.run_dir)}")
-            
-        return processed_data
+        # 添加處理後的文本欄位
+        df['processed_text'] = df[text_column].apply(self._process_text)
+        
+        # 保存處理後的數據
+        if self.output_dir:
+            output_file = os.path.join(self.output_dir, "01_preprocessed_data.csv")
+            df.to_csv(output_file, index=False, encoding='utf-8')
+            logger.info(f"已保存預處理後的數據到：{output_file}")
+        
+        return df
     
-    def _process_single_text(self, text: str) -> str:
+    def _process_text(self, text: str) -> str:
         """
         處理單個文本
         
@@ -115,35 +112,6 @@ class TextPreprocessor:
         
         # 合併回文本
         return ' '.join(tokens)
-    
-    def _process_dataframe(self, df: pd.DataFrame, text_column: Optional[str] = None) -> pd.DataFrame:
-        """
-        處理DataFrame中的文本
-        
-        Args:
-            df: 輸入DataFrame
-            text_column: 要處理的文本列名
-            
-        Returns:
-            處理後的DataFrame
-        """
-        # 複製DataFrame以避免修改原始數據
-        df = df.copy()
-        
-        # 確定文本列
-        if text_column is None:
-            text_column = self._identify_text_column(df)
-        
-        if text_column not in df.columns:
-            raise ValueError(f"找不到文本列 '{text_column}'")
-        
-        # 處理缺失值
-        df[text_column] = df[text_column].fillna('')
-        
-        # 應用文本處理
-        df['processed_text'] = df[text_column].apply(self._process_single_text)
-        
-        return df
     
     def _basic_clean(self, text: str) -> str:
         """
@@ -213,8 +181,22 @@ class TextPreprocessor:
         Returns:
             處理後的token列表
         """
+        if not tokens:
+            return []
+        
+        # 如果NLTK初始化失敗，只做基本過濾
+        if self.lemmatizer is None:
+            # 只過濾掉太短的詞和數字
+            return [token for token in tokens if len(token) > 2 and token.isalpha()]
+        
         # 移除停用詞並進行詞形還原
-        return [self.lemmatizer.lemmatize(token) for token in tokens if token not in self.stop_words]
+        processed_tokens = []
+        for token in tokens:
+            if token and len(token) > 2 and token.isalpha() and token not in self.stop_words:
+                lemmatized = self.lemmatizer.lemmatize(token)
+                processed_tokens.append(lemmatized)
+        
+        return processed_tokens
     
     def _identify_text_column(self, df: pd.DataFrame) -> str:
         """
@@ -252,7 +234,7 @@ class TextPreprocessor:
         Returns:
             str: 保存的檔案完整路徑
         """
-        output_path = os.path.join(self.run_dir, filename)
+        output_path = os.path.join(self.output_dir, filename)
         
         if isinstance(data, pd.DataFrame):
             data.to_csv(output_path, index=False, encoding='utf-8')
@@ -260,5 +242,5 @@ class TextPreprocessor:
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write(data)
         
-        self.logger.info(f"已將輸出保存至：{output_path}")
+        logger.info(f"已將輸出保存至：{output_path}")
         return output_path 
