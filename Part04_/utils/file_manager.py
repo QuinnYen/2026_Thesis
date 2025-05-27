@@ -65,9 +65,9 @@ class FileManager:
         # 尋找 Part04_ 目錄的絕對路徑
         part04_dir = self._find_part04_directory()
         if part04_dir:
-            base_dir = part04_dir
+            base_dir = os.path.abspath(part04_dir)
         else:
-            base_dir = "./Part04_"
+            base_dir = os.path.abspath("./Part04_")
 
         # 生成帶有時間戳的輸出目錄名稱
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -76,11 +76,20 @@ class FileManager:
         output_root = os.path.join(base_dir, "1_output", f"run_{timestamp}")
             
         # 設置各個目錄路徑 - 只定義路徑，不創建目錄
-        self.data_dir = paths_config.get("data_dir", os.path.join(base_dir, "..", "ReviewsDataBase"))
-        self.output_dir = paths_config.get("output_dir", output_root)
+        self.data_dir = os.path.abspath(paths_config.get("data_dir", os.path.join(base_dir, "..", "ReviewsDataBase")))
+        self.output_dir = os.path.abspath(paths_config.get("output_dir", output_root))
         
-        # 日誌目錄路徑（需要立即創建）
-        self.log_dir = paths_config.get("log_dir", os.path.join(output_root, "logs"))
+        # 日誌目錄路徑（固定在1_output/logs，不隨run目錄變動）
+        # 如果配置中有log_dir，確保它是絕對路徑；否則使用默認的絕對路徑
+        config_log_dir = paths_config.get("log_dir")
+        if config_log_dir:
+            # 如果配置中的路徑是相對路徑，則相對於base_dir解析
+            if not os.path.isabs(config_log_dir):
+                self.log_dir = os.path.abspath(os.path.join(base_dir, "..", config_log_dir.lstrip("./")))
+            else:
+                self.log_dir = os.path.abspath(config_log_dir)
+        else:
+            self.log_dir = os.path.abspath(os.path.join(base_dir, "1_output", "logs"))
         
         # 其他目錄路徑定義（不創建）
         self.model_dir = paths_config.get("model_dir", os.path.join(output_root, "models"))

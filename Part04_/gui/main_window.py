@@ -530,7 +530,7 @@ class MainWindow(QMainWindow):
 
     def show_logs(self):
         """顯示日誌文件"""
-        log_dir = self.file_manager.logs_dir
+        log_dir = self.file_manager.log_dir
         
         # 列出日誌目錄中的所有日誌文件
         log_files = [f for f in os.listdir(log_dir) if f.endswith('.log')]
