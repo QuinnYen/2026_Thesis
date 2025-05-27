@@ -7,6 +7,7 @@ from gui.config import WINDOW_TITLE, WINDOW_SIZE, WINDOW_MIN_SIZE, COLORS, STATU
 from modules.text_preprocessor import TextPreprocessor
 import threading
 import queue
+import torch
 
 class MainApplication:
     def __init__(self, root):
@@ -186,69 +187,140 @@ class MainApplication:
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
         
         # 標題
-        title_label = ttk.Label(main_frame, text="注意力機制測試", font=('Arial', 16, 'bold'))
+        title_label = ttk.Label(main_frame, text="注意力機制測試", font=FONTS['title'])
         title_label.pack(pady=(0, 20))
         
-        # 基準（單一）
-        baseline_frame = ttk.LabelFrame(main_frame, text="基準（單一注意力機制）", padding=15)
-        baseline_frame.pack(fill='x', pady=(0, 15))
+        # 單一注意力實驗組
+        single_frame = ttk.LabelFrame(main_frame, text="單一注意力實驗組", padding=15)
+        single_frame.pack(fill='x', pady=(0, 15))
         
-        baseline_content = ttk.Frame(baseline_frame)
-        baseline_content.pack(fill='x')
+        single_content = ttk.Frame(single_frame)
+        single_content.pack(fill='x')
         
-        ttk.Label(baseline_content, text="↳ 相似度").pack(anchor='w')
-        ttk.Label(baseline_content, text="↳ 關鍵詞").pack(anchor='w')
-        ttk.Label(baseline_content, text="↳ 自").pack(anchor='w')
+        # 單一注意力選項
+        ttk.Label(single_content, text="↳ 相似度注意力").pack(anchor='w')
+        ttk.Label(single_content, text="↳ 自注意力").pack(anchor='w')
+        ttk.Label(single_content, text="↳ 關鍵詞注意力").pack(anchor='w')
         
-        baseline_btn_frame = ttk.Frame(baseline_frame)
-        baseline_btn_frame.pack(fill='x', pady=(10, 0))
+        single_btn_frame = ttk.Frame(single_frame)
+        single_btn_frame.pack(fill='x', pady=(10, 0))
         
-        self.baseline_btn = ttk.Button(baseline_btn_frame, text="執行", command=self.run_baseline)
-        self.baseline_btn.pack(side='left')
+        self.single_btn = ttk.Button(single_btn_frame, text="執行單一注意力測試", command=self.run_single_attention)
+        self.single_btn.pack(side='left')
         
-        self.baseline_status = ttk.Label(baseline_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
-        self.baseline_status.pack(side='left', padx=(10, 0))
+        self.single_status = ttk.Label(single_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
+        self.single_status.pack(side='left', padx=(10, 0))
         
-        # 組合（雙頭）
-        dual_frame = ttk.LabelFrame(main_frame, text="組合（雙頭注意力機制）", padding=15)
+        # 雙重組合實驗組
+        dual_frame = ttk.LabelFrame(main_frame, text="雙重組合實驗組", padding=15)
         dual_frame.pack(fill='x', pady=(0, 15))
         
         dual_content = ttk.Frame(dual_frame)
         dual_content.pack(fill='x')
         
+        # 雙重組合選項
+        ttk.Label(dual_content, text="↳ 相似度 + 自注意力").pack(anchor='w')
         ttk.Label(dual_content, text="↳ 相似度 + 關鍵詞").pack(anchor='w')
-        ttk.Label(dual_content, text="↳ 相似度 + 自").pack(anchor='w')
-        ttk.Label(dual_content, text="↳ 關鍵詞 + 自").pack(anchor='w')
+        ttk.Label(dual_content, text="↳ 自注意力 + 關鍵詞").pack(anchor='w')
         
         dual_btn_frame = ttk.Frame(dual_frame)
         dual_btn_frame.pack(fill='x', pady=(10, 0))
         
-        self.dual_btn = ttk.Button(dual_btn_frame, text="執行", command=self.run_dual_head)
+        self.dual_btn = ttk.Button(dual_btn_frame, text="執行雙重組合測試", command=self.run_dual_attention)
         self.dual_btn.pack(side='left')
         
         self.dual_status = ttk.Label(dual_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
         self.dual_status.pack(side='left', padx=(10, 0))
         
-        # 組合（三頭）
-        triple_frame = ttk.LabelFrame(main_frame, text="組合（三頭注意力機制）", padding=15)
+        # 三重組合實驗組
+        triple_frame = ttk.LabelFrame(main_frame, text="三重組合實驗組", padding=15)
         triple_frame.pack(fill='x', pady=(0, 15))
         
         triple_content = ttk.Frame(triple_frame)
         triple_content.pack(fill='x')
         
-        ttk.Label(triple_content, text="↳ 相似度 + 關鍵詞 + 自").pack(anchor='w')
+        # 三重組合選項
+        ttk.Label(triple_content, text="↳ 相似度 + 自注意力 + 關鍵詞").pack(anchor='w')
         
         triple_btn_frame = ttk.Frame(triple_frame)
         triple_btn_frame.pack(fill='x', pady=(10, 0))
         
-        self.triple_btn = ttk.Button(triple_btn_frame, text="執行", command=self.run_triple_head)
+        self.triple_btn = ttk.Button(triple_btn_frame, text="執行三重組合測試", command=self.run_triple_attention)
         self.triple_btn.pack(side='left')
         
         self.triple_status = ttk.Label(triple_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
         self.triple_status.pack(side='left', padx=(10, 0))
-        
 
+    def run_single_attention(self):
+        """執行單一注意力測試"""
+        self.single_btn['state'] = 'disabled'
+        self.single_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
         
+        try:
+            from modules.attention_analyzer import AttentionAnalyzer
+            
+            # 檢查必要檔案
+            if not self.last_run_dir:
+                messagebox.showerror("錯誤", "請先完成BERT編碼步驟！")
+                return
+                
+            # 設定檔案路徑
+            bert_attention_path = os.path.join(self.last_run_dir, "bert_attention.npy")
+            topic_labels_path = os.path.join(current_dir, "utils", "topic_labels.json")
+            
+            if not os.path.exists(bert_attention_path):
+                messagebox.showerror("錯誤", "找不到BERT注意力權重檔案！")
+                return
+            
+            # 執行單一注意力分析
+            # TODO: 實作單一注意力分析邏輯
+            
+            self.single_status.config(text=STATUS_TEXT['success'], foreground=COLORS['success'])
+            self.step_states['single_done'] = True
+            self.update_button_states()
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"執行單一注意力測試時發生錯誤：{str(e)}")
+            self.single_status.config(text=STATUS_TEXT['error'], foreground=COLORS['error'])
+        finally:
+            self.single_btn['state'] = 'normal'
+    
+    def run_dual_attention(self):
+        """執行雙重組合測試"""
+        self.dual_btn['state'] = 'disabled'
+        self.dual_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
+        
+        try:
+            # TODO: 實作雙重組合分析邏輯
+            
+            self.dual_status.config(text=STATUS_TEXT['success'], foreground=COLORS['success'])
+            self.step_states['dual_done'] = True
+            self.update_button_states()
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"執行雙重組合測試時發生錯誤：{str(e)}")
+            self.dual_status.config(text=STATUS_TEXT['error'], foreground=COLORS['error'])
+        finally:
+            self.dual_btn['state'] = 'normal'
+    
+    def run_triple_attention(self):
+        """執行三重組合測試"""
+        self.triple_btn['state'] = 'disabled'
+        self.triple_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
+        
+        try:
+            # TODO: 實作三重組合分析邏輯
+            
+            self.triple_status.config(text=STATUS_TEXT['success'], foreground=COLORS['success'])
+            self.step_states['triple_done'] = True
+            self.update_button_states()
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"執行三重組合測試時發生錯誤：{str(e)}")
+            self.triple_status.config(text=STATUS_TEXT['error'], foreground=COLORS['error'])
+        finally:
+            self.triple_btn['state'] = 'normal'
+
     def create_comparison_analysis_tab(self):
         """第三分頁：比對分析"""
         frame3 = ttk.Frame(self.notebook)
@@ -269,7 +341,7 @@ class MainApplication:
         btn_frame.pack(fill='x')
         
         self.analysis_btn = ttk.Button(btn_frame, text="開始比對分析", command=self.start_analysis)
-        self.analysis_btn.pack(side='left')
+        self.analysis_btn.pack(side='left', padx=5)
         
         self.analysis_status = ttk.Label(btn_frame, text="狀態: 待分析", foreground="orange")
         self.analysis_status.pack(side='left', padx=(20, 0))
@@ -303,13 +375,21 @@ class MainApplication:
         self.process_btn['state'] = 'normal' if self.step_states['file_imported'] else 'disabled'
         self.encoding_btn['state'] = 'normal' if self.step_states['processing_done'] else 'disabled'
         
-        # 第二分頁按鈕
-        self.baseline_btn['state'] = 'normal' if self.step_states['encoding_done'] else 'disabled'
-        self.dual_btn['state'] = 'normal' if self.step_states['baseline_done'] else 'disabled'
-        self.triple_btn['state'] = 'normal' if self.step_states['dual_head_done'] else 'disabled'
+        # 第二分頁按鈕 - 所有注意力測試按鈕都需要等待 BERT 編碼完成
+        attention_buttons_enabled = 'normal' if self.step_states['encoding_done'] else 'disabled'
+        self.single_btn['state'] = attention_buttons_enabled
+        self.dual_btn['state'] = attention_buttons_enabled
+        self.triple_btn['state'] = attention_buttons_enabled
+        
+        # 更新狀態標籤
+        if not self.step_states['encoding_done']:
+            status_text = "請先完成BERT編碼步驟"
+            self.single_status.config(text=status_text, foreground=COLORS['pending'])
+            self.dual_status.config(text=status_text, foreground=COLORS['pending'])
+            self.triple_status.config(text=status_text, foreground=COLORS['pending'])
         
         # 第三分頁按鈕
-        self.analysis_btn['state'] = 'normal' if self.step_states['triple_head_done'] else 'disabled'
+        self.analysis_btn['state'] = 'normal' if self.step_states['encoding_done'] else 'disabled'
 
     def get_database_dir(self):
         """取得資料庫目錄的路徑"""
@@ -538,8 +618,11 @@ class MainApplication:
             if not os.path.exists(input_file):
                 raise FileNotFoundError(f"找不到預處理檔案：{input_file}")
             
-            # 執行BERT編碼
-            output_dir = process_bert_encoding(input_file=input_file)
+            # 執行BERT編碼，傳入相同的輸出目錄
+            output_dir = process_bert_encoding(
+                input_file=input_file,
+                output_dir=os.path.dirname(self.last_run_dir)  # 使用相同的基礎目錄
+            )
             
             # 將結果放入佇列
             self.encoding_queue.put(('success', output_dir))

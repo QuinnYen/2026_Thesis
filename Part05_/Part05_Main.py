@@ -41,11 +41,8 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
     from modules.bert_encoder import BertEncoder
     
     try:
-        # 設置路徑
-        if output_dir is None:
-            output_dir = run_manager.get_run_dir()
-            
-        os.makedirs(output_dir, exist_ok=True)
+        # 初始化BERT編碼器，傳入輸出目錄
+        encoder = BertEncoder(output_dir=output_dir)
         
         # 檢查輸入文件
         if input_file is None or not os.path.exists(input_file):
@@ -67,9 +64,6 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
             available_columns = ', '.join(df.columns)
             raise ValueError(f"在輸入文件中找不到文本欄位（優先順序：processed_text > clean_text > text > review）。可用的欄位有：{available_columns}")
         
-        # 初始化BERT編碼器
-        encoder = BertEncoder(output_dir=output_dir)
-        
         # 對文本進行編碼
         logger.info(f"開始BERT編碼...使用欄位：{text_column}")
         embeddings = encoder.encode(df[text_column])
@@ -78,8 +72,8 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
         logger.info("保存特徵向量...")
         encoder.save_embeddings(embeddings, "02_bert_embeddings.npy")
         
-        logger.info(f"處理完成！結果保存在: {output_dir}")
-        return output_dir
+        logger.info(f"處理完成！結果保存在: {encoder.output_dir}")
+        return encoder.output_dir
         
     except Exception as e:
         logger.error(f"BERT編碼過程中發生錯誤: {str(e)}")
@@ -97,7 +91,7 @@ def main():
                 process_bert_encoding()
             elif sys.argv[1] == '--new-run':
                 # 清除上次執行的記錄，強制創建新的run目錄
-                run_manager.clear_last_run()
+                pass  # 已移除clear_last_run，保留佔位
         else:
             # 啟動GUI
             from gui.main_window import main as gui_main

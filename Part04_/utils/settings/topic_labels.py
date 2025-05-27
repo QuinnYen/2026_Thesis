@@ -4,46 +4,6 @@
 
 # IMDB 電影評論資料集的主題標籤
 IMDB_TOPIC_LABELS = {
-    # 5個主題
-    5: {
-        'zh': {  # 中文標籤
-            0: "劇情情節",
-            1: "演技表現",
-            2: "視覺效果",
-            3: "情感體驗",
-            4: "整體評價"
-        },
-        'en': {  # 英文標籤
-            0: "Plot & Story",
-            1: "Acting & Performance",
-            2: "Visual Effects",
-            3: "Emotional Experience",
-            4: "Overall Rating"
-        }
-    },
-    # 8個主題
-    8: {
-        'zh': {
-            0: "劇情情節",
-            1: "演員演技",
-            2: "導演手法",
-            3: "視覺效果",
-            4: "音效配樂",
-            5: "情感體驗",
-            6: "批評觀點",
-            7: "整體評價"
-        },
-        'en': {
-            0: "Plot & Story",
-            1: "Acting & Performance",
-            2: "Direction",
-            3: "Visual Effects",
-            4: "Sound & Music",
-            5: "Emotional Experience",
-            6: "Critical Analysis",
-            7: "Overall Rating"
-        }
-    },
     # 10個主題
     10: {
         'zh': {
@@ -70,88 +30,11 @@ IMDB_TOPIC_LABELS = {
             8: "Critical Analysis",
             9: "Overall Rating"
         }
-    },
-    # 15個主題
-    15: {
-        'zh': {
-            0: "故事架構",
-            1: "情節轉折",
-            2: "角色塑造",
-            3: "主角表現",
-            4: "配角演技",
-            5: "導演風格",
-            6: "攝影技術",
-            7: "視覺特效",
-            8: "場景設計",
-            9: "音效設計",
-            10: "配樂評價",
-            11: "情感體驗",
-            12: "文化影響",
-            13: "社會議題",
-            14: "整體評價"
-        },
-        'en': {
-            0: "Story Structure",
-            1: "Plot Twists",
-            2: "Character Development",
-            3: "Lead Performance",
-            4: "Supporting Cast",
-            5: "Directing Style",
-            6: "Cinematography",
-            7: "Visual Effects",
-            8: "Set Design",
-            9: "Sound Design",
-            10: "Musical Score",
-            11: "Emotional Impact",
-            12: "Cultural Relevance",
-            13: "Social Commentary",
-            14: "Overall Rating"
-        }
     }
 }
 
 # Amazon 產品評論資料集的主題標籤
 AMAZON_TOPIC_LABELS = {
-    # 5個主題
-    5: {
-        'zh': {
-            0: "產品品質",
-            1: "使用體驗",
-            2: "性價比",
-            3: "客戶服務",
-            4: "整體評價"
-        },
-        'en': {
-            0: "Product Quality",
-            1: "User Experience",
-            2: "Value for Money",
-            3: "Customer Service",
-            4: "Overall Rating"
-        }
-    },
-    # 8個主題
-    8: {
-        'zh': {
-            0: "產品品質",
-            1: "功能特性",
-            2: "使用體驗",
-            3: "設計外觀",
-            4: "性價比",
-            5: "客戶服務",
-            6: "配送物流",
-            7: "整體評價"
-        },
-        'en': {
-            0: "Product Quality",
-            1: "Features",
-            2: "User Experience",
-            3: "Design",
-            4: "Value for Money",
-            5: "Customer Service",
-            6: "Shipping & Logistics",
-            7: "Overall Rating"
-        }
-    },
     # 10個主題
     10: {
         'zh': {
@@ -178,88 +61,11 @@ AMAZON_TOPIC_LABELS = {
             8: "Shipping & Logistics",
             9: "Overall Rating"
         }
-    },
-    # 15個主題
-    15: {
-        'zh': {
-            0: "材料品質",
-            1: "製作工藝",
-            2: "主要功能",
-            3: "進階功能",
-            4: "使用便利性",
-            5: "初次體驗",
-            6: "長期體驗",
-            7: "設計外觀",
-            8: "尺寸重量",
-            9: "耐用程度",
-            10: "性價比",
-            11: "售前服務",
-            12: "售後服務",
-            13: "配送物流",
-            14: "整體評價"
-        },
-        'en': {
-            0: "Material Quality",
-            1: "Craftsmanship",
-            2: "Core Features",
-            3: "Advanced Features",
-            4: "Ease of Use",
-            5: "Initial Experience",
-            6: "Long-term Experience",
-            7: "Design & Aesthetics",
-            8: "Size & Weight",
-            9: "Durability",
-            10: "Value for Money",
-            11: "Pre-sales Service",
-            12: "After-sales Service",
-            13: "Shipping & Logistics",
-            14: "Overall Rating"
-        }
     }
 }
 
 # Yelp 餐廳評論資料集的主題標籤
 YELP_TOPIC_LABELS = {
-    # 5個主題
-    5: {
-        'zh': {
-            0: "食物品質",
-            1: "服務態度",
-            2: "用餐環境",
-            3: "性價比",
-            4: "整體評價"
-        },
-        'en': {
-            0: "Food Quality",
-            1: "Service",
-            2: "Ambiance",
-            3: "Value for Money",
-            4: "Overall Rating"
-        }
-    },
-    # 8個主題
-    8: {
-        'zh': {
-            0: "食物品質",
-            1: "菜單選擇",
-            2: "服務態度",
-            3: "服務速度",
-            4: "用餐環境",
-            5: "位置交通",
-            6: "性價比",
-            7: "整體評價"
-        },
-        'en': {
-            0: "Food Quality",
-            1: "Menu Selection",
-            2: "Service Quality",
-            3: "Service Speed",
-            4: "Ambiance",
-            5: "Location",
-            6: "Value for Money",
-            7: "Overall Rating"
-        }
-    },
     # 10個主題
     10: {
         'zh': {
@@ -286,81 +92,9 @@ YELP_TOPIC_LABELS = {
             8: "Value for Money",
             9: "Overall Rating"
         }
-    },
-    # 15個主題
-    15: {
-        'zh': {
-            0: "食材新鮮度",
-            1: "食物口味",
-            2: "食物呈現",
-            3: "菜單多樣性",
-            4: "特色菜品",
-            5: "服務態度",
-            6: "服務專業度",
-            7: "服務速度",
-            8: "用餐環境",
-            9: "裝潢設計",
-            10: "清潔衛生",
-            11: "噪音水平",
-            12: "位置便利性",
-            13: "性價比",
-            14: "整體評價"
-        },
-        'en': {
-            0: "Ingredient Freshness",
-            1: "Taste",
-            2: "Food Presentation",
-            3: "Menu Variety",
-            4: "Signature Dishes",
-            5: "Service Attitude",
-            6: "Service Professionalism",
-            7: "Service Speed",
-            8: "Ambiance",
-            9: "Decor",
-            10: "Cleanliness",
-            11: "Noise Level",
-            12: "Location Convenience",
-            13: "Value for Money",
-            14: "Overall Rating"
-        }
     }
 }
 
-# 預設主題標籤（通用）
-DEFAULT_TOPIC_LABELS = {
-    # 5個主題
-    5: {
-        'zh': {
-            0: "主題一",
-            1: "主題二",
-            2: "主題三",
-            3: "主題四",
-            4: "主題五"
-        },
-        'en': {
-            0: "Topic One",
-            1: "Topic Two",
-            2: "Topic Three",
-            3: "Topic Four",
-            4: "Topic Five"
-        }
-    },
-    # 8個主題
-    8: {
-        'zh': {i: f"主題 {i+1}" for i in range(8)},
-        'en': {i: f"Topic {i+1}" for i in range(8)}
-    },
-    # 10個主題
-    10: {
-        'zh': {i: f"主題 {i+1}" for i in range(10)},
-        'en': {i: f"Topic {i+1}" for i in range(10)}
-    },
-    # 15個主題
-    15: {
-        'zh': {i: f"主題 {i+1}" for i in range(15)},
-        'en': {i: f"Topic {i+1}" for i in range(15)}
-    }
-}
 
 def get_topic_labels(dataset_name='default', language='zh', num_topics=10):
     """獲取特定資料集的主題標籤

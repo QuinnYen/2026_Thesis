@@ -5,7 +5,6 @@
 """
 
 import os
-import json
 import logging
 from datetime import datetime
 from typing import Optional
@@ -21,57 +20,37 @@ class RunManager:
             base_dir: 基礎目錄路徑
         """
         self.base_dir = base_dir
-        self.run_info_file = os.path.join(base_dir, "output", "last_run_info.json")
-        
+        self._current_run_dir = None
+    
     def get_run_dir(self) -> str:
         """
         獲取當前執行目錄，如果不存在則創建新的
+        
+        Returns:
+            str: 當前執行目錄的路徑
         """
-        current_run_dir = self._load_last_run_dir()
-        if current_run_dir is None:
-            current_run_dir = self._create_new_run_dir()
-            self._save_run_dir(current_run_dir)
-        return current_run_dir
-    
-    def _load_last_run_dir(self) -> Optional[str]:
-        """
-        讀取上次執行的目錄
-        """
-        if os.path.exists(self.run_info_file):
-            try:
-                with open(self.run_info_file, 'r') as f:
-                    info = json.load(f)
-                    return info.get('last_run_dir')
-            except Exception as e:
-                logger.warning(f"讀取last_run_info.json失敗: {e}")
-        return None
-    
-    def _save_run_dir(self, run_dir: str) -> None:
-        """
-        保存執行目錄
-        """
-        os.makedirs(os.path.dirname(self.run_info_file), exist_ok=True)
+        # 如果已經有當前執行目錄，直接返回
+        if self._current_run_dir is not None:
+            return self._current_run_dir
+        
+        # 如果 base_dir 已經是 output，就不要再加一層
+        if os.path.basename(self.base_dir) == "output":
+            output_base = self.base_dir
+        else:
+            output_base = os.path.join(self.base_dir, "output")
+
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        run_dir = os.path.join(output_base, f"run_{timestamp}")
+        
         try:
-            with open(self.run_info_file, 'w') as f:
-                json.dump({'last_run_dir': run_dir}, f)
+            # 確保目錄存在
+            os.makedirs(run_dir, exist_ok=True)
+            logger.info(f"已創建新的執行目錄：{run_dir}")
+            
+            # 保存當前執行目錄
+            self._current_run_dir = run_dir
+            return run_dir
+            
         except Exception as e:
-            logger.warning(f"保存last_run_info.json失敗: {e}")
-    
-    def _create_new_run_dir(self) -> str:
-        """
-        創建新的執行目錄
-        """
-        run_dir = os.path.join(self.base_dir, "output", 
-                              f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(run_dir, exist_ok=True)
-        return run_dir
-    
-    def clear_last_run(self) -> None:
-        """
-        清除上次執行的記錄
-        """
-        if os.path.exists(self.run_info_file):
-            try:
-                os.remove(self.run_info_file)
-            except Exception as e:
-                logger.warning(f"清除last_run_info.json失敗: {e}") 
+            logger.error(f"創建執行目錄時發生錯誤：{str(e)}")
+            raise 

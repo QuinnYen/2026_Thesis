@@ -6,20 +6,29 @@ from typing import Union, List, Optional
 import logging
 import os
 from tqdm import tqdm
+from .run_manager import RunManager
 
 class BertEncoder:
     """BERT編碼器 - 使用BERT模型提取文本的768維特徵向量"""
     
-    def __init__(self, model_name: str = 'bert-base-uncased', output_dir: str = "D:\\Project\\2026_Thesis\\Part05_\\output"):
+    def __init__(self, model_name: str = 'bert-base-uncased', output_dir: Optional[str] = None):
         """
         初始化BERT編碼器
         
         Args:
             model_name: 預訓練模型名稱，預設使用 'bert-base-uncased'
-            output_dir: 輸出目錄的基礎路徑
+            output_dir: 輸出目錄的基礎路徑，如果為None則使用當前目錄
         """
         self.logger = logging.getLogger(__name__)
-        self.output_dir = output_dir
+        
+        # 設置輸出目錄
+        if output_dir is None:
+            output_dir = os.path.dirname(os.path.dirname(__file__))
+        
+        # 使用RunManager管理輸出目錄
+        self.run_manager = RunManager(output_dir)
+        self.output_dir = self.run_manager.get_run_dir()
+        self.logger.info(f"本次執行的輸出目錄：{self.output_dir}")
         
         # 設置設備（GPU/CPU）
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -140,22 +149,27 @@ class BertEncoder:
             embeddings: 特徵向量矩陣
             output_file: 輸出文件名
         """
-        # 確保輸出目錄存在
-        os.makedirs(self.output_dir, exist_ok=True)
-        
-        # 構建完整的輸出路徑
-        output_path = os.path.join(self.output_dir, output_file)
-        
         try:
-            # 保存為numpy格式
-            np.save(output_path, embeddings)
-            self.logger.info(f"特徵向量已保存至: {output_path}")
+            # 構建完整的輸出路徑
+            output_path = os.path.join(self.output_dir, output_file)
             
-            # 同時保存一個CSV版本以便查看
-            df = pd.DataFrame(embeddings, columns=[f'feature_{i+1}' for i in range(embeddings.shape[1])])
-            csv_path = output_path.replace('.npy', '.csv')
-            df.to_csv(csv_path, index=False)
-            self.logger.info(f"特徵向量的CSV版本已保存至: {csv_path}")
+            # 確保輸出目錄存在且可寫
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            # 檢查檔案是否已存在，如果存在則先刪除
+            if os.path.exists(output_path):
+                try:
+                    os.remove(output_path)
+                except Exception as e:
+                    self.logger.warning(f"無法刪除現有檔案 {output_path}: {str(e)}")
+            
+            # 保存為numpy格式
+            try:
+                np.save(output_path, embeddings)
+                self.logger.info(f"特徵向量已保存至: {output_path}")
+            except Exception as e:
+                self.logger.error(f"保存特徵向量時發生錯誤: {str(e)}")
+                raise
             
         except Exception as e:
             self.logger.error(f"保存特徵向量時發生錯誤: {str(e)}")
