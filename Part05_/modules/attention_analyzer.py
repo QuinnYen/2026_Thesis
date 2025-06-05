@@ -7,6 +7,7 @@ import logging
 import pandas as pd
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
+from tqdm import tqdm
 
 from .attention_mechanism import (
     create_attention_mechanism, 
@@ -67,7 +68,7 @@ class AttentionAnalyzer:
         
         logger.info(f"開始分析 {len(attention_types)} 種注意力機制")
         
-        for attention_type in attention_types:
+        for attention_type in tqdm(attention_types, desc="分析注意力機制"):
             logger.info(f"分析注意力機制: {attention_type}")
             
             try:

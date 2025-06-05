@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
+from tqdm import tqdm
 
 from .attention_analyzer import AttentionAnalyzer
 from .bert_encoder import BertEncoder
@@ -59,36 +60,57 @@ class AttentionProcessor:
         """
         try:
             start_time = datetime.now()
+            logger.info("="*60)
             logger.info("開始注意力機制分析流程")
+            logger.info("="*60)
+            
+            # 設定默認的注意力機制類型
+            if attention_types is None:
+                attention_types = ['no', 'similarity', 'keyword', 'self', 'combined']
+            
+            total_steps = 6  # 總共6個主要步驟
             
             # 1. 讀取預處理數據
+            print(f"\n📊 步驟 1/{total_steps}: 讀取數據...")
             logger.info(f"讀取數據: {input_file}")
             if not os.path.exists(input_file):
                 raise FileNotFoundError(f"找不到輸入文件: {input_file}")
             
             df = pd.read_csv(input_file)
+            print(f"✅ 成功讀取 {len(df)} 條數據")
             logger.info(f"成功讀取 {len(df)} 條數據")
             
             # 2. 檢查必要欄位
+            print(f"\n🔍 步驟 2/{total_steps}: 檢查數據欄位...")
             text_column = self._find_text_column(df)
             if text_column is None:
                 raise ValueError("找不到有效的文本欄位")
+            print(f"✅ 使用文本欄位: {text_column}")
             
             # 3. 初始化BERT編碼器和獲取特徵向量
+            print(f"\n🤖 步驟 3/{total_steps}: 處理BERT特徵向量...")
             embeddings = self._get_embeddings(df, text_column)
+            print(f"✅ 特徵向量準備完成 (形狀: {embeddings.shape})")
             
             # 4. 準備元數據
+            print(f"\n📋 步驟 4/{total_steps}: 準備元數據...")
             metadata = self._prepare_metadata(df)
+            print(f"✅ 元數據準備完成")
             
             # 5. 初始化注意力分析器
+            print(f"\n⚙️ 步驟 5/{total_steps}: 初始化注意力分析器...")
             if self.attention_analyzer is None:
                 topic_labels_path = self._find_topic_labels_path()
                 self.attention_analyzer = AttentionAnalyzer(
                     topic_labels_path=topic_labels_path,
                     config=self.config
                 )
+            print(f"✅ 注意力分析器已初始化")
             
             # 6. 執行注意力分析
+            print(f"\n🔬 步驟 6/{total_steps}: 執行注意力機制分析...")
+            print(f"將測試以下注意力機制: {', '.join(attention_types)}")
+            
             results = self.attention_analyzer.analyze_with_attention(
                 embeddings=embeddings,
                 metadata=metadata,
@@ -114,7 +136,18 @@ class AttentionProcessor:
             
             # 8. 保存結果
             if save_results and self.output_dir:
+                print(f"\n💾 保存分析結果...")
                 self._save_analysis_results(results)
+                print(f"✅ 結果已保存至: {self.output_dir}")
+            
+            print(f"\n🎉 注意力機制分析完成！")
+            print(f"📊 總耗時: {processing_time:.2f} 秒")
+            
+            # 顯示結果摘要
+            if 'comparison' in results and 'summary' in results['comparison']:
+                summary = results['comparison']['summary']
+                print(f"🏆 最佳注意力機制: {summary.get('best_mechanism', 'N/A')}")
+                print(f"📈 最佳綜合得分: {summary.get('best_score', 0):.4f}")
             
             logger.info(f"注意力機制分析完成，耗時 {processing_time:.2f} 秒")
             return results
@@ -142,16 +175,20 @@ class AttentionProcessor:
             embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
             
         if embeddings_file and os.path.exists(embeddings_file):
+            print(f"   📂 發現已存在的特徵向量文件，正在載入...")
             logger.info(f"載入已存在的特徵向量: {embeddings_file}")
             embeddings = np.load(embeddings_file)
+            print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
             logger.info(f"特徵向量形狀: {embeddings.shape}")
         else:
             # 生成新的特徵向量
+            print(f"   🔄 未發現已存在的特徵向量，開始生成新的BERT特徵向量...")
             logger.info("生成BERT特徵向量...")
             if self.bert_encoder is None:
                 self.bert_encoder = BertEncoder(output_dir=self.output_dir)
             
             embeddings = self.bert_encoder.encode(df[text_column])
+            print(f"   ✅ BERT特徵向量生成完成 (形狀: {embeddings.shape})")
             logger.info(f"生成的特徵向量形狀: {embeddings.shape}")
         
         return embeddings

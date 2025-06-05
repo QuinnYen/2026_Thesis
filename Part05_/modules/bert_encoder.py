@@ -40,8 +40,15 @@ class BertEncoder:
         """
         embeddings = []
         batch_size = 32
+        total_batches = (len(texts) + batch_size - 1) // batch_size
         
-        for i in range(0, len(texts), batch_size):
+        logger.info(f"開始BERT編碼，共 {len(texts)} 條文本，分 {total_batches} 個批次處理")
+        
+        # 使用tqdm顯示進度條
+        for i in tqdm(range(0, len(texts), batch_size), 
+                     desc="BERT編碼進度", 
+                     unit="batch", 
+                     total=total_batches):
             batch_texts = texts.iloc[i:i+batch_size].tolist()
             encoded = self.tokenizer(batch_texts, 
                                    padding=True, 
@@ -57,6 +64,7 @@ class BertEncoder:
                 embeddings.append(batch_embeddings)
         
         embeddings = np.vstack(embeddings)
+        logger.info(f"BERT編碼完成，生成 {embeddings.shape[0]} x {embeddings.shape[1]} 的特徵矩陣")
         
         # 保存特徵向量
         if self.output_dir:

@@ -28,8 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 初始化RunManager
-run_manager = RunManager(CURRENT_DIR)
+# 注意：移除了全域RunManager，每個處理器會創建自己的RunManager實例
 
 def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional[str] = None) -> str:
     """
@@ -76,9 +75,7 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
         logger.info(f"開始BERT編碼...使用欄位：{text_column}")
         embeddings = encoder.encode(df[text_column])
         
-        # 保存特徵向量
-        logger.info("保存特徵向量...")
-        encoder.save_embeddings(embeddings, "02_bert_embeddings.npy")
+        # 注意：embed.encode() 方法已經自動保存了特徵向量，無需再次保存
         
         logger.info(f"處理完成！結果保存在: {encoder.output_dir}")
         return encoder.output_dir
@@ -161,6 +158,10 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         Dict: 完整的分析和分類結果
     """
     try:
+        print("\n" + "="*80)
+        print("🚀 開始執行完整的注意力機制分析和分類評估")
+        print("="*80)
+        
         # 初始化注意力處理器
         processor = AttentionProcessor(output_dir=output_dir)
         
@@ -172,13 +173,20 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         if attention_types is None:
             attention_types = ['no', 'similarity', 'keyword', 'self', 'combined']
         
+        print(f"\n📋 分析配置:")
+        print(f"   • 輸入文件: {input_file}")
+        print(f"   • 輸出目錄: {output_dir}")
+        print(f"   • 注意力機制: {', '.join(attention_types)}")
+        
         logger.info(f"開始完整的注意力機制分析和分類評估...")
         logger.info(f"測試的注意力機制: {', '.join(attention_types)}")
         
         # 讀取元數據
         df = pd.read_csv(input_file)
         
-        # 第一步：執行注意力分析
+        # 第一階段：執行注意力分析
+        print(f"\n🔬 階段 1/3: 注意力機制分析")
+        print("-" * 50)
         attention_results = processor.process_with_attention(
             input_file=input_file,
             attention_types=attention_types,
@@ -187,7 +195,9 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
             save_results=False  # 暫不保存，等分類評估完成後一起保存
         )
         
-        # 第二步：執行分類評估
+        # 第二階段：執行分類評估
+        print(f"\n🎯 階段 2/3: 分類性能評估")
+        print("-" * 50)
         logger.info("開始執行分類評估...")
         classifier = SentimentClassifier(output_dir=output_dir)
         
@@ -196,7 +206,9 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
             attention_results, df
         )
         
-        # 第三步：整合結果
+        # 第三階段：整合結果
+        print(f"\n📊 階段 3/3: 整合結果和生成報告")
+        print("-" * 50)
         final_results = {
             'attention_analysis': attention_results,
             'classification_evaluation': classification_results,
@@ -215,19 +227,30 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
                 'evaluation_completed': True
             }
             
+            print(f"\n🏆 最終評估結果:")
+            print(f"   • 最佳注意力機制: {final_results['summary']['best_attention_mechanism']}")
+            print(f"   • 最佳分類準確率: {final_results['summary']['best_classification_accuracy']:.4f}")
+            print(f"   • 最佳F1分數: {final_results['summary']['best_f1_score']:.4f}")
+            
             logger.info(f"評估完成！最佳注意力機制: {final_results['summary']['best_attention_mechanism']}")
             logger.info(f"最佳分類準確率: {final_results['summary']['best_classification_accuracy']:.4f}")
             logger.info(f"最佳F1分數: {final_results['summary']['best_f1_score']:.4f}")
         
         # 保存完整結果
         if output_dir:
+            print(f"\n💾 保存完整分析結果...")
             results_file = os.path.join(output_dir, "complete_analysis_results.json")
             with open(results_file, 'w', encoding='utf-8') as f:
                 import json
                 # 處理不可序列化的對象
                 serializable_results = _make_serializable(final_results)
                 json.dump(serializable_results, f, ensure_ascii=False, indent=2)
+            print(f"✅ 完整結果已保存至: {results_file}")
             logger.info(f"完整結果已保存至: {results_file}")
+        
+        print(f"\n🎉 完整分析評估完成！")
+        print(f"📁 所有結果保存在: {output_dir}")
+        print("="*80)
         
         logger.info(f"完整分析結果保存在: {output_dir}")
         return final_results
@@ -364,16 +387,27 @@ BERT情感分析系統 - 使用說明
     - self: 自注意力機制
     - combined: 組合型注意力機制
 
+進度顯示功能:
+    ✨ 新增功能：系統現在會顯示詳細的執行進度信息
+    📊 BERT編碼進度條：顯示批量處理的進度
+    🔬 注意力分析進度：顯示各個階段的完成狀態
+    🎯 分類評估進度：顯示每個注意力機制的評估進度
+    📈 實時結果顯示：即時顯示各項指標的計算結果
+
 範例:
     python Part05_Main.py --attention data.csv        # 僅分析注意力機制
     python Part05_Main.py --classify data.csv         # 完整分類評估
     python Part05_Main.py --compare processed_data.csv
+
+測試進度功能:
+    python test_progress.py                           # 測試進度顯示功能
 
 注意：
     - input_file 應該是經過預處理的CSV文件
     - 系統會自動檢測文本欄位（processed_text, clean_text, text, review）
     - --classify選項會執行完整的機器學習流程，包括分類器訓練和評估
     - 結果會保存在自動生成的輸出目錄中
+    - 進度信息會同時顯示在終端機和日誌文件中
     """
     print(help_text)
 

@@ -13,6 +13,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
+from tqdm import tqdm
 import joblib
 import os
 from typing import Dict, Any, Tuple, Optional, List
@@ -246,18 +247,26 @@ class SentimentClassifier:
         """
         evaluation_results = {}
         
+        # 過濾出有效的注意力機制
+        valid_mechanisms = []
         for mechanism_name, mechanism_result in attention_results.items():
-            if mechanism_name == 'comparison' or 'aspect_vectors' not in mechanism_result:
-                continue
-            
+            if mechanism_name != 'comparison' and 'aspect_vectors' in mechanism_result:
+                valid_mechanisms.append((mechanism_name, mechanism_result))
+        
+        print(f"📊 開始評估 {len(valid_mechanisms)} 種注意力機制的分類性能...")
+        
+        for mechanism_name, mechanism_result in tqdm(valid_mechanisms, desc="評估注意力機制"):
+            print(f"   🔍 正在評估 {mechanism_name} 注意力機制...")
             logger.info(f"評估 {mechanism_name} 注意力機制的分類性能...")
             
             try:
                 # 準備特徵
+                print(f"      📋 準備特徵向量...")
                 aspect_vectors = mechanism_result['aspect_vectors']
                 features, labels = self.prepare_features(aspect_vectors, metadata)
                 
                 # 訓練和評估
+                print(f"      🤖 訓練分類器...")
                 results = self.train(features, labels, model_type=self.model_type, original_data=metadata)
                 
                 # 添加注意力機制特定信息
@@ -266,13 +275,24 @@ class SentimentClassifier:
                 
                 evaluation_results[mechanism_name] = results
                 
+                print(f"      ✅ {mechanism_name} 評估完成 - 準確率: {results['test_accuracy']:.4f}, "
+                      f"F1分數: {results['test_f1']:.4f}")
+                
             except Exception as e:
+                print(f"      ❌ 評估 {mechanism_name} 時發生錯誤: {str(e)}")
                 logger.error(f"評估 {mechanism_name} 時發生錯誤: {str(e)}")
                 continue
         
         # 比較不同注意力機制的性能
+        print(f"   📈 比較不同注意力機制的性能...")
         comparison = self._compare_mechanisms(evaluation_results)
         evaluation_results['comparison'] = comparison
+        
+        print(f"✅ 分類性能評估完成！")
+        if comparison and 'best_mechanism' in comparison:
+            print(f"🏆 最佳分類性能機制: {comparison['best_mechanism']}")
+            print(f"📊 最佳準確率: {comparison['summary']['best_accuracy']:.4f}")
+            print(f"📊 最佳F1分數: {comparison['summary']['best_f1']:.4f}")
         
         return evaluation_results
     

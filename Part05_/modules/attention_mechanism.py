@@ -598,6 +598,9 @@ def apply_attention_mechanism(attention_type: str, embeddings: np.ndarray, metad
     # 創建配置
     config = {}
     
+    # 顯示當前處理的注意力機制
+    logger.info(f"   🔄 正在計算 {attention_type} 注意力機制...")
+    
     # 創建注意力機制
     attention_mech = create_attention_mechanism(attention_type, config)
     
@@ -609,12 +612,18 @@ def apply_attention_mechanism(attention_type: str, embeddings: np.ndarray, metad
         kwargs['weights'] = weights
     
     # 計算面向向量
+    logger.info(f"   📊 計算面向向量...")
     aspect_vectors, attention_data = attention_mech.compute_aspect_vectors(
         embeddings, metadata, **kwargs
     )
     
     # 評估面向向量
+    logger.info(f"   📏 評估指標...")
     metrics = attention_mech.evaluate(aspect_vectors, embeddings, metadata)
+    
+    # 顯示結果
+    logger.info(f"   ✅ {attention_type} 注意力完成 - 內聚度: {metrics['coherence']:.4f}, "
+               f"分離度: {metrics['separation']:.4f}, 綜合得分: {metrics['combined_score']:.4f}")
     
     return {
         'aspect_vectors': aspect_vectors,
