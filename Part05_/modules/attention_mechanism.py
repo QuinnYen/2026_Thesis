@@ -522,34 +522,46 @@ class CombinedAttention(AttentionMechanism):
         """計算組合型注意力權重"""
         # 獲取組合權重
         weights_dict = kwargs.get('weights', {})
-        similarity_weight = weights_dict.get('similarity', 0.33)
-        keyword_weight = weights_dict.get('keyword', 0.33)
-        self_weight = weights_dict.get('self', 0.34)
         
-        # 確保權重總和為1
-        total = similarity_weight + keyword_weight + self_weight
-        if abs(total - 1.0) > 1e-5:
-            self.logger.warning(f"注意力權重總和 {total} 不為1，將進行歸一化")
-            similarity_weight /= total
-            keyword_weight /= total
-            self_weight /= total
+        # 只保留權重不為0的注意力機制
+        active_weights = {k: v for k, v in weights_dict.items() if v > 0}
         
-        # 初始化各種注意力機制
-        similarity_attn = SimilarityAttention(self.config)
-        keyword_attn = KeywordGuidedAttention(self.config)
-        self_attn = SelfAttention(self.config)
+        if not active_weights:
+            self.logger.warning("沒有指定任何有效的注意力權重，使用均等權重")
+            return NoAttention(self.config).compute_attention(embeddings, metadata, **kwargs)
         
-        # 計算各類注意力權重
-        similarity_weights, topic_indices = similarity_attn.compute_attention(embeddings, metadata, **kwargs)
-        keyword_weights, _ = keyword_attn.compute_attention(embeddings, metadata, **kwargs)
-        self_weights, _ = self_attn.compute_attention(embeddings, metadata, **kwargs)
+        # 動態正規化權重確保總和為1
+        total_weight = sum(active_weights.values())
+        if abs(total_weight - 1.0) > 1e-5:
+            self.logger.warning(f"注意力權重總和 {total_weight} 不為1，將進行歸一化")
+            active_weights = {k: v/total_weight for k, v in active_weights.items()}
         
-        # 計算加權組合
-        weights = (
-            similarity_weight * similarity_weights +
-            keyword_weight * keyword_weights +
-            self_weight * self_weights
-        )
+        # 初始化權重矩陣和結果
+        weights = None
+        topic_indices = None
+        
+        # 根據權重計算對應的注意力機制
+        for mechanism_name, weight in active_weights.items():
+            if mechanism_name == 'similarity':
+                mechanism = SimilarityAttention(self.config)
+            elif mechanism_name == 'keyword':
+                mechanism = KeywordGuidedAttention(self.config)
+            elif mechanism_name == 'self':
+                mechanism = SelfAttention(self.config)
+            else:
+                self.logger.warning(f"未知的注意力機制: {mechanism_name}，將被忽略")
+                continue
+            
+            # 計算該機制的注意力權重
+            mechanism_weights, indices = mechanism.compute_attention(embeddings, metadata, **kwargs)
+            
+            # 如果是第一個機制，初始化結果
+            if weights is None:
+                weights = weight * mechanism_weights
+                topic_indices = indices
+            else:
+                # 累加加權結果
+                weights += weight * mechanism_weights
         
         return weights, topic_indices
 
@@ -666,7 +678,21 @@ if __name__ == "__main__":
         attention_mech = create_attention_mechanism(attn_type)
         
         # 測試計算注意力權重
-        weights, topic_indices = attention_mech.compute_attention(embeddings, metadata)
+        if attn_type == 'combined':
+            # 測試不同的組合權重
+            test_weights = [
+                {'similarity': 1.0},  # 單一注意力
+                {'similarity': 0.5, 'keyword': 0.5},  # 雙重組合
+                {'similarity': 0.33, 'keyword': 0.33, 'self': 0.34}  # 三重組合
+            ]
+            
+            for weights in test_weights:
+                logger.info(f"測試組合權重: {weights}")
+                weights_array, topic_indices = attention_mech.compute_attention(
+                    embeddings, metadata, weights=weights
+                )
+        else:
+            weights_array, topic_indices = attention_mech.compute_attention(embeddings, metadata)
         
         # 測試計算面向向量
         aspect_vectors, _ = attention_mech.compute_aspect_vectors(embeddings, metadata)

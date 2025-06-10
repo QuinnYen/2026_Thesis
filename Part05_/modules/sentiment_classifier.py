@@ -12,7 +12,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score, precision_recall_fscore_support, classification_report, confusion_matrix
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.naive_bayes import GaussianNB
 from tqdm import tqdm
 import joblib
 import os
@@ -35,24 +36,32 @@ class SentimentClassifier:
         self.label_encoder = LabelEncoder()
         self.feature_vectors = None
         self.labels = None
-        self.model_type = 'random_forest'  # 預設使用隨機森林
+        self.model_type = 'svm'  # 修改：預設使用SVM（更適合小數據集）
         
-        # 支持的模型類型
+        # 支持的模型類型 - 針對小數據集優化
         self.available_models = {
             'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
-            'logistic_regression': LogisticRegression(random_state=42, max_iter=1000),
-            'svm': SVC(random_state=42, probability=True)
+            'logistic_regression': LogisticRegression(random_state=42, max_iter=1000, C=1.0),
+            'svm': SVC(kernel='rbf', C=1.0, random_state=42, probability=True),  # 優化SVM配置
+            'naive_bayes': self._get_naive_bayes_classifier(),  # 新增Naive Bayes
+            'svm_linear': SVC(kernel='linear', C=1.0, random_state=42, probability=True)  # 線性SVM選項
         }
         
         logger.info("情感分類器已初始化")
     
-    def prepare_features(self, aspect_vectors: Dict, metadata: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    def _get_naive_bayes_classifier(self):
+        """獲取Naive Bayes分類器"""
+        return GaussianNB()
+    
+    def prepare_features(self, aspect_vectors: Dict, metadata: pd.DataFrame, 
+                        original_embeddings: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
         """
         準備分類特徵
         
         Args:
             aspect_vectors: 面向特徵向量字典
             metadata: 包含真實標籤的元數據
+            original_embeddings: 原始BERT嵌入向量（修正：新增此參數）
             
         Returns:
             features: 特徵矩陣
@@ -68,21 +77,51 @@ class SentimentClassifier:
         # 編碼標籤
         encoded_labels = self.label_encoder.fit_transform(sentiments)
         
-        # 需要原始的BERT嵌入向量來計算與面向向量的相似度
-        # 這裡假設在某處可以獲取原始嵌入向量
-        # 為了完整性，我們將面向向量串聯作為特徵
+        # 修正：獲取原始BERT嵌入向量
+        if original_embeddings is None:
+            # 嘗試從輸出目錄載入BERT嵌入向量
+            if self.output_dir:
+                embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+                if os.path.exists(embeddings_file):
+                    original_embeddings = np.load(embeddings_file)
+                    logger.info(f"已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
+                else:
+                    raise ValueError("無法找到原始BERT嵌入向量文件。請提供 original_embeddings 參數或確保BERT特徵向量文件存在於輸出目錄中。")
+            else:
+                raise ValueError("無法找到原始BERT嵌入向量。請提供 original_embeddings 參數。")
         
-        # 將面向向量合併為單一特徵向量（每個文檔都使用相同的面向向量）
-        aspect_names = sorted(aspect_vectors.keys())  # 保證順序一致
-        concatenated_features = []
-        for aspect_name in aspect_names:
-            concatenated_features.extend(aspect_vectors[aspect_name])
+        # 確保嵌入向量數量與元數據匹配
+        if len(original_embeddings) != len(metadata):
+            raise ValueError(f"嵌入向量數量 ({len(original_embeddings)}) 與元數據數量 ({len(metadata)}) 不匹配")
         
-        # 為每個文檔複製相同的面向特徵（這是一個簡化的方法）
-        # 在實際應用中，應該計算每個文檔與各面向向量的相似度
-        features = np.tile(concatenated_features, (len(metadata), 1))
+        # 修正：使用原始BERT嵌入向量作為主要特徵
+        features = original_embeddings.copy()
+        
+        # 修正：計算與面向向量的相似度作為額外特徵
+        aspect_names = sorted(aspect_vectors.keys())
+        similarity_features = []
+        
+        logger.info(f"計算每個文檔與 {len(aspect_names)} 個面向向量的相似度...")
+        
+        for i, embedding in enumerate(original_embeddings):
+            doc_similarities = []
+            for aspect_name in aspect_names:
+                aspect_vector = aspect_vectors[aspect_name]
+                # 計算餘弦相似度
+                similarity = np.dot(embedding, aspect_vector) / (
+                    np.linalg.norm(embedding) * np.linalg.norm(aspect_vector) + 1e-8
+                )
+                doc_similarities.append(similarity)
+            similarity_features.append(doc_similarities)
+        
+        similarity_features = np.array(similarity_features)
+        
+        # 組合原始特徵和相似度特徵
+        features = np.concatenate([original_embeddings, similarity_features], axis=1)
         
         logger.info(f"準備了 {features.shape[0]} 個樣本，{features.shape[1]} 維特徵")
+        logger.info(f"  - 原始BERT特徵: {original_embeddings.shape[1]} 維")
+        logger.info(f"  - 面向相似度特徵: {similarity_features.shape[1]} 維")
         logger.info(f"使用的面向: {aspect_names}")
         logger.info(f"標籤分布: {dict(zip(*np.unique(sentiments, return_counts=True)))}")
         
@@ -92,7 +131,7 @@ class SentimentClassifier:
         return features, encoded_labels
     
     def train(self, features: np.ndarray, labels: np.ndarray, 
-              model_type: str = 'random_forest', test_size: float = 0.2,
+              model_type: str = 'svm', test_size: float = 0.2,
               original_data: pd.DataFrame = None) -> Dict[str, Any]:
         """
         訓練分類模型
@@ -144,8 +183,17 @@ class SentimentClassifier:
         
         # 保存預測結果詳細信息
         # 將編碼的標籤轉換回原始標籤名稱
-        true_label_names = self.label_encoder.inverse_transform(y_test)
-        predicted_label_names = self.label_encoder.inverse_transform(test_pred)
+        # 修正：檢查LabelEncoder是否已經fitted
+        if hasattr(self.label_encoder, 'classes_') and self.label_encoder.classes_ is not None:
+            true_label_names = self.label_encoder.inverse_transform(y_test)
+            predicted_label_names = self.label_encoder.inverse_transform(test_pred)
+            class_names_list = self.label_encoder.classes_.tolist()
+        else:
+            # 如果沒有fitted，使用數字標籤
+            true_label_names = [f"label_{label}" for label in y_test]
+            predicted_label_names = [f"label_{label}" for label in test_pred]
+            unique_labels = np.unique(np.concatenate([y_train, y_test]))
+            class_names_list = [f"label_{label}" for label in unique_labels]
         
         # 保存測試集的文本信息以便後續匹配
         test_texts = []
@@ -164,10 +212,10 @@ class SentimentClassifier:
             'test_indices': None,  # 由於訓練時沒有原始索引，這裡設為None
             'true_labels': y_test.tolist(),  # 編碼後的標籤
             'predicted_labels': test_pred.tolist(),  # 編碼後的預測標籤
-            'true_label_names': true_label_names.tolist(),  # 原始標籤名稱
-            'predicted_label_names': predicted_label_names.tolist(),  # 預測標籤名稱
+            'true_label_names': true_label_names.tolist() if hasattr(true_label_names, 'tolist') else list(true_label_names),  # 原始標籤名稱
+            'predicted_label_names': predicted_label_names.tolist() if hasattr(predicted_label_names, 'tolist') else list(predicted_label_names),  # 預測標籤名稱
             'predicted_probabilities': test_pred_proba.tolist(),
-            'class_names': self.label_encoder.classes_.tolist(),
+            'class_names': class_names_list,
             'test_texts': test_texts  # 測試集文本，用於後續匹配
         }
         
@@ -234,18 +282,30 @@ class SentimentClassifier:
         return result
     
     def evaluate_attention_mechanisms(self, attention_results: Dict[str, Any], 
-                                    metadata: pd.DataFrame) -> Dict[str, Dict]:
+                                    metadata: pd.DataFrame,
+                                    original_embeddings: np.ndarray = None) -> Dict[str, Dict]:
         """
         評估不同注意力機制的分類性能
         
         Args:
             attention_results: 注意力機制分析結果
             metadata: 包含真實標籤的元數據
+            original_embeddings: 原始BERT嵌入向量（修正：新增此參數）
             
         Returns:
             各注意力機制的分類性能結果
         """
         evaluation_results = {}
+        
+        # 修正：如果沒有提供original_embeddings，嘗試載入
+        if original_embeddings is None:
+            if self.output_dir:
+                embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+                if os.path.exists(embeddings_file):
+                    original_embeddings = np.load(embeddings_file)
+                    logger.info(f"已載入原始BERT嵌入向量用於分類評估，形狀: {original_embeddings.shape}")
+                else:
+                    logger.warning("未找到原始BERT嵌入向量文件，將嘗試從prepare_features方法中載入")
         
         # 過濾出有效的注意力機制
         valid_mechanisms = []
@@ -260,10 +320,10 @@ class SentimentClassifier:
             logger.info(f"評估 {mechanism_name} 注意力機制的分類性能...")
             
             try:
-                # 準備特徵
+                # 準備特徵（修正：傳遞原始嵌入向量）
                 print(f"      📋 準備特徵向量...")
                 aspect_vectors = mechanism_result['aspect_vectors']
-                features, labels = self.prepare_features(aspect_vectors, metadata)
+                features, labels = self.prepare_features(aspect_vectors, metadata, original_embeddings)
                 
                 # 訓練和評估
                 print(f"      🤖 訓練分類器...")
@@ -316,7 +376,14 @@ class SentimentClassifier:
         confusion_mat = confusion_matrix(y_test, test_pred)
         
         # 分類報告
-        class_names = self.label_encoder.classes_
+        # 修正：檢查LabelEncoder是否已經fitted，避免AttributeError
+        if hasattr(self.label_encoder, 'classes_') and self.label_encoder.classes_ is not None:
+            class_names = self.label_encoder.classes_
+        else:
+            # 如果沒有類別名稱，使用唯一值
+            unique_labels = np.unique(np.concatenate([y_train, y_test]))
+            class_names = [f"class_{label}" for label in unique_labels]
+        
         classification_rep = classification_report(
             y_test, test_pred, target_names=class_names, output_dict=True
         )
@@ -332,7 +399,7 @@ class SentimentClassifier:
             'test_f1': float(test_f1),
             'confusion_matrix': confusion_mat.tolist(),
             'classification_report': classification_rep,
-            'class_names': class_names.tolist(),
+            'class_names': class_names.tolist() if hasattr(class_names, 'tolist') else list(class_names),
             'model_type': self.model_type
         }
     

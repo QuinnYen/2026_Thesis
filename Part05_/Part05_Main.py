@@ -201,9 +201,41 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         logger.info("開始執行分類評估...")
         classifier = SentimentClassifier(output_dir=output_dir)
         
-        # 評估不同注意力機制的分類性能
+        # 修正：獲取或載入原始BERT嵌入向量
+        print(f"   🔍 載入原始BERT嵌入向量用於分類評估...")
+        original_embeddings = None
+        embeddings_file = os.path.join(output_dir, "02_bert_embeddings.npy")
+        
+        if os.path.exists(embeddings_file):
+            # 載入已存在的BERT嵌入向量
+            original_embeddings = np.load(embeddings_file)
+            print(f"   ✅ 已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
+            logger.info(f"載入原始BERT嵌入向量: {original_embeddings.shape}")
+        else:
+            # 如果沒有找到，重新生成
+            print(f"   🔄 未找到BERT嵌入向量文件，開始重新生成...")
+            logger.info("未找到BERT嵌入向量，開始重新生成...")
+            
+            from modules.bert_encoder import BertEncoder
+            bert_encoder = BertEncoder(output_dir=output_dir)
+            
+            # 找到文本欄位
+            text_column = None
+            for col in ['processed_text', 'clean_text', 'text', 'review']:
+                if col in df.columns:
+                    text_column = col
+                    break
+            
+            if text_column:
+                original_embeddings = bert_encoder.encode(df[text_column])
+                print(f"   ✅ BERT嵌入向量生成完成，形狀: {original_embeddings.shape}")
+                logger.info(f"生成的BERT嵌入向量形狀: {original_embeddings.shape}")
+            else:
+                raise ValueError("無法找到文本欄位來生成BERT嵌入向量")
+        
+        # 評估不同注意力機制的分類性能（修正：傳遞原始嵌入向量）
         classification_results = classifier.evaluate_attention_mechanisms(
-            attention_results, df
+            attention_results, df, original_embeddings
         )
         
         # 第三階段：整合結果

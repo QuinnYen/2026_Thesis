@@ -138,6 +138,46 @@ class MainApplication:
         self.browse_btn = ttk.Button(input_frame, text="瀏覽", command=self.browse_file, state='disabled')
         self.browse_btn.pack(side='left', padx=(5, 10))
         
+        # 新增：抽樣設置框架
+        sampling_frame = ttk.Frame(step2_frame)
+        sampling_frame.pack(fill='x', pady=(10, 0))
+        
+        # 抽樣選項
+        sampling_left_frame = ttk.Frame(sampling_frame)
+        sampling_left_frame.pack(side='left', fill='x', expand=True)
+        
+        self.use_sampling_var = tk.BooleanVar(value=False)
+        sampling_checkbox = ttk.Checkbutton(sampling_left_frame, 
+                                           text="啟用數據抽樣 (適用於大數據集)", 
+                                           variable=self.use_sampling_var,
+                                           command=self.on_sampling_toggle)
+        sampling_checkbox.pack(side='left', anchor='w')
+        
+        # 抽樣數量輸入框架
+        sampling_input_frame = ttk.Frame(sampling_frame)
+        sampling_input_frame.pack(side='right')
+        
+        ttk.Label(sampling_input_frame, text="抽樣數量:").pack(side='left', padx=(0, 5))
+        
+        self.sample_size_var = tk.StringVar(value="1000")
+        self.sample_size_entry = ttk.Entry(sampling_input_frame, 
+                                         textvariable=self.sample_size_var, 
+                                         width=10,
+                                         state='disabled')
+        self.sample_size_entry.pack(side='left', padx=(0, 5))
+        
+        ttk.Label(sampling_input_frame, text="個樣本").pack(side='left')
+        
+        # 抽樣說明
+        sampling_info_frame = ttk.Frame(step2_frame)
+        sampling_info_frame.pack(fill='x', pady=(5, 0))
+        
+        self.sampling_info = ttk.Label(sampling_info_frame, 
+                                     text="💡 建議：大數據集(>10000樣本)建議抽樣以提高處理速度", 
+                                     foreground='gray',
+                                     font=('TkDefaultFont', 8))
+        self.sampling_info.pack(anchor='w')
+        
         self.import_status = ttk.Label(step2_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
         self.import_status.pack(anchor='w', pady=(10, 0))
         
@@ -568,26 +608,40 @@ class MainApplication:
         return str(database_dir)
 
     def on_dataset_selected(self, event=None):
-        """當選擇數據集類型時"""
-        selected_name = self.dataset_type.get()
-        # 找到對應的數據集類型
-        selected_dataset = None
-        for ds_key, ds_info in DATASETS.items():
-            if ds_info['name'] == selected_name:
-                selected_dataset = ds_key
-                break
-        
-        if selected_dataset:
+        """當選擇數據集類型時觸發"""
+        if self.dataset_type.get():
+            # 重設文件導入狀態
+            self.step_states['file_imported'] = False
+            self.file_path_var.set("")
+            self.import_status.config(text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
+            
             # 啟用瀏覽按鈕
-            self.browse_btn['state'] = 'normal'
-            # 更新狀態
-            self.import_status.config(
-                text=f"請選擇 {DATASETS[selected_dataset]['file_type'].upper()} 格式的{DATASETS[selected_dataset]['description']}檔案",
-                foreground=COLORS['info']
+            self.browse_btn.config(state='normal')
+            
+            # 更新按鈕狀態
+            self.update_button_states()
+        else:
+            # 禁用瀏覽按鈕
+            self.browse_btn.config(state='disabled')
+            # 重設文件導入狀態
+            self.import_status.config(text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
+
+    def on_sampling_toggle(self):
+        """當抽樣選項被切換時觸發"""
+        if self.use_sampling_var.get():
+            # 啟用抽樣
+            self.sample_size_entry.config(state='normal')
+            self.sampling_info.config(
+                text="✅ 抽樣已啟用：將從數據集中隨機抽取指定數量的樣本", 
+                foreground='green'
             )
         else:
-            self.browse_btn['state'] = 'disabled'
-            self.import_status.config(text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
+            # 禁用抽樣
+            self.sample_size_entry.config(state='disabled')
+            self.sampling_info.config(
+                text="💡 建議：大數據集(>10000樣本)建議抽樣以提高處理速度", 
+                foreground='gray'
+            )
 
     def browse_file(self):
         """瀏覽檔案"""
@@ -635,9 +689,51 @@ class MainApplication:
                 except ValueError:
                     display_path = file_path
                 
+                # 檢測文件大小並提供抽樣建議
+                try:
+                    if file_ext == '.csv':
+                        temp_df = pd.read_csv(file_path)
+                    elif file_ext == '.json':
+                        temp_df = pd.read_json(file_path)
+                    
+                    total_samples = len(temp_df)
+                    
+                    # 構建狀態信息
+                    status_text = f"已選擇{DATASETS[selected_dataset]['description']}檔案：{display_path}\n"
+                    status_text += f"📊 數據集大小：{total_samples:,} 個樣本"
+                    
+                    # 根據數據大小提供抽樣建議
+                    if total_samples > 50000:
+                        status_text += f"\n⚠️  大型數據集！強烈建議啟用抽樣 (建議抽取 2000-5000 樣本)"
+                        suggested_size = min(3000, total_samples // 10)
+                        self.sample_size_var.set(str(suggested_size))
+                        self.sampling_info.config(
+                            text=f"⚠️  檢測到大型數據集({total_samples:,}樣本)，強烈建議啟用抽樣！", 
+                            foreground='orange'
+                        )
+                    elif total_samples > 10000:
+                        status_text += f"\n💡 中型數據集，建議啟用抽樣以提高處理速度"
+                        suggested_size = min(2000, total_samples // 5)
+                        self.sample_size_var.set(str(suggested_size))
+                        self.sampling_info.config(
+                            text=f"💡 檢測到中型數據集({total_samples:,}樣本)，建議啟用抽樣", 
+                            foreground='blue'
+                        )
+                    elif total_samples > 1000:
+                        status_text += f"\n✅ 適中的數據集大小"
+                        self.sample_size_var.set(str(min(1000, total_samples)))
+                    else:
+                        status_text += f"\n✅ 小型數據集，無需抽樣"
+                        self.use_sampling_var.set(False)
+                        self.on_sampling_toggle()
+                    
+                except Exception as e:
+                    # 如果無法讀取文件詳細信息，只顯示基本信息
+                    status_text = f"已選擇{DATASETS[selected_dataset]['description']}檔案：{display_path}"
+                
                 self.file_path_var.set(file_path)  # 保存完整路徑
                 self.import_status.config(
-                    text=f"已選擇{DATASETS[selected_dataset]['description']}檔案：{display_path}",
+                    text=status_text,
                     foreground=COLORS['processing']
                 )
                 self.step_states['file_imported'] = True
@@ -684,6 +780,46 @@ class MainApplication:
                 self.process_queue.put(('error', '不支援的檔案格式'))
                 return
             
+            original_size = len(df)
+            
+            # 檢查是否需要進行抽樣
+            if self.use_sampling_var.get():
+                try:
+                    sample_size = int(self.sample_size_var.get())
+                    if sample_size <= 0:
+                        raise ValueError("抽樣數量必須大於0")
+                    if sample_size >= original_size:
+                        self.process_queue.put(('status', f'樣本數量({sample_size})大於等於原數據集大小({original_size})，將使用全部數據'))
+                    else:
+                        # 進行分層抽樣（如果有情感標籤的話）
+                        if 'sentiment' in df.columns:
+                            # 分層抽樣，保持各類別比例
+                            df = df.groupby('sentiment', group_keys=False).apply(
+                                lambda x: x.sample(min(len(x), sample_size // df['sentiment'].nunique()), 
+                                                  random_state=42)
+                            ).reset_index(drop=True)
+                            
+                            # 如果分層後樣本數不足，補充隨機抽樣
+                            if len(df) < sample_size:
+                                remaining = sample_size - len(df)
+                                excluded_df = pd.read_csv(file_path) if file_ext == '.csv' else pd.read_json(file_path)
+                                excluded_df = excluded_df.drop(df.index).reset_index(drop=True)
+                                if len(excluded_df) > 0:
+                                    additional_samples = excluded_df.sample(min(remaining, len(excluded_df)), 
+                                                                           random_state=42)
+                                    df = pd.concat([df, additional_samples], ignore_index=True)
+                        else:
+                            # 隨機抽樣
+                            df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+                        
+                        self.process_queue.put(('status', f'數據抽樣完成：從{original_size:,}個樣本中抽取了{len(df):,}個樣本'))
+                        
+                except ValueError as e:
+                    self.process_queue.put(('error', f'抽樣參數錯誤：{str(e)}'))
+                    return
+            else:
+                self.process_queue.put(('status', f'使用完整數據集：{original_size:,}個樣本'))
+
             # 更新進度
             self.process_queue.put(('progress', 20))
             self.process_queue.put(('status', 'text_cleaning'))
@@ -707,7 +843,15 @@ class MainApplication:
             
             # 完成處理
             self.process_queue.put(('progress', 100))
-            self.process_queue.put(('status', 'success'))
+            
+            # 報告最終處理結果
+            final_size = len(processed_df)
+            if self.use_sampling_var.get() and final_size != original_size:
+                success_status = f'處理完成！原始數據：{original_size:,}樣本 → 抽樣後：{final_size:,}樣本'
+            else:
+                success_status = f'處理完成！處理了{final_size:,}個樣本'
+            
+            self.process_queue.put(('status', success_status))
             
             # 獲取預處理目錄路徑
             run_dir = self.run_manager.get_preprocessing_dir()
