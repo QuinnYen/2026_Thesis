@@ -143,7 +143,8 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
                                                  output_dir: Optional[str] = None,
                                                  attention_types: Optional[List[str]] = None,
                                                  topics_path: Optional[str] = None,
-                                                 attention_weights: Optional[Dict] = None) -> Dict:
+                                                 attention_weights: Optional[Dict] = None,
+                                                 classifier_type: Optional[str] = None) -> Dict:
     """
     執行完整的注意力機制分析和分類評估
     
@@ -153,6 +154,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         attention_types: 要測試的注意力機制類型
         topics_path: 關鍵詞文件路徑
         attention_weights: 組合注意力權重配置
+        classifier_type: 分類器類型 (xgboost, logistic_regression, random_forest, svm_linear)
         
     Returns:
         Dict: 完整的分析和分類結果
@@ -235,7 +237,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         
         # 評估不同注意力機制的分類性能（修正：傳遞原始嵌入向量）
         classification_results = classifier.evaluate_attention_mechanisms(
-            attention_results, df, original_embeddings
+            attention_results, df, original_embeddings, model_type=classifier_type
         )
         
         # 第三階段：整合結果

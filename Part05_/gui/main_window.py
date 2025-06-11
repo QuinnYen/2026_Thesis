@@ -26,6 +26,9 @@ class MainApplication:
         # 初始化數據集類型
         self.dataset_type = tk.StringVar()
         
+        # 初始化分類器類型
+        self.classifier_type = tk.StringVar(value='logistic_regression')
+        
         # 初始化步驟狀態
         self.step_states = {
             'file_imported': False,    # 步驟1：檔案導入
@@ -63,6 +66,36 @@ class MainApplication:
         # 最後將視窗置中於螢幕（在所有UI元素創建完成後）
         self.root.after(100, self.center_window)
     
+    def detect_compute_environment(self):
+        """檢測計算環境"""
+        try:
+            from modules.sentiment_classifier import SentimentClassifier
+            classifier = SentimentClassifier()
+            device_info = classifier.get_device_info()
+            
+            if device_info['has_gpu']:
+                self.device_label.config(text=f"🔥 {device_info['description']}", foreground='green')
+            else:
+                self.device_label.config(text=f"🖥️ {device_info['description']}", foreground='blue')
+                
+        except Exception as e:
+            self.device_label.config(text="❓ 環境檢測失敗", foreground='red')
+    
+    def on_classifier_selected(self, event=None):
+        """分類器選擇變更時的回調"""
+        selected = self.classifier_type.get()
+        
+        # 顯示分類器相關信息
+        classifier_info = {
+            'xgboost': "⚡ XGBoost - 高準確率，支援GPU加速",
+            'logistic_regression': "🚀 邏輯迴歸 - 快速穩定，適合中小數據",
+            'random_forest': "🌳 隨機森林 - 穩定可靠，可並行處理",
+            'svm_linear': "📐 線性SVM - 適合線性可分數據"
+        }
+        
+        info_text = classifier_info.get(selected, "")
+        self.timing_label.config(text=info_text)
+    
     def center_window(self):
         """將視窗置中於螢幕"""
         # 強制更新視窗以獲取實際尺寸
@@ -99,11 +132,11 @@ class MainApplication:
         
         # 主要容器
         main_frame = ttk.Frame(frame1)
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True, padx=15, pady=10)
         
         # 標題
         title_label = ttk.Label(main_frame, text="資料處理流程", font=FONTS['title'])
-        title_label.pack(pady=(0, 20))
+        title_label.pack(pady=(0, 12))
         
         # 步驟1：選擇數據集類型
         step1_frame = ttk.LabelFrame(main_frame, text="① 選擇數據集類型", padding=15)
@@ -232,27 +265,88 @@ class MainApplication:
         frame2 = ttk.Frame(self.notebook)
         self.notebook.add(frame2, text=" 注意力機制測試 ")
         
-        main_frame = ttk.Frame(frame2)
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        # 創建滾動框架來確保所有內容都可見
+        canvas = tk.Canvas(frame2)
+        scrollbar = ttk.Scrollbar(frame2, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        main_frame = ttk.Frame(scrollable_frame)
+        main_frame.pack(fill='both', expand=True, padx=15, pady=10)
+        
+        # 打包滾動元件
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 添加鼠標滾輪支持
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind("<MouseWheel>", _on_mousewheel)
         
         # 標題
         title_label = ttk.Label(main_frame, text="注意力機制測試", font=FONTS['title'])
-        title_label.pack(pady=(0, 20))
+        title_label.pack(pady=(0, 12))
+        
+        # 分類器選擇區域
+        classifier_frame = ttk.LabelFrame(main_frame, text="分類器設定", padding=10)
+        classifier_frame.pack(fill='x', pady=(0, 10))
+        
+        classifier_content = ttk.Frame(classifier_frame)
+        classifier_content.pack(fill='x')
+        
+        # 左側：分類器選擇
+        classifier_left = ttk.Frame(classifier_content)
+        classifier_left.pack(side='left', fill='x', expand=True)
+        
+        ttk.Label(classifier_left, text="選擇分類器:").pack(side='left')
+        
+        # 分類器下拉選單
+        self.classifier_combo = ttk.Combobox(classifier_left, 
+                                           textvariable=self.classifier_type,
+                                           values=['xgboost', 'logistic_regression', 'random_forest', 'svm_linear'],
+                                           state='readonly',
+                                           width=20)
+        self.classifier_combo.pack(side='left', padx=(10, 0))
+        self.classifier_combo.bind('<<ComboboxSelected>>', self.on_classifier_selected)
+        
+        # 右側：設備信息
+        device_right = ttk.Frame(classifier_content)
+        device_right.pack(side='right')
+        
+        self.device_label = ttk.Label(device_right, text="檢測計算環境中...", foreground='gray')
+        self.device_label.pack(side='right')
+        
+        # 時間顯示標籤
+        timing_frame = ttk.Frame(classifier_frame)
+        timing_frame.pack(fill='x', pady=(6, 0))
+        
+        self.timing_label = ttk.Label(timing_frame, text="", foreground='blue')
+        self.timing_label.pack(anchor='w')
+        
+        # 初始化設備檢測
+        self.root.after(100, self.detect_compute_environment)
         
         # 單一注意力實驗組
-        single_frame = ttk.LabelFrame(main_frame, text="單一注意力實驗組", padding=15)
-        single_frame.pack(fill='x', pady=(0, 15))
+        single_frame = ttk.LabelFrame(main_frame, text="單一注意力實驗組", padding=10)
+        single_frame.pack(fill='x', pady=(0, 8))
         
         single_content = ttk.Frame(single_frame)
         single_content.pack(fill='x')
         
         # 單一注意力選項
-        ttk.Label(single_content, text="↳ 相似度注意力").pack(anchor='w')
-        ttk.Label(single_content, text="↳ 自注意力").pack(anchor='w')
-        ttk.Label(single_content, text="↳ 關鍵詞注意力").pack(anchor='w')
+        ttk.Label(single_content, text="↳ 相似度注意力").pack(anchor='w', pady=(0, 1))
+        ttk.Label(single_content, text="↳ 自注意力").pack(anchor='w', pady=(0, 1))
+        ttk.Label(single_content, text="↳ 關鍵詞注意力").pack(anchor='w', pady=(0, 1))
         
         single_btn_frame = ttk.Frame(single_frame)
-        single_btn_frame.pack(fill='x', pady=(10, 0))
+        single_btn_frame.pack(fill='x', pady=(8, 0))
         
         self.single_btn = ttk.Button(single_btn_frame, text="執行單一注意力測試", command=self.run_single_attention)
         self.single_btn.pack(side='left')
@@ -261,19 +355,19 @@ class MainApplication:
         self.single_status.pack(side='left', padx=(10, 0))
         
         # 雙重組合實驗組
-        dual_frame = ttk.LabelFrame(main_frame, text="雙重組合實驗組", padding=15)
-        dual_frame.pack(fill='x', pady=(0, 15))
+        dual_frame = ttk.LabelFrame(main_frame, text="雙重組合實驗組", padding=10)
+        dual_frame.pack(fill='x', pady=(0, 8))
         
         dual_content = ttk.Frame(dual_frame)
         dual_content.pack(fill='x')
         
         # 雙重組合選項
-        ttk.Label(dual_content, text="↳ 相似度 + 自注意力").pack(anchor='w')
-        ttk.Label(dual_content, text="↳ 相似度 + 關鍵詞").pack(anchor='w')
-        ttk.Label(dual_content, text="↳ 自注意力 + 關鍵詞").pack(anchor='w')
+        ttk.Label(dual_content, text="↳ 相似度 + 自注意力").pack(anchor='w', pady=(0, 1))
+        ttk.Label(dual_content, text="↳ 相似度 + 關鍵詞").pack(anchor='w', pady=(0, 1))
+        ttk.Label(dual_content, text="↳ 自注意力 + 關鍵詞").pack(anchor='w', pady=(0, 1))
         
         dual_btn_frame = ttk.Frame(dual_frame)
-        dual_btn_frame.pack(fill='x', pady=(10, 0))
+        dual_btn_frame.pack(fill='x', pady=(8, 0))
         
         self.dual_btn = ttk.Button(dual_btn_frame, text="執行雙重組合測試", command=self.run_dual_attention)
         self.dual_btn.pack(side='left')
@@ -282,17 +376,18 @@ class MainApplication:
         self.dual_status.pack(side='left', padx=(10, 0))
         
         # 三重組合實驗組
-        triple_frame = ttk.LabelFrame(main_frame, text="三重組合實驗組", padding=15)
-        triple_frame.pack(fill='x', pady=(0, 15))
+        triple_frame = ttk.LabelFrame(main_frame, text="三重組合實驗組", padding=10)
+        triple_frame.pack(fill='x', pady=(0, 8))
         
         triple_content = ttk.Frame(triple_frame)
         triple_content.pack(fill='x')
         
         # 三重組合選項
-        ttk.Label(triple_content, text="↳ 相似度 + 自注意力 + 關鍵詞").pack(anchor='w')
+        label1 = ttk.Label(triple_content, text="↳ 相似度 + 自注意力 + 關鍵詞")
+        label1.pack(anchor='w', pady=(0, 1))
         
         triple_btn_frame = ttk.Frame(triple_frame)
-        triple_btn_frame.pack(fill='x', pady=(10, 0))
+        triple_btn_frame.pack(fill='x', pady=(8, 0))
         
         self.triple_btn = ttk.Button(triple_btn_frame, text="執行三重組合測試", command=self.run_triple_attention)
         self.triple_btn.pack(side='left')
@@ -328,11 +423,27 @@ class MainApplication:
             # 在後台執行完整分析
             def run_analysis():
                 try:
+                    # 記錄開始時間
+                    import time
+                    start_time = time.time()
+                    self.root.after(0, lambda: self.timing_label.config(
+                        text=f"🔄 使用 {self.classifier_type.get()} 開始訓練...", 
+                        foreground='orange'
+                    ))
+                    
                     results = process_attention_analysis_with_classification(
                         input_file=input_file,
                         output_dir=output_dir,
-                        attention_types=attention_types
+                        attention_types=attention_types,
+                        classifier_type=self.classifier_type.get()
                     )
+                    
+                    # 計算總耗時
+                    total_time = time.time() - start_time
+                    self.root.after(0, lambda: self.timing_label.config(
+                        text=f"✅ 訓練完成！總耗時: {total_time:.1f} 秒", 
+                        foreground='green'
+                    ))
                     # 將結果存儲供比對分析使用
                     self.analysis_results = results
                     # 在主線程中更新UI
@@ -380,12 +491,29 @@ class MainApplication:
             
             def run_analysis():
                 try:
+                    # 記錄開始時間
+                    import time
+                    start_time = time.time()
+                    self.root.after(0, lambda: self.timing_label.config(
+                        text=f"🔄 使用 {self.classifier_type.get()} 開始雙重組合訓練...", 
+                        foreground='orange'
+                    ))
+                    
                     results = process_attention_analysis_with_classification(
                         input_file=input_file,
                         output_dir=output_dir,
                         attention_types=attention_types,
-                        attention_weights=attention_weights
+                        attention_weights=attention_weights,
+                        classifier_type=self.classifier_type.get()
                     )
+                    
+                    # 計算總耗時
+                    total_time = time.time() - start_time
+                    self.root.after(0, lambda: self.timing_label.config(
+                        text=f"✅ 雙重組合訓練完成！總耗時: {total_time:.1f} 秒", 
+                        foreground='green'
+                    ))
+                    
                     self.analysis_results = results
                     self.root.after(0, self._complete_attention_analysis, '雙重組合測試')
                 except Exception as e:
@@ -431,12 +559,29 @@ class MainApplication:
             
             def run_analysis():
                 try:
+                    # 記錄開始時間
+                    import time
+                    start_time = time.time()
+                    self.root.after(0, lambda: self.timing_label.config(
+                        text=f"🔄 使用 {self.classifier_type.get()} 開始三重組合訓練...", 
+                        foreground='orange'
+                    ))
+                    
                     results = process_attention_analysis_with_classification(
                         input_file=input_file,
                         output_dir=output_dir,
                         attention_types=attention_types,
-                        attention_weights=attention_weights
+                        attention_weights=attention_weights,
+                        classifier_type=self.classifier_type.get()
                     )
+                    
+                    # 計算總耗時
+                    total_time = time.time() - start_time
+                    self.root.after(0, lambda: self.timing_label.config(
+                        text=f"✅ 三重組合訓練完成！總耗時: {total_time:.1f} 秒", 
+                        foreground='green'
+                    ))
+                    
                     self.analysis_results = results
                     self.root.after(0, self._complete_attention_analysis, '三重組合測試')
                 except Exception as e:

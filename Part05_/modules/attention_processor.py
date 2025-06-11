@@ -169,10 +169,15 @@ class AttentionProcessor:
     
     def _get_embeddings(self, df: pd.DataFrame, text_column: str) -> np.ndarray:
         """獲取或生成BERT特徵向量"""
-        # 檢查是否已存在特徵向量文件
+        # 首先檢查當前輸出目錄是否已存在特徵向量文件
         embeddings_file = None
         if self.output_dir:
             embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+            
+        # 如果當前目錄沒有，搜索所有run目錄中的特徵向量文件
+        existing_embeddings_file = None
+        if not (embeddings_file and os.path.exists(embeddings_file)):
+            existing_embeddings_file = self._find_existing_embeddings()
             
         if embeddings_file and os.path.exists(embeddings_file):
             print(f"   📂 發現已存在的特徵向量文件，正在載入...")
@@ -180,6 +185,24 @@ class AttentionProcessor:
             embeddings = np.load(embeddings_file)
             print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
             logger.info(f"特徵向量形狀: {embeddings.shape}")
+        elif existing_embeddings_file:
+            print(f"   📂 發現已存在的特徵向量文件，正在載入...")
+            print(f"   📁 來源: {existing_embeddings_file}")
+            logger.info(f"載入已存在的特徵向量: {existing_embeddings_file}")
+            embeddings = np.load(existing_embeddings_file)
+            print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
+            logger.info(f"特徵向量形狀: {embeddings.shape}")
+            
+            # 將找到的特徵向量複製到當前輸出目錄，以便後續使用
+            if self.output_dir and embeddings_file:
+                try:
+                    import shutil
+                    os.makedirs(os.path.dirname(embeddings_file), exist_ok=True)
+                    shutil.copy2(existing_embeddings_file, embeddings_file)
+                    print(f"   📋 已複製特徵向量到當前目錄: {embeddings_file}")
+                    logger.info(f"已複製特徵向量到當前目錄: {embeddings_file}")
+                except Exception as e:
+                    logger.warning(f"複製特徵向量文件時發生錯誤: {str(e)}")
         else:
             # 生成新的特徵向量
             print(f"   🔄 未發現已存在的特徵向量，開始生成新的BERT特徵向量...")
@@ -192,6 +215,75 @@ class AttentionProcessor:
             logger.info(f"生成的特徵向量形狀: {embeddings.shape}")
         
         return embeddings
+    
+    def _find_existing_embeddings(self) -> Optional[str]:
+        """
+        在所有run目錄中搜索已存在的BERT特徵向量文件
+        
+        Returns:
+            Optional[str]: 找到的最新特徵向量文件路徑，如果沒找到則返回None
+        """
+        try:
+            if not self.output_dir:
+                return None
+                
+            # 獲取基礎輸出目錄（通常是output或包含output的目錄）
+            base_dir = self.output_dir
+            while base_dir and not base_dir.endswith('output'):
+                parent_dir = os.path.dirname(base_dir)
+                if parent_dir == base_dir:  # 已經到達根目錄
+                    break
+                base_dir = parent_dir
+                
+            # 如果沒找到output目錄，嘗試查找兄弟目錄中的output
+            if not base_dir.endswith('output'):
+                current_parent = os.path.dirname(self.output_dir)
+                potential_output = os.path.join(current_parent, 'output')
+                if os.path.exists(potential_output):
+                    base_dir = potential_output
+                else:
+                    # 最後嘗試在Part05_目錄下查找output
+                    part05_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    potential_output = os.path.join(part05_dir, 'output')
+                    if os.path.exists(potential_output):
+                        base_dir = potential_output
+                    else:
+                        logger.warning(f"無法找到output目錄，搜索路徑: {base_dir}")
+                        return None
+            
+            logger.info(f"在目錄中搜索BERT特徵向量: {base_dir}")
+            
+            # 搜索所有run_*目錄
+            embeddings_files = []
+            if os.path.exists(base_dir):
+                for item in os.listdir(base_dir):
+                    if item.startswith('run_'):
+                        run_dir = os.path.join(base_dir, item)
+                        if os.path.isdir(run_dir):
+                            # 檢查02_bert_encoding目錄
+                            bert_encoding_dir = os.path.join(run_dir, '02_bert_encoding')
+                            if os.path.exists(bert_encoding_dir):
+                                embeddings_file = os.path.join(bert_encoding_dir, '02_bert_embeddings.npy')
+                                if os.path.exists(embeddings_file):
+                                    # 獲取文件修改時間
+                                    mtime = os.path.getmtime(embeddings_file)
+                                    embeddings_files.append((embeddings_file, mtime))
+                                    logger.info(f"找到BERT特徵向量: {embeddings_file}")
+            
+            # 如果找到文件，返回最新的
+            if embeddings_files:
+                # 按修改時間排序，返回最新的
+                embeddings_files.sort(key=lambda x: x[1], reverse=True)
+                latest_file = embeddings_files[0][0]
+                logger.info(f"選擇最新的BERT特徵向量文件: {latest_file}")
+                return latest_file
+            else:
+                logger.info("未找到任何已存在的BERT特徵向量文件")
+                return None
+                
+        except Exception as e:
+            logger.error(f"搜索已存在BERT特徵向量時發生錯誤: {str(e)}")
+            return None
     
     def _prepare_metadata(self, df: pd.DataFrame) -> pd.DataFrame:
         """準備用於注意力分析的元數據"""

@@ -17,6 +17,8 @@ from sklearn.naive_bayes import GaussianNB
 from tqdm import tqdm
 import joblib
 import os
+import time
+import torch
 from typing import Dict, Any, Tuple, Optional, List
 
 logger = logging.getLogger(__name__)
@@ -36,18 +38,120 @@ class SentimentClassifier:
         self.label_encoder = LabelEncoder()
         self.feature_vectors = None
         self.labels = None
-        self.model_type = 'svm'  # 修改：預設使用SVM（更適合小數據集）
+        self.model_type = 'logistic_regression'  # 修改：預設使用邏輯迴歸（速度與效果平衡）
         
-        # 支持的模型類型 - 針對小數據集優化
-        self.available_models = {
-            'random_forest': RandomForestClassifier(n_estimators=100, random_state=42),
-            'logistic_regression': LogisticRegression(random_state=42, max_iter=1000, C=1.0),
-            'svm': SVC(kernel='rbf', C=1.0, random_state=42, probability=True),  # 優化SVM配置
-            'naive_bayes': self._get_naive_bayes_classifier(),  # 新增Naive Bayes
-            'svm_linear': SVC(kernel='linear', C=1.0, random_state=42, probability=True)  # 線性SVM選項
-        }
+        # 自動偵測GPU/CPU環境
+        self.device_info = self._detect_compute_environment()
+        logger.info(f"計算環境: {self.device_info['description']}")
+        
+        # 支持的模型類型 - 優化配置
+        self.available_models = self._init_models()
         
         logger.info("情感分類器已初始化")
+        logger.info(f"可用分類器: {list(self.available_models.keys())}")
+    
+    def _detect_compute_environment(self) -> Dict[str, Any]:
+        """自動偵測計算環境（GPU/CPU）"""
+        device_info = {
+            'has_gpu': False,
+            'gpu_name': None,
+            'gpu_memory': None,
+            'cuda_available': False,
+            'device': 'cpu',
+            'description': 'CPU Only'
+        }
+        
+        try:
+            # 檢測CUDA和GPU
+            if torch.cuda.is_available():
+                device_info['cuda_available'] = True
+                device_info['has_gpu'] = True
+                device_info['device'] = 'cuda'
+                device_info['gpu_name'] = torch.cuda.get_device_name(0)
+                device_info['gpu_memory'] = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
+                device_info['description'] = f"GPU: {device_info['gpu_name']} ({device_info['gpu_memory']:.1f}GB)"
+                logger.info(f"檢測到GPU: {device_info['gpu_name']}")
+            else:
+                logger.info("未檢測到CUDA GPU，使用CPU模式")
+                
+        except Exception as e:
+            logger.warning(f"GPU檢測過程中發生錯誤: {str(e)}")
+            
+        return device_info
+    
+    def _init_models(self) -> Dict[str, Any]:
+        """初始化可用的模型"""
+        models = {
+            'logistic_regression': LogisticRegression(
+                random_state=42, 
+                max_iter=1000, 
+                C=1.0,
+                n_jobs=-1  # 使用所有CPU核心
+            ),
+            'random_forest': RandomForestClassifier(
+                n_estimators=100, 
+                random_state=42,
+                n_jobs=-1  # 使用所有CPU核心
+            ),
+            'svm_linear': SVC(
+                kernel='linear', 
+                C=1.0, 
+                random_state=42, 
+                probability=True
+            ),
+            'naive_bayes': GaussianNB()
+        }
+        
+        # 嘗試載入XGBoost
+        try:
+            import xgboost as xgb
+            
+            # 根據GPU可用性配置XGBoost
+            if self.device_info['has_gpu']:
+                # GPU配置
+                xgb_params = {
+                    'tree_method': 'gpu_hist',
+                    'gpu_id': 0,
+                    'n_estimators': 100,
+                    'max_depth': 6,
+                    'learning_rate': 0.1,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'random_state': 42,
+                    'n_jobs': -1
+                }
+                logger.info("XGBoost配置為GPU模式")
+            else:
+                # CPU配置
+                xgb_params = {
+                    'tree_method': 'hist',  # CPU上最快的方法
+                    'n_estimators': 100,
+                    'max_depth': 6,
+                    'learning_rate': 0.1,
+                    'subsample': 0.8,
+                    'colsample_bytree': 0.8,
+                    'random_state': 42,
+                    'n_jobs': -1  # 使用所有CPU核心
+                }
+                logger.info("XGBoost配置為CPU模式")
+            
+            models['xgboost'] = xgb.XGBClassifier(**xgb_params)
+            logger.info("XGBoost已成功載入並配置")
+            
+        except ImportError:
+            logger.warning("XGBoost未安裝，請使用 'pip install xgboost' 安裝")
+        except Exception as e:
+            logger.error(f"XGBoost初始化失敗: {str(e)}")
+        
+        return models
+    
+    def get_available_models(self) -> List[str]:
+        """獲取可用的模型列表"""
+        return list(self.available_models.keys())
+    
+    def get_device_info(self) -> Dict[str, Any]:
+        """獲取設備信息"""
+        return self.device_info.copy()
     
     def _get_naive_bayes_classifier(self):
         """獲取Naive Bayes分類器"""
@@ -67,6 +171,9 @@ class SentimentClassifier:
             features: 特徵矩陣
             labels: 標籤數組
         """
+        start_time = time.time()
+        logger.info("開始準備分類特徵...")
+        
         # 檢查情感標籤欄位
         if 'sentiment' not in metadata.columns:
             raise ValueError("元數據中缺少 'sentiment' 欄位")
@@ -119,6 +226,8 @@ class SentimentClassifier:
         # 組合原始特徵和相似度特徵
         features = np.concatenate([original_embeddings, similarity_features], axis=1)
         
+        prepare_time = time.time() - start_time
+        logger.info(f"特徵準備完成，耗時: {prepare_time:.2f} 秒")
         logger.info(f"準備了 {features.shape[0]} 個樣本，{features.shape[1]} 維特徵")
         logger.info(f"  - 原始BERT特徵: {original_embeddings.shape[1]} 維")
         logger.info(f"  - 面向相似度特徵: {similarity_features.shape[1]} 維")
@@ -131,7 +240,7 @@ class SentimentClassifier:
         return features, encoded_labels
     
     def train(self, features: np.ndarray, labels: np.ndarray, 
-              model_type: str = 'svm', test_size: float = 0.2,
+              model_type: str = None, test_size: float = 0.2,
               original_data: pd.DataFrame = None) -> Dict[str, Any]:
         """
         訓練分類模型
@@ -146,10 +255,20 @@ class SentimentClassifier:
         Returns:
             評估結果字典
         """
+        # 如果沒有指定模型類型，使用預設值
+        if model_type is None:
+            model_type = self.model_type
+            
         if model_type not in self.available_models:
-            raise ValueError(f"不支援的模型類型: {model_type}")
+            available_models = list(self.available_models.keys())
+            raise ValueError(f"不支援的模型類型: {model_type}。可用的模型: {available_models}")
+        
+        start_time = time.time()
+        logger.info(f"開始訓練 {model_type} 模型...")
+        logger.info(f"計算環境: {self.device_info['description']}")
         
         # 分割訓練和測試集
+        split_start = time.time()
         if original_data is not None:
             # 如果有原始數據，同時分割原始數據以保持對應關係
             X_train, X_test, y_train, y_test, data_train, data_test = train_test_split(
@@ -161,25 +280,58 @@ class SentimentClassifier:
             )
             data_test = None
         
+        split_time = time.time() - split_start
+        logger.info(f"數據分割完成，耗時: {split_time:.2f} 秒")
+        logger.info(f"訓練集大小: {X_train.shape[0]}, 測試集大小: {X_test.shape[0]}")
+        
         # 選擇模型
         self.model = self.available_models[model_type]
         self.model_type = model_type
         
-        logger.info(f"開始訓練 {model_type} 模型...")
-        logger.info(f"訓練集大小: {X_train.shape[0]}, 測試集大小: {X_test.shape[0]}")
-        
         # 訓練模型
+        train_start = time.time()
+        logger.info(f"開始訓練模型...")
+        
+        # 針對XGBoost顯示特殊訊息
+        if model_type == 'xgboost':
+            if self.device_info['has_gpu']:
+                logger.info("使用GPU加速XGBoost訓練...")
+            else:
+                logger.info("使用CPU多核心XGBoost訓練...")
+        
         self.model.fit(X_train, y_train)
         
+        train_time = time.time() - train_start
+        logger.info(f"模型訓練完成，耗時: {train_time:.2f} 秒")
+        
         # 預測
+        predict_start = time.time()
+        logger.info("開始預測...")
+        
         train_pred = self.model.predict(X_train)
         test_pred = self.model.predict(X_test)
         test_pred_proba = self.model.predict_proba(X_test)
+        
+        predict_time = time.time() - predict_start
+        logger.info(f"預測完成，耗時: {predict_time:.2f} 秒")
         
         # 計算評估指標
         results = self._calculate_metrics(
             y_train, train_pred, y_test, test_pred, test_pred_proba
         )
+        
+        # 添加時間信息
+        total_time = time.time() - start_time
+        timing_info = {
+            'total_time': total_time,
+            'split_time': split_time,
+            'train_time': train_time,
+            'predict_time': predict_time,
+            'model_type': model_type,
+            'device_info': self.device_info
+        }
+        
+        results['timing_info'] = timing_info
         
         # 保存預測結果詳細信息
         # 將編碼的標籤轉換回原始標籤名稱
@@ -223,7 +375,14 @@ class SentimentClassifier:
         if self.output_dir:
             self._save_model()
         
-        logger.info(f"模型訓練完成！測試準確率: {results['test_accuracy']:.4f}")
+        # 輸出時間統計
+        logger.info(f"🕐 模型訓練完整統計:")
+        logger.info(f"   • 總耗時: {total_time:.2f} 秒")
+        logger.info(f"   • 數據分割: {split_time:.2f} 秒")
+        logger.info(f"   • 模型訓練: {train_time:.2f} 秒")
+        logger.info(f"   • 預測時間: {predict_time:.2f} 秒")
+        logger.info(f"   • 測試準確率: {results['test_accuracy']:.4f}")
+        logger.info(f"   • 計算環境: {self.device_info['description']}")
         
         return results
     
@@ -283,7 +442,8 @@ class SentimentClassifier:
     
     def evaluate_attention_mechanisms(self, attention_results: Dict[str, Any], 
                                     metadata: pd.DataFrame,
-                                    original_embeddings: np.ndarray = None) -> Dict[str, Dict]:
+                                    original_embeddings: np.ndarray = None,
+                                    model_type: str = None) -> Dict[str, Dict]:
         """
         評估不同注意力機制的分類性能
         
@@ -291,6 +451,7 @@ class SentimentClassifier:
             attention_results: 注意力機制分析結果
             metadata: 包含真實標籤的元數據
             original_embeddings: 原始BERT嵌入向量（修正：新增此參數）
+            model_type: 指定分類器類型，如果None則使用預設值
             
         Returns:
             各注意力機制的分類性能結果
@@ -327,7 +488,9 @@ class SentimentClassifier:
                 
                 # 訓練和評估
                 print(f"      🤖 訓練分類器...")
-                results = self.train(features, labels, model_type=self.model_type, original_data=metadata)
+                # 使用指定的model_type或預設值
+                train_model_type = model_type if model_type is not None else self.model_type
+                results = self.train(features, labels, model_type=train_model_type, original_data=metadata)
                 
                 # 添加注意力機制特定信息
                 results['attention_mechanism'] = mechanism_name
