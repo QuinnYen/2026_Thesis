@@ -1,0 +1,80 @@
+{
+    "IMDB": {
+        "zh": {
+            "0": "劇情發展",
+            "1": "角色塑造",
+            "2": "演員演技",
+            "3": "導演手法",
+            "4": "視覺效果",
+            "5": "音效配樂",
+            "6": "情感體驗",
+            "7": "文化影響",
+            "8": "批評觀點",
+            "9": "整體評價"
+        },
+        "en": {
+            "0": "Plot Development",
+            "1": "Character Development",
+            "2": "Acting Performance",
+            "3": "Direction",
+            "4": "Visual Effects",
+            "5": "Sound & Music",
+            "6": "Emotional Impact",
+            "7": "Cultural Impact",
+            "8": "Critical Analysis",
+            "9": "Overall Rating"
+        }
+    },
+    "AMAZON": {
+        "zh": {
+            "0": "產品品質",
+            "1": "功能特性",
+            "2": "使用便利性",
+            "3": "使用體驗",
+            "4": "設計外觀",
+            "5": "耐用程度",
+            "6": "性價比",
+            "7": "客戶服務",
+            "8": "配送物流",
+            "9": "整體評價"
+        },
+        "en": {
+            "0": "Product Quality",
+            "1": "Features",
+            "2": "Ease of Use",
+            "3": "User Experience",
+            "4": "Design & Aesthetics",
+            "5": "Durability",
+            "6": "Value for Money",
+            "7": "Customer Service",
+            "8": "Shipping & Logistics",
+            "9": "Overall Rating"
+        }
+    },
+    "YELP": {
+        "zh": {
+            "0": "食物品質",
+            "1": "食物口味",
+            "2": "菜單選擇",
+            "3": "服務態度",
+            "4": "服務速度",
+            "5": "用餐環境",
+            "6": "噪音水平",
+            "7": "位置交通",
+            "8": "性價比",
+            "9": "整體評價"
+        },
+        "en": {
+            "0": "Food Quality",
+            "1": "Taste",
+            "2": "Menu Selection",
+            "3": "Service Quality",
+            "4": "Service Speed",
+            "5": "Ambiance",
+            "6": "Noise Level",
+            "7": "Location",
+            "8": "Value for Money",
+            "9": "Overall Rating"
+        }
+    }
+} 

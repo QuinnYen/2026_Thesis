@@ -20,6 +20,9 @@ sys.path.insert(0, CURRENT_DIR)
 from modules.run_manager import RunManager
 from modules.attention_processor import AttentionProcessor
 from modules.sentiment_classifier import SentimentClassifier
+from modules.pipeline_processor import AnalysisPipeline, MultiPipelineComparison, create_simple_pipeline, run_quick_analysis
+from modules.text_encoders import TextEncoderFactory
+from modules.classification_methods import ClassificationMethodFactory
 
 # 配置日誌
 logging.basicConfig(
@@ -223,7 +226,12 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         # 修正：獲取或載入原始BERT嵌入向量
         print(f"   🔍 載入原始BERT嵌入向量用於分類評估...")
         original_embeddings = None
-        embeddings_file = os.path.join(output_dir, "02_bert_embeddings.npy")
+        # 確保從run目錄根目錄讀取
+        if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+            run_dir = os.path.dirname(output_dir)
+        else:
+            run_dir = output_dir
+        embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
         
         if os.path.exists(embeddings_file):
             # 載入已存在的BERT嵌入向量
@@ -310,10 +318,17 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
                 'error': 'Classification comparison not available'
             }
         
-        # 保存完整結果
+        # 保存完整結果到run目錄根目錄
         if output_dir:
             print(f"\n💾 保存完整分析結果...")
-            results_file = os.path.join(output_dir, "complete_analysis_results.json")
+            # 確保保存到run目錄的根目錄
+            if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+                # 如果輸出目錄是子目錄，改為父目錄（run目錄根目錄）
+                run_dir = os.path.dirname(output_dir)
+            else:
+                run_dir = output_dir
+            
+            results_file = os.path.join(run_dir, "complete_analysis_results.json")
             with open(results_file, 'w', encoding='utf-8') as f:
                 import json
                 # 處理不可序列化的對象
@@ -516,7 +531,12 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         # 獲取或載入原始BERT嵌入向量
         print(f"   🔍 載入原始BERT嵌入向量用於分類評估...")
         original_embeddings = None
-        embeddings_file = os.path.join(output_dir, "02_bert_embeddings.npy")
+        # 確保從run目錄根目錄讀取
+        if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+            run_dir = os.path.dirname(output_dir)
+        else:
+            run_dir = output_dir
+        embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
         
         if os.path.exists(embeddings_file):
             original_embeddings = np.load(embeddings_file)
@@ -602,10 +622,17 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                 'error': 'Classification comparison not available'
             }
         
-        # 保存完整結果
+        # 保存完整結果到run目錄根目錄
         if output_dir:
             print(f"\n💾 保存完整分析結果...")
-            results_file = os.path.join(output_dir, "multiple_combinations_analysis_results.json")
+            # 確保保存到run目錄的根目錄
+            if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+                # 如果輸出目錄是子目錄，改為父目錄（run目錄根目錄）
+                run_dir = os.path.dirname(output_dir)
+            else:
+                run_dir = output_dir
+            
+            results_file = os.path.join(run_dir, "multiple_combinations_analysis_results.json")
             with open(results_file, 'w', encoding='utf-8') as f:
                 import json
                 serializable_results = _make_serializable(final_results)
@@ -641,6 +668,299 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         
         raise RuntimeError(f"多重組合分析失敗: {str(e)}。請檢查日誌文件以獲取詳細的錯誤追蹤信息。") from e
 
+def run_new_pipeline_analysis(input_file: Optional[str] = None, 
+                             output_dir: Optional[str] = None,
+                             encoder_type: str = 'bert',
+                             classifier_type: str = 'sentiment',
+                             encoder_config: Optional[Dict] = None,
+                             classifier_config: Optional[Dict] = None) -> Dict:
+    """
+    執行新的流程分析架構
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        encoder_type: 編碼器類型 ('bert', 'gpt', 't5', 'cnn', 'elmo')
+        classifier_type: 分類器類型 ('sentiment', 'lda', 'bertopic', 'nmf', 'clustering')
+        encoder_config: 編碼器配置參數
+        classifier_config: 分類器配置參數
+        
+    Returns:
+        Dict: 完整的分析結果
+    """
+    try:
+        print("\n" + "="*80)
+        print("🚀 開始執行新架構流程分析")
+        print("="*80)
+        
+        # 檢查輸入文件
+        if input_file is None or not os.path.exists(input_file):
+            raise FileNotFoundError(f"找不到輸入文件：{input_file}")
+        
+        # 讀取數據
+        logger.info(f"讀取數據: {input_file}")
+        df = pd.read_csv(input_file)
+        
+        # 檢查必要的欄位
+        text_column = None
+        for col in ['processed_text', 'clean_text', 'text', 'review']:
+            if col in df.columns:
+                text_column = col
+                break
+        
+        if text_column is None:
+            available_columns = ', '.join(df.columns)
+            raise ValueError(f"在輸入文件中找不到文本欄位。可用的欄位有：{available_columns}")
+        
+        texts = df[text_column]
+        
+        # 檢查標籤欄位
+        labels = None
+        label_column = None
+        for col in ['label', 'sentiment', 'category', 'class']:
+            if col in df.columns:
+                label_column = col
+                labels = df[col]
+                break
+        
+        print(f"\n📋 分析配置:")
+        print(f"   • 輸入文件: {input_file}")
+        print(f"   • 輸出目錄: {output_dir}")
+        print(f"   • 編碼器: {encoder_type}")
+        print(f"   • 分類器: {classifier_type}")
+        print(f"   • 文本欄位: {text_column}")
+        print(f"   • 標籤欄位: {label_column if label_column else '無'}")
+        print(f"   • 數據量: {len(texts)}")
+        
+        # 創建流程
+        pipeline = AnalysisPipeline(output_dir=output_dir)
+        
+        # 配置流程
+        config_info = pipeline.configure_pipeline(
+            encoder_type=encoder_type,
+            classifier_type=classifier_type,
+            encoder_config=encoder_config or {},
+            classifier_config=classifier_config or {}
+        )
+        
+        # 顯示配置信息
+        print(f"\n🔧 流程配置:")
+        print(f"   • 編碼器: {config_info['encoder']['name']}")
+        print(f"   • 嵌入維度: {config_info['encoder']['embedding_dim']}")
+        print(f"   • 分類器: {config_info['classifier']['method_name']}")
+        
+        # 顯示兼容性信息
+        compatibility = config_info['compatibility']
+        if compatibility['warnings']:
+            print(f"   ⚠️  警告: {'; '.join(compatibility['warnings'])}")
+        if compatibility['recommendations']:
+            print(f"   💡 建議: {'; '.join(compatibility['recommendations'])}")
+        
+        # 運行流程
+        results = pipeline.run_pipeline(texts=texts, labels=labels)
+        
+        # 顯示結果摘要
+        if 'summary' in results:
+            summary = results['summary']
+            print(f"\n📊 結果摘要:")
+            print(f"   • 分析類型: {summary.get('analysis_type', 'N/A')}")
+            
+            if summary['analysis_type'] == '情感分析':
+                print(f"   • 準確率: {summary.get('accuracy', 0):.4f}")
+                print(f"   • F1分數: {summary.get('f1_score', 0):.4f}")
+                print(f"   • 類別數: {summary.get('n_classes', 0)}")
+            elif summary['analysis_type'] == '主題建模':
+                print(f"   • 方法: {summary.get('method', 'N/A')}")
+                print(f"   • 主題數: {summary.get('n_topics', 0)}")
+                if 'coherence_score' in summary:
+                    print(f"   • 一致性分數: {summary['coherence_score']:.4f}")
+            elif summary['analysis_type'] == '聚類分析':
+                print(f"   • 聚類方法: {summary.get('clustering_method', 'N/A')}")
+                print(f"   • 聚類數: {summary.get('n_clusters', 0)}")
+                if summary.get('silhouette_score'):
+                    print(f"   • 輪廓分數: {summary['silhouette_score']:.4f}")
+        
+        print(f"\n🎉 新架構流程分析完成！")
+        print(f"📁 結果保存在: {output_dir}")
+        print("="*80)
+        
+        logger.info(f"新架構流程分析結果保存在: {output_dir}")
+        return results
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        
+        logger.error(f"新架構流程分析過程中發生錯誤: {str(e)}")
+        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        
+        # 嘗試GPU記憶體清理
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
+                logger.info("已清理GPU記憶體")
+        except:
+            pass
+        
+        raise RuntimeError(f"新架構流程分析失敗: {str(e)}。請檢查日誌文件以獲取詳細的錯誤追蹤信息。") from e
+
+def run_multi_pipeline_comparison(input_file: Optional[str] = None, 
+                                output_dir: Optional[str] = None,
+                                pipeline_configs: Optional[List[Dict]] = None) -> Dict:
+    """
+    執行多流程比較分析
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        pipeline_configs: 流程配置列表
+        
+    Returns:
+        Dict: 比較分析結果
+    """
+    try:
+        print("\n" + "="*80)
+        print("🔬 開始執行多流程比較分析")
+        print("="*80)
+        
+        # 檢查輸入文件
+        if input_file is None or not os.path.exists(input_file):
+            raise FileNotFoundError(f"找不到輸入文件：{input_file}")
+        
+        # 讀取數據
+        logger.info(f"讀取數據: {input_file}")
+        df = pd.read_csv(input_file)
+        
+        # 檢查文本和標籤欄位
+        text_column = None
+        for col in ['processed_text', 'clean_text', 'text', 'review']:
+            if col in df.columns:
+                text_column = col
+                break
+        
+        if text_column is None:
+            raise ValueError("找不到文本欄位")
+        
+        texts = df[text_column]
+        
+        labels = None
+        for col in ['label', 'sentiment', 'category', 'class']:
+            if col in df.columns:
+                labels = df[col]
+                break
+        
+        # 設置預設的流程配置
+        if pipeline_configs is None:
+            pipeline_configs = [
+                {
+                    'name': 'BERT+情感分析',
+                    'encoder_type': 'bert',
+                    'classifier_type': 'sentiment'
+                },
+                {
+                    'name': 'BERT+LDA主題建模',
+                    'encoder_type': 'bert',
+                    'classifier_type': 'lda',
+                    'classifier_config': {'n_topics': 5}
+                },
+                {
+                    'name': 'CNN+聚類分析',
+                    'encoder_type': 'cnn',
+                    'classifier_type': 'clustering',
+                    'classifier_config': {'method': 'kmeans', 'n_clusters': 5}
+                }
+            ]
+        
+        print(f"\n📋 比較配置:")
+        print(f"   • 輸入文件: {input_file}")
+        print(f"   • 輸出目錄: {output_dir}")
+        print(f"   • 流程數量: {len(pipeline_configs)}")
+        print(f"   • 數據量: {len(texts)}")
+        
+        # 創建多流程比較器
+        comparator = MultiPipelineComparison(output_dir=output_dir)
+        
+        # 添加流程配置
+        for config in pipeline_configs:
+            comparator.add_pipeline_config(
+                name=config['name'],
+                encoder_type=config['encoder_type'],
+                classifier_type=config['classifier_type'],
+                encoder_config=config.get('encoder_config', {}),
+                classifier_config=config.get('classifier_config', {})
+            )
+        
+        # 運行比較
+        comparison_results = comparator.run_comparison(texts=texts, labels=labels)
+        
+        # 顯示比較結果
+        metrics = comparison_results.get('comparison_metrics', {})
+        if 'error' not in metrics:
+            print(f"\n📊 比較結果:")
+            print(f"   • 成功流程: {metrics['successful_pipelines']}")
+            print(f"   • 失敗流程: {metrics['failed_pipelines']}")
+            print(f"   • 平均處理時間: {metrics['performance_stats']['avg_processing_time']:.2f}秒")
+            print(f"   • 最快流程: {metrics['fastest_pipeline']}")
+            print(f"   • 最省記憶體流程: {metrics['most_memory_efficient']}")
+            
+            recommendations = comparison_results.get('recommendations', {})
+            if 'best_overall' in recommendations:
+                print(f"   • 綜合推薦: {recommendations['best_overall']}")
+        
+        print(f"\n🎉 多流程比較分析完成！")
+        print(f"📁 結果保存在: {output_dir}")
+        print("="*80)
+        
+        logger.info(f"多流程比較分析結果保存在: {output_dir}")
+        return comparison_results
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        
+        logger.error(f"多流程比較分析過程中發生錯誤: {str(e)}")
+        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        
+        raise RuntimeError(f"多流程比較分析失敗: {str(e)}。請檢查日誌文件以獲取詳細的錯誤追蹤信息。") from e
+
+def show_available_options():
+    """顯示可用的編碼器和分類器選項"""
+    print("\n" + "="*80)
+    print("📋 可用的分析選項")
+    print("="*80)
+    
+    # 顯示編碼器選項
+    print("\n🔤 文本編碼器:")
+    encoder_info = TextEncoderFactory.get_encoder_info()
+    for encoder_type, info in encoder_info.items():
+        status = "✅" if info.get('available', True) else "❌"
+        print(f"   {status} {encoder_type.upper()}: {info['name']}")
+        print(f"      - 描述: {info['description']}")
+        print(f"      - 嵌入維度: {info['embedding_dim']}")
+        print(f"      - 優勢: {info['advantages']}")
+        if not info.get('available', True) and 'note' in info:
+            print(f"      - 注意: {info['note']}")
+        print()
+    
+    # 顯示分類器選項
+    print("🎯 分類/建模方法:")
+    classifier_info = ClassificationMethodFactory.get_method_info()
+    for classifier_type, info in classifier_info.items():
+        status = "✅" if info.get('available', True) else "❌"
+        print(f"   {status} {classifier_type.upper()}: {info['name']}")
+        print(f"      - 描述: {info['description']}")
+        print(f"      - 類型: {info['type']}")
+        print(f"      - 需要標籤: {'是' if info['needs_labels'] else '否'}")
+        print(f"      - 優勢: {info['advantages']}")
+        if not info.get('available', True) and 'note' in info:
+            print(f"      - 注意: {info['note']}")
+        print()
+    
+    print("="*80)
+
 def main():
     """
     主程式入口點
@@ -675,6 +995,21 @@ def main():
             elif sys.argv[1] == '--new-run':
                 # 清除上次執行的記錄，強制創建新的run目錄
                 pass  # 已移除clear_last_run，保留佔位
+            elif sys.argv[1] == '--new-pipeline':
+                # 執行新架構流程分析
+                input_file = sys.argv[2] if len(sys.argv) > 2 else None
+                encoder_type = sys.argv[3] if len(sys.argv) > 3 else 'bert'
+                classifier_type = sys.argv[4] if len(sys.argv) > 4 else 'sentiment'
+                run_new_pipeline_analysis(input_file=input_file, 
+                                         encoder_type=encoder_type,
+                                         classifier_type=classifier_type)
+            elif sys.argv[1] == '--multi-compare':
+                # 執行多流程比較分析
+                input_file = sys.argv[2] if len(sys.argv) > 2 else None
+                run_multi_pipeline_comparison(input_file=input_file)
+            elif sys.argv[1] == '--show-options':
+                # 顯示可用選項
+                show_available_options()
         else:
             # 啟動GUI
             from gui.main_window import main as gui_main
@@ -703,6 +1038,11 @@ BERT情感分析系統 - 使用說明
     --classify [input_file]                # 執行完整的注意力機制分析和分類評估
     --compare [input_file]                 # 比較不同注意力機制效果
     --new-run                              # 創建新的執行目錄
+    
+新架構選項:
+    --new-pipeline [input_file] [encoder] [classifier]  # 執行新架構流程分析
+    --multi-compare [input_file]           # 執行多流程比較分析
+    --show-options                         # 顯示可用的編碼器和分類器選項
 
 功能說明:
     --attention: 執行注意力機制分析，計算面向向量的內聚度和分離度
@@ -728,6 +1068,14 @@ BERT情感分析系統 - 使用說明
     python Part05_Main.py --attention data.csv        # 僅分析注意力機制
     python Part05_Main.py --classify data.csv         # 完整分類評估
     python Part05_Main.py --compare processed_data.csv
+    
+新架構範例:
+    python Part05_Main.py --show-options              # 查看所有可用選項
+    python Part05_Main.py --new-pipeline data.csv bert sentiment  # BERT+情感分析
+    python Part05_Main.py --new-pipeline data.csv bert lda        # BERT+LDA主題建模
+    python Part05_Main.py --new-pipeline data.csv cnn clustering  # CNN+聚類分析
+    python Part05_Main.py --new-pipeline data.csv t5 bertopic     # T5+BERTopic主題建模
+    python Part05_Main.py --multi-compare data.csv               # 多流程自動比較
 
 測試進度功能:
     python test_progress.py                           # 測試進度顯示功能

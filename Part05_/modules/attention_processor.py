@@ -202,10 +202,15 @@ class AttentionProcessor:
     
     def _get_embeddings(self, df: pd.DataFrame, text_column: str) -> np.ndarray:
         """獲取或生成BERT特徵向量"""
-        # 首先檢查當前輸出目錄是否已存在特徵向量文件
+        # 首先檢查run目錄根目錄是否已存在特徵向量文件
         embeddings_file = None
         if self.output_dir:
-            embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+            # 確保從run目錄根目錄讀取
+            if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+                run_dir = os.path.dirname(self.output_dir)
+            else:
+                run_dir = self.output_dir
+            embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
             
         # 如果當前目錄沒有，搜索所有run目錄中的特徵向量文件
         existing_embeddings_file = None
@@ -293,7 +298,15 @@ class AttentionProcessor:
                     if item.startswith('run_'):
                         run_dir = os.path.join(base_dir, item)
                         if os.path.isdir(run_dir):
-                            # 檢查02_bert_encoding目錄
+                            # 首先檢查run目錄根目錄
+                            embeddings_file_root = os.path.join(run_dir, '02_bert_embeddings.npy')
+                            if os.path.exists(embeddings_file_root):
+                                # 獲取文件修改時間
+                                mtime = os.path.getmtime(embeddings_file_root)
+                                embeddings_files.append((embeddings_file_root, mtime))
+                                logger.info(f"找到BERT特徵向量（根目錄）: {embeddings_file_root}")
+                            
+                            # 然後檢查02_bert_encoding子目錄（向後兼容）
                             bert_encoding_dir = os.path.join(run_dir, '02_bert_encoding')
                             if os.path.exists(bert_encoding_dir):
                                 embeddings_file = os.path.join(bert_encoding_dir, '02_bert_embeddings.npy')
@@ -301,7 +314,7 @@ class AttentionProcessor:
                                     # 獲取文件修改時間
                                     mtime = os.path.getmtime(embeddings_file)
                                     embeddings_files.append((embeddings_file, mtime))
-                                    logger.info(f"找到BERT特徵向量: {embeddings_file}")
+                                    logger.info(f"找到BERT特徵向量（子目錄）: {embeddings_file}")
             
             # 如果找到文件，返回最新的
             if embeddings_files:

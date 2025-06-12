@@ -27,7 +27,7 @@ class MainApplication:
         self.dataset_type = tk.StringVar()
         
         # 初始化分類器類型
-        self.classifier_type = tk.StringVar(value='logistic_regression')
+        self.classifier_type = tk.StringVar(value='xgboost')
         
         # 初始化步驟狀態
         self.step_states = {
@@ -271,15 +271,29 @@ class MainApplication:
         encoding_frame = ttk.Frame(step4_frame)
         encoding_frame.pack(fill='x')
         
+        # 添加BERT編碼專用的進度條和狀態標籤
+        encoding_progress_frame = ttk.Frame(encoding_frame)
+        encoding_progress_frame.pack(side='left', fill='x', expand=True)
+        
+        self.encoding_progress_var = tk.DoubleVar()
+        self.encoding_progress_bar = ttk.Progressbar(encoding_progress_frame, 
+                                                   variable=self.encoding_progress_var,
+                                                   maximum=100,
+                                                   length=300,
+                                                   mode='determinate')
+        self.encoding_progress_bar.pack(side='top', fill='x', padx=(0, 10))
+        
+        self.encoding_status = ttk.Label(encoding_progress_frame, 
+                                       text="狀態: 待處理",
+                                       foreground="orange")
+        self.encoding_status.pack(side='top', anchor='w', pady=(5, 0))
+        
         self.encoding_btn = ttk.Button(encoding_frame, text="開始編碼", command=self.start_encoding)
-        self.encoding_btn.pack(side='left')
+        self.encoding_btn.pack(side='right')
         
         # 新增導入按鈕
         self.import_encoding_btn = ttk.Button(encoding_frame, text="導入編碼", command=self.import_encoding)
-        self.import_encoding_btn.pack(side='left', padx=(10, 0))
-        
-        self.encoding_status = ttk.Label(step4_frame, text="狀態: 待處理", foreground="orange")
-        self.encoding_status.pack(anchor='w', pady=(10, 0))
+        self.import_encoding_btn.pack(side='right', padx=(10, 0))
         
 
         
@@ -1160,14 +1174,14 @@ class MainApplication:
             message_type, message = self.encoding_queue.get_nowait()
             
             if message_type == 'progress':
-                # 更新進度條
+                # 更新BERT編碼專用進度條
                 if isinstance(message, (list, tuple)) and len(message) == 2:
                     current, total = message
                     percentage = (current / total) * 100 if total > 0 else 0
-                    self.progress_var.set(percentage)
+                    self.encoding_progress_var.set(percentage)
                 else:
                     # 直接是百分比
-                    self.progress_var.set(message)
+                    self.encoding_progress_var.set(message)
             
             elif message_type == 'status':
                 # 更新狀態文字
@@ -1204,7 +1218,7 @@ class MainApplication:
                     text=error_msg,
                     foreground=COLORS['error']
                 )
-                self.progress_var.set(0)  # 重置進度條
+                self.encoding_progress_var.set(0)  # 重置BERT編碼進度條
                 messagebox.showerror("錯誤", error_msg)
                 self.encoding_btn['state'] = 'normal'
                 return  # 停止檢查
@@ -1215,7 +1229,7 @@ class MainApplication:
                     text=success_msg,
                     foreground=COLORS['success']
                 )
-                self.progress_var.set(100)  # 完成進度條
+                self.encoding_progress_var.set(100)  # 完成BERT編碼進度條
                 self.step_states['encoding_done'] = True
                 self.update_button_states()
                 return  # 停止檢查
@@ -1295,6 +1309,9 @@ class MainApplication:
                         foreground=COLORS['success']
                     )
                     
+                    # 設置進度條為完成狀態
+                    self.encoding_progress_var.set(100)
+                    
                     # 更新狀態
                     self.step_states['encoding_done'] = True
                     self.update_button_states()
@@ -1347,10 +1364,10 @@ class MainApplication:
                     # 格式化數據
                     row_data = (
                         self._format_mechanism_name(mechanism),
-                        f"{accuracy:.1%}",  # 轉換為百分比格式
-                        f"{mechanism_result.get('test_f1', 0):.3f}",
-                        f"{mechanism_result.get('test_recall', 0):.3f}",
-                        f"{mechanism_result.get('test_precision', 0):.3f}"
+                        f"{accuracy * 100:.4f}%",  # 轉換為百分比格式，保留四位小數
+                        f"{mechanism_result.get('test_f1', 0) * 100:.4f}%",
+                        f"{mechanism_result.get('test_recall', 0) * 100:.4f}%",
+                        f"{mechanism_result.get('test_precision', 0) * 100:.4f}%"
                     )
                     
                     self.performance_tree.insert('', 'end', values=row_data)
@@ -1364,7 +1381,7 @@ class MainApplication:
             best_accuracy = summary.get('best_classification_accuracy', 0)
             
             self.analysis_status.config(
-                text=f"分析完成！最佳注意力機制: {self._format_mechanism_name(best_mechanism)} (準確率: {best_accuracy:.1%})",
+                text=f"分析完成！最佳注意力機制: {self._format_mechanism_name(best_mechanism)} (準確率: {best_accuracy * 100:.4f}%)",
                 foreground=COLORS['success']
             )
             

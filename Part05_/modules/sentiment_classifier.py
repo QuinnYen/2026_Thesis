@@ -38,7 +38,7 @@ class SentimentClassifier:
         self.label_encoder = LabelEncoder()
         self.feature_vectors = None
         self.labels = None
-        self.model_type = 'logistic_regression'  # 修改：預設使用邏輯迴歸（速度與效果平衡）
+        self.model_type = 'xgboost'  # 修改：預設使用XGBoost（高準確率與性能）
         
         # 自動偵測GPU/CPU環境
         self.device_info = self._detect_compute_environment()
@@ -218,9 +218,14 @@ class SentimentClassifier:
         
         # 修正：獲取原始BERT嵌入向量
         if original_embeddings is None:
-            # 嘗試從輸出目錄載入BERT嵌入向量
+            # 嘗試從run目錄根目錄載入BERT嵌入向量
             if self.output_dir:
-                embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+                # 確保從run目錄根目錄讀取
+                if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+                    run_dir = os.path.dirname(self.output_dir)
+                else:
+                    run_dir = self.output_dir
+                embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
                 if os.path.exists(embeddings_file):
                     original_embeddings = np.load(embeddings_file)
                     logger.info(f"已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
@@ -493,7 +498,12 @@ class SentimentClassifier:
         # 修正：如果沒有提供original_embeddings，嘗試載入
         if original_embeddings is None:
             if self.output_dir:
-                embeddings_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+                # 確保從run目錄根目錄讀取
+                if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+                    run_dir = os.path.dirname(self.output_dir)
+                else:
+                    run_dir = self.output_dir
+                embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
                 if os.path.exists(embeddings_file):
                     original_embeddings = np.load(embeddings_file)
                     logger.info(f"已載入原始BERT嵌入向量用於分類評估，形狀: {original_embeddings.shape}")
@@ -676,16 +686,23 @@ class SentimentClassifier:
         }
     
     def _save_model(self):
-        """保存訓練好的模型"""
+        """保存訓練好的模型到run目錄根目錄"""
         if self.model is None or self.output_dir is None:
             return
-        
-        model_path = os.path.join(self.output_dir, f"sentiment_classifier_{self.model_type}.pkl")
-        encoder_path = os.path.join(self.output_dir, "label_encoder.pkl")
-        
+
+        # 確保保存到run目錄的根目錄
+        if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+            # 如果輸出目錄是子目錄，改為父目錄（run目錄根目錄）
+            run_dir = os.path.dirname(self.output_dir)
+        else:
+            run_dir = self.output_dir
+
+        model_path = os.path.join(run_dir, f"sentiment_classifier_{self.model_type}.pkl")
+        encoder_path = os.path.join(run_dir, "label_encoder.pkl")
+
         joblib.dump(self.model, model_path)
         joblib.dump(self.label_encoder, encoder_path)
-        
+
         logger.info(f"模型已保存至: {model_path}")
         logger.info(f"標籤編碼器已保存至: {encoder_path}")
     

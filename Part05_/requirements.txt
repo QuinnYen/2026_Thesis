@@ -1,0 +1,93 @@
+# BERT情感分析系統 - 依賴套件清單
+# =====================================
+# 更新日期: 2025-06-12
+# 系統：跨領域情感分析與注意力機制研究平台
+
+# 核心深度學習框架
+# ================
+torch>=1.9.0,<2.1.0          # PyTorch深度學習框架，支援CUDA加速
+transformers>=4.0.0,<5.0.0   # Hugging Face Transformers，BERT等預訓練模型
+
+# 機器學習核心套件
+# ================
+scikit-learn>=1.0.0,<1.4.0   # 機器學習工具包：分類器、評估指標、數據預處理
+xgboost>=1.6.0,<2.1.0        # 高性能梯度提升樹，支援GPU加速
+numpy>=1.21.0,<1.26.0        # 數值計算基礎庫
+pandas>=1.3.0,<2.1.0         # 數據分析與操作庫
+
+# 自然語言處理
+# ============
+nltk>=3.6,<4.0               # 自然語言處理工具包：分詞、停用詞、語言資源
+beautifulsoup4>=4.9.0,<5.0.0 # HTML解析器，用於文本清理
+
+# 工具與界面套件
+# ==============
+tqdm>=4.60.0,<5.0.0          # 進度條顯示，提升用戶體驗
+joblib>=1.0.0,<2.0.0         # 高效的序列化庫，用於模型持久化
+
+# 可選功能套件 - 主題建模與進階分析
+# =================================
+# 注意：以下套件為可選安裝，用於進階主題建模功能
+gensim>=4.0.0,<5.0.0         # 主題建模庫（LDA、Word2Vec等）
+bertopic>=0.9.0,<1.0.0       # 基於BERT的主題建模（進階功能）
+umap-learn>=0.5.0,<1.0.0     # 降維算法（BERTopic依賴）
+hdbscan>=0.8.0,<1.0.0        # 密度聚類算法（BERTopic依賴）
+
+# 深度學習擴展（實驗性功能）
+# ==========================
+# 注意：以下套件為實驗性功能，需要額外配置
+allennlp>=2.0.0,<3.0.0       # ELMo文本編碼器支援（可選）
+
+# 可視化套件（調試與分析用）
+# =========================
+matplotlib>=3.3.0,<4.0.0     # 基礎繪圖庫
+seaborn>=0.11.0,<1.0.0       # 統計視覺化
+
+# =====================================
+# 安裝指南：
+# =====================================
+#
+# 1. 基本安裝（僅核心功能）：
+#    pip install torch transformers scikit-learn xgboost numpy pandas nltk beautifulsoup4 tqdm joblib
+#
+# 2. 完整安裝（包含所有功能）：
+#    pip install -r requirements.txt
+#
+# 3. GPU加速安裝（推薦）：
+#    # 先安裝CUDA版本的PyTorch
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#    # 再安裝其他套件
+#    pip install -r requirements.txt
+#
+# 4. 驗證安裝：
+#    python -c "import torch, transformers, sklearn, xgboost; print('✅ 核心套件安裝成功')"
+#
+# =====================================
+# 系統需求：
+# =====================================
+# - Python 3.7+ (建議3.8+)
+# - RAM: 8GB 最低 / 16GB 推薦
+# - GPU: 4GB+ VRAM (可選，用於GPU加速)
+# - 磁碟空間: 5GB+ (包含模型下載)
+#
+# =====================================
+# 首次運行配置：
+# =====================================
+# 執行以下命令下載必要的NLTK資源：
+# python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])"
+#
+# BERT模型會在首次使用時自動下載（約400MB）
+#
+# =====================================
+# 故障排除：
+# =====================================
+# 1. 如果pip安裝失敗，嘗試升級pip：
+#    python -m pip install --upgrade pip
+#
+# 2. 如果網路問題，使用國內鏡像：
+#    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+#
+# 3. 如果CUDA相關錯誤，強制使用CPU：
+#    export CUDA_VISIBLE_DEVICES=""
+#
+# =====================================

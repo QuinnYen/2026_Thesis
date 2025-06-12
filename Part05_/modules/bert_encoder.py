@@ -115,9 +115,16 @@ class BertEncoder:
                 'total_phases': 3
             })
         
-        # 保存特徵向量
+        # 保存特徵向量到run目錄根目錄
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
+            # 確保輸出目錄是run目錄的根目錄
+            if "02_bert_encoding" in self.output_dir:
+                # 如果輸出目錄是子目錄，改為父目錄
+                run_dir = os.path.dirname(self.output_dir)
+            else:
+                run_dir = self.output_dir
+            
+            output_file = os.path.join(run_dir, "02_bert_embeddings.npy")
             np.save(output_file, embeddings)
             logger.info(f"已保存BERT特徵向量到：{output_file}")
             
