@@ -23,6 +23,7 @@ from modules.sentiment_classifier import SentimentClassifier
 from modules.pipeline_processor import AnalysisPipeline, MultiPipelineComparison, create_simple_pipeline, run_quick_analysis
 from modules.text_encoders import TextEncoderFactory
 from modules.classification_methods import ClassificationMethodFactory
+from modules.cross_validation import CrossValidationEvaluator
 
 # 配置日誌
 logging.basicConfig(
@@ -91,9 +92,10 @@ def process_attention_analysis(input_file: Optional[str] = None,
                              output_dir: Optional[str] = None,
                              attention_types: Optional[List[str]] = None,
                              topics_path: Optional[str] = None,
-                             attention_weights: Optional[Dict] = None) -> Dict:
+                             attention_weights: Optional[Dict] = None,
+                             encoder_type: str = 'bert') -> Dict:
     """
-    執行注意力機制分析（原有功能，保持向後兼容性）
+    執行注意力機制分析（支援多種編碼器）
     
     Args:
         input_file: 輸入文件路徑
@@ -101,13 +103,14 @@ def process_attention_analysis(input_file: Optional[str] = None,
         attention_types: 要測試的注意力機制類型
         topics_path: 關鍵詞文件路徑
         attention_weights: 組合注意力權重配置
+        encoder_type: 編碼器類型 (bert, gpt, t5, cnn, elmo)
         
     Returns:
         Dict: 分析結果
     """
     try:
         # 初始化注意力處理器
-        processor = AttentionProcessor(output_dir=output_dir)
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
         
         # 檢查輸入文件
         if input_file is None or not os.path.exists(input_file):
@@ -185,7 +188,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         print("="*80)
         
         # 初始化注意力處理器
-        processor = AttentionProcessor(output_dir=output_dir)
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type='bert')
         
         # 檢查輸入文件
         if input_file is None or not os.path.exists(input_file):
@@ -221,30 +224,45 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         print(f"\n🎯 階段 2/3: 分類性能評估")
         print("-" * 50)
         logger.info("開始執行分類評估...")
-        classifier = SentimentClassifier(output_dir=output_dir)
+        classifier = SentimentClassifier(output_dir=output_dir, encoder_type=encoder_type)
         
-        # 修正：獲取或載入原始BERT嵌入向量
-        print(f"   🔍 載入原始BERT嵌入向量用於分類評估...")
+        # 修正：獲取或載入編碼器嵌入向量（支援多種編碼器）
+        print(f"   🔍 載入編碼器嵌入向量用於分類評估...")
         original_embeddings = None
-        # 確保從run目錄根目錄讀取
-        if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
-            run_dir = os.path.dirname(output_dir)
-        else:
-            run_dir = output_dir
-        embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
         
-        if os.path.exists(embeddings_file):
-            # 載入已存在的BERT嵌入向量
+        # 使用通用的檔案檢測邏輯
+        temp_processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
+        
+        # 嘗試找到現有的編碼器檔案
+        embeddings_file = temp_processor._find_existing_embeddings(encoder_type)
+        
+        if embeddings_file and os.path.exists(embeddings_file):
+            # 載入已存在的編碼器嵌入向量
             original_embeddings = np.load(embeddings_file)
-            print(f"   ✅ 已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
-            logger.info(f"載入原始BERT嵌入向量: {original_embeddings.shape}")
-        else:
-            # 如果沒有找到，重新生成
-            print(f"   🔄 未找到BERT嵌入向量文件，開始重新生成...")
-            logger.info("未找到BERT嵌入向量，開始重新生成...")
+            print(f"   ✅ 已載入 {encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
+            print(f"   📁 來源檔案: {embeddings_file}")
+            logger.info(f"載入 {encoder_type.upper()} 嵌入向量: {original_embeddings.shape}")
+        
+        if original_embeddings is None:
+            # 如果沒有找到，重新生成（向後相容）
+            print(f"   🔄 未找到 {encoder_type.upper()} 嵌入向量文件，開始重新生成...")
+            logger.info(f"未找到 {encoder_type.upper()} 嵌入向量，開始重新生成...")
             
-            from modules.bert_encoder import BertEncoder
-            bert_encoder = BertEncoder(output_dir=output_dir)
+            # 根據編碼器類型選擇合適的編碼器
+            if encoder_type == 'bert':
+                from modules.bert_encoder import BertEncoder
+                encoder = BertEncoder(output_dir=output_dir)
+            else:
+                # 對於其他編碼器類型，使用模組化架構
+                try:
+                    from modules.encoder_factory import EncoderFactory
+                    encoder = EncoderFactory.create_encoder(encoder_type, output_dir=output_dir)
+                except:
+                    # 如果模組化架構不可用，回退到BERT
+                    print(f"   ⚠️ {encoder_type.upper()} 編碼器不可用，回退使用BERT")
+                    logger.warning(f"{encoder_type.upper()} 編碼器不可用，回退使用BERT")
+                    from modules.bert_encoder import BertEncoder
+                    encoder = BertEncoder(output_dir=output_dir)
             
             # 找到文本欄位
             text_column = None
@@ -254,11 +272,11 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
                     break
             
             if text_column:
-                original_embeddings = bert_encoder.encode(df[text_column])
-                print(f"   ✅ BERT嵌入向量生成完成，形狀: {original_embeddings.shape}")
-                logger.info(f"生成的BERT嵌入向量形狀: {original_embeddings.shape}")
+                original_embeddings = encoder.encode(df[text_column])
+                print(f"   ✅ {encoder_type.upper()} 嵌入向量生成完成，形狀: {original_embeddings.shape}")
+                logger.info(f"生成的 {encoder_type.upper()} 嵌入向量形狀: {original_embeddings.shape}")
             else:
-                raise ValueError("無法找到文本欄位來生成BERT嵌入向量")
+                raise ValueError("無法找到文本欄位來生成嵌入向量")
         
         # 評估不同注意力機制的分類性能（修正：傳遞原始嵌入向量）
         classification_results = classifier.evaluate_attention_mechanisms(
@@ -397,7 +415,7 @@ def compare_attention_mechanisms(input_file: Optional[str] = None,
     """
     try:
         # 初始化注意力處理器
-        processor = AttentionProcessor(output_dir=output_dir)
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type='bert')
         
         # 執行比較
         results = processor.compare_attention_mechanisms(
@@ -420,9 +438,10 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                                                        output_dir: Optional[str] = None,
                                                        attention_types: Optional[List[str]] = None,
                                                        attention_combinations: Optional[List[Dict]] = None,
-                                                       classifier_type: Optional[str] = None) -> Dict:
+                                                       classifier_type: Optional[str] = None,
+                                                       encoder_type: str = 'bert') -> Dict:
     """
-    執行多種注意力機制組合分析
+    執行多種注意力機制組合分析（支援多種編碼器）
     
     Args:
         input_file: 輸入文件路徑
@@ -430,6 +449,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         attention_types: 要測試的基本注意力機制類型
         attention_combinations: 多個組合注意力的權重配置列表
         classifier_type: 分類器類型
+        encoder_type: 編碼器類型 (bert, gpt, t5, cnn, elmo)
         
     Returns:
         Dict: 完整的分析和分類結果
@@ -455,7 +475,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         print("="*80)
         
         # 初始化注意力處理器
-        processor = AttentionProcessor(output_dir=output_dir)
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
         
         # 檢查輸入文件
         if input_file is None or not os.path.exists(input_file):
@@ -492,6 +512,41 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
             save_results=False
         )
         
+        # 重要：檢查實際使用的編碼器類型（可能因為回退而改變）
+        actual_encoder_type = processor.encoder_type
+        if actual_encoder_type != encoder_type:
+            print(f"   ⚠️ 編碼器已從 {encoder_type.upper()} 回退到 {actual_encoder_type.upper()}")
+            logger.warning(f"編碼器已從 {encoder_type.upper()} 回退到 {actual_encoder_type.upper()}")
+            
+            # 檢查是否存在舊的注意力分析結果（可能使用不同編碼器）
+            print(f"   🔍 檢查注意力分析結果的編碼器一致性...")
+            
+            # 更新編碼器類型以確保後續階段一致性
+            encoder_type = actual_encoder_type
+            
+            # 如果有舊結果，需要清理以確保使用正確的編碼器重新分析
+            attention_dir = os.path.join(output_dir, "03_attention_testing")
+            if os.path.exists(attention_dir):
+                print(f"   🧹 清理可能不一致的舊注意力分析結果...")
+                logger.info("清理可能使用不同編碼器的舊注意力分析結果")
+                import shutil
+                try:
+                    shutil.rmtree(attention_dir)
+                    print(f"   ✅ 已清理舊結果，將使用 {encoder_type.upper()} 重新分析")
+                except Exception as e:
+                    logger.warning(f"清理舊結果時發生錯誤: {e}")
+            
+            # 重新創建注意力處理器，確保使用正確的編碼器類型
+            processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
+            
+            # 重新執行注意力分析以確保一致性
+            print(f"   🔄 使用 {encoder_type.upper()} 重新執行注意力分析...")
+            basic_results = processor.process_with_attention(
+                input_file=input_file,
+                attention_types=attention_types,
+                save_results=False
+            )
+        
         # 第二階段：執行組合注意力分析
         if attention_combinations:
             print(f"\n🔗 階段 2/3: 組合注意力機制分析")
@@ -526,28 +581,43 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         print(f"\n🎯 階段 3/3: 分類性能評估")
         print("-" * 50)
         logger.info("開始執行分類評估...")
-        classifier = SentimentClassifier(output_dir=output_dir)
+        classifier = SentimentClassifier(output_dir=output_dir, encoder_type=encoder_type)
         
-        # 獲取或載入原始BERT嵌入向量
-        print(f"   🔍 載入原始BERT嵌入向量用於分類評估...")
+        # 獲取或載入編碼器嵌入向量（支援多種編碼器）
+        print(f"   🔍 載入 {encoder_type.upper()} 嵌入向量用於分類評估...")
         original_embeddings = None
-        # 確保從run目錄根目錄讀取
-        if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
-            run_dir = os.path.dirname(output_dir)
-        else:
-            run_dir = output_dir
-        embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
         
-        if os.path.exists(embeddings_file):
+        # 使用通用的檔案檢測邏輯
+        temp_processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
+        
+        # 嘗試找到現有的編碼器檔案
+        embeddings_file = temp_processor._find_existing_embeddings(encoder_type)
+        
+        if embeddings_file and os.path.exists(embeddings_file):
             original_embeddings = np.load(embeddings_file)
-            print(f"   ✅ 已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
-            logger.info(f"載入原始BERT嵌入向量: {original_embeddings.shape}")
-        else:
-            print(f"   🔄 未找到BERT嵌入向量文件，開始重新生成...")
-            logger.info("未找到BERT嵌入向量，開始重新生成...")
+            print(f"   ✅ 已載入 {encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
+            print(f"   📁 來源檔案: {embeddings_file}")
+            logger.info(f"載入 {encoder_type.upper()} 嵌入向量: {original_embeddings.shape}")
+        
+        if original_embeddings is None:
+            print(f"   🔄 未找到 {encoder_type.upper()} 嵌入向量文件，開始重新生成...")
+            logger.info(f"未找到 {encoder_type.upper()} 嵌入向量，開始重新生成...")
             
-            from modules.bert_encoder import BertEncoder
-            bert_encoder = BertEncoder(output_dir=output_dir)
+            # 根據編碼器類型選擇合適的編碼器
+            if encoder_type == 'bert':
+                from modules.bert_encoder import BertEncoder
+                encoder = BertEncoder(output_dir=output_dir)
+            else:
+                # 對於其他編碼器類型，使用模組化架構
+                try:
+                    from modules.encoder_factory import EncoderFactory
+                    encoder = EncoderFactory.create_encoder(encoder_type, output_dir=output_dir)
+                except:
+                    # 如果模組化架構不可用，回退到BERT
+                    print(f"   ⚠️ {encoder_type.upper()} 編碼器不可用，回退使用BERT")
+                    logger.warning(f"{encoder_type.upper()} 編碼器不可用，回退使用BERT")
+                    from modules.bert_encoder import BertEncoder
+                    encoder = BertEncoder(output_dir=output_dir)
             
             # 找到文本欄位
             text_column = None
@@ -557,11 +627,11 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                     break
             
             if text_column:
-                original_embeddings = bert_encoder.encode(df[text_column])
-                print(f"   ✅ BERT嵌入向量生成完成，形狀: {original_embeddings.shape}")
-                logger.info(f"生成的BERT嵌入向量形狀: {original_embeddings.shape}")
+                original_embeddings = encoder.encode(df[text_column])
+                print(f"   ✅ {encoder_type.upper()} 嵌入向量生成完成，形狀: {original_embeddings.shape}")
+                logger.info(f"生成的 {encoder_type.upper()} 嵌入向量形狀: {original_embeddings.shape}")
             else:
-                raise ValueError("無法找到文本欄位來生成BERT嵌入向量")
+                raise ValueError("無法找到文本欄位來生成嵌入向量")
         
         # 評估所有注意力機制的分類性能
         classification_results = classifier.evaluate_attention_mechanisms(
@@ -961,6 +1031,274 @@ def show_available_options():
     
     print("="*80)
 
+def process_cross_validation_analysis(input_file: Optional[str] = None,
+                                    output_dir: Optional[str] = None,
+                                    n_folds: int = 5,
+                                    attention_types: Optional[List[str]] = None,
+                                    model_types: Optional[List[str]] = None,
+                                    encoder_type: str = 'bert') -> Dict:
+    """
+    執行 K 折交叉驗證分析
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        n_folds: 折數 (5 或 10)
+        attention_types: 要測試的注意力機制類型
+        model_types: 要測試的模型類型
+        encoder_type: 編碼器類型
+        
+    Returns:
+        Dict: 交叉驗證結果
+    """
+    try:
+        print("\n" + "="*80)
+        print(f"🔄 開始執行 {n_folds} 折交叉驗證分析")
+        print("="*80)
+        
+        # 檢查輸入文件
+        if input_file is None or not os.path.exists(input_file):
+            raise FileNotFoundError(f"找不到輸入文件：{input_file}")
+        
+        # 讀取數據
+        logger.info(f"讀取數據: {input_file}")
+        df = pd.read_csv(input_file)
+        
+        # 檢查必要欄位
+        if 'sentiment' not in df.columns:
+            raise ValueError("數據中缺少 'sentiment' 欄位")
+        
+        text_column = None
+        for col in ['processed_text', 'clean_text', 'text', 'review']:
+            if col in df.columns:
+                text_column = col
+                break
+        
+        if text_column is None:
+            raise ValueError("找不到文本欄位")
+        
+        print(f"\n📋 交叉驗證配置:")
+        print(f"   • 輸入文件: {input_file}")
+        print(f"   • 輸出目錄: {output_dir}")
+        print(f"   • 折數: {n_folds}")
+        print(f"   • 編碼器: {encoder_type.upper()}")
+        print(f"   • 數據規模: {len(df)} 樣本")
+        print(f"   • 類別分佈: {df['sentiment'].value_counts().to_dict()}")
+        
+        # 設定預設的注意力機制和模型類型
+        if attention_types is None:
+            attention_types = ['no', 'similarity', 'keyword', 'self', 'combined']
+            
+        if model_types is None:
+            model_types = ['logistic_regression', 'random_forest', 'xgboost']
+        
+        # 初始化交叉驗證評估器
+        cv_evaluator = CrossValidationEvaluator(
+            output_dir=output_dir, 
+            n_folds=n_folds, 
+            random_state=42
+        )
+        
+        # 第一階段：執行注意力分析
+        print(f"\n🔬 階段 1/3: 注意力機制分析")
+        print("-" * 50)
+        
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
+        attention_results = processor.process_with_attention(
+            input_file=input_file,
+            attention_types=attention_types,
+            save_results=False
+        )
+        
+        # 第二階段：準備模型和特徵
+        print(f"\n🎯 階段 2/3: 準備模型和特徵")
+        print("-" * 50)
+        
+        # 初始化情感分類器來獲取模型
+        classifier = SentimentClassifier(output_dir=output_dir, encoder_type=encoder_type)
+        all_models = classifier.available_models
+        
+        # 篩選指定的模型
+        models_dict = {name: model for name, model in all_models.items() 
+                      if name in model_types}
+        
+        print(f"   • 可用模型: {list(models_dict.keys())}")
+        
+        # 獲取原始嵌入向量
+        print(f"   🔍 載入 {encoder_type.upper()} 嵌入向量...")
+        
+        temp_processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
+        embeddings_file = temp_processor._find_existing_embeddings(encoder_type)
+        
+        if embeddings_file and os.path.exists(embeddings_file):
+            original_embeddings = np.load(embeddings_file)
+            print(f"   ✅ 已載入嵌入向量，形狀: {original_embeddings.shape}")
+        else:
+            # 重新生成嵌入向量
+            print(f"   🔄 重新生成 {encoder_type.upper()} 嵌入向量...")
+            if encoder_type == 'bert':
+                from modules.bert_encoder import BertEncoder
+                encoder = BertEncoder(output_dir=output_dir)
+            else:
+                # 其他編碼器的處理
+                from modules.bert_encoder import BertEncoder
+                encoder = BertEncoder(output_dir=output_dir)
+            
+            original_embeddings = encoder.encode(df[text_column])
+            print(f"   ✅ 嵌入向量生成完成，形狀: {original_embeddings.shape}")
+        
+        # 準備標籤
+        from sklearn.preprocessing import LabelEncoder
+        label_encoder = LabelEncoder()
+        # 訓練標籤編碼器
+        label_encoder.fit(df['sentiment'].values)
+        
+        # 第三階段：執行交叉驗證
+        print(f"\n📊 階段 3/3: 執行交叉驗證")
+        print("-" * 50)
+        
+        # 執行注意力機制的交叉驗證
+        cv_results = cv_evaluator.evaluate_attention_mechanisms_cv(
+            attention_results=attention_results,
+            metadata=df,
+            original_embeddings=original_embeddings,
+            models_dict=models_dict,
+            label_encoder=label_encoder
+        )
+        
+        # 生成最終結果摘要
+        print(f"\n🏆 交叉驗證結果摘要:")
+        
+        if 'attention_comparison' in cv_results:
+            comparison = cv_results['attention_comparison']
+            if 'attention_ranking' in comparison and comparison['attention_ranking']:
+                best_combo = comparison['attention_ranking'][0]
+                print(f"   • 最佳組合: {best_combo['combination']}")
+                print(f"   • 平均準確率: {best_combo['accuracy_mean']:.4f}")
+                print(f"   • 平均 F1 分數: {best_combo['f1_mean']:.4f}")
+                print(f"   • 穩定性分數: {best_combo['stability_score']:.4f}")
+                
+                # 顯示前 3 名
+                print(f"\n   📈 前 3 名組合:")
+                for i, combo in enumerate(comparison['attention_ranking'][:3]):
+                    print(f"      {i+1}. {combo['combination']}: "
+                          f"準確率 {combo['accuracy_mean']:.4f}, "
+                          f"F1 {combo['f1_mean']:.4f}")
+        
+        print(f"\n🎉 {n_folds} 折交叉驗證分析完成！")
+        print(f"📁 結果保存在: {output_dir}")
+        print("="*80)
+        
+        logger.info(f"{n_folds} 折交叉驗證分析結果保存在: {output_dir}")
+        return cv_results
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        
+        logger.error(f"{n_folds} 折交叉驗證分析過程中發生錯誤: {str(e)}")
+        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        
+        raise RuntimeError(f"{n_folds} 折交叉驗證分析失敗: {str(e)}") from e
+
+def process_simple_cross_validation(input_file: Optional[str] = None,
+                                  output_dir: Optional[str] = None,
+                                  n_folds: int = 5,
+                                  model_types: Optional[List[str]] = None,
+                                  encoder_type: str = 'bert') -> Dict:
+    """
+    執行簡單的 K 折交叉驗證（僅基本分類，不包含注意力機制）
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        n_folds: 折數
+        model_types: 要測試的模型類型
+        encoder_type: 編碼器類型
+        
+    Returns:
+        Dict: 交叉驗證結果
+    """
+    try:
+        print(f"\n🔄 開始執行簡單 {n_folds} 折交叉驗證")
+        
+        # 檢查輸入文件
+        if input_file is None or not os.path.exists(input_file):
+            raise FileNotFoundError(f"找不到輸入文件：{input_file}")
+        
+        # 讀取數據
+        df = pd.read_csv(input_file)
+        
+        if 'sentiment' not in df.columns:
+            raise ValueError("數據中缺少 'sentiment' 欄位")
+        
+        # 獲取文本特徵
+        text_column = None
+        for col in ['processed_text', 'clean_text', 'text', 'review']:
+            if col in df.columns:
+                text_column = col
+                break
+        
+        # 初始化交叉驗證評估器
+        cv_evaluator = CrossValidationEvaluator(
+            output_dir=output_dir, 
+            n_folds=n_folds, 
+            random_state=42
+        )
+        
+        # 獲取嵌入向量
+        temp_processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
+        embeddings_file = temp_processor._find_existing_embeddings(encoder_type)
+        
+        if embeddings_file and os.path.exists(embeddings_file):
+            features = np.load(embeddings_file)
+        else:
+            # 重新生成
+            if encoder_type == 'bert':
+                from modules.bert_encoder import BertEncoder
+                encoder = BertEncoder(output_dir=output_dir)
+            else:
+                from modules.bert_encoder import BertEncoder
+                encoder = BertEncoder(output_dir=output_dir)
+            
+            features = encoder.encode(df[text_column])
+        
+        # 準備標籤
+        from sklearn.preprocessing import LabelEncoder
+        label_encoder = LabelEncoder()
+        labels = label_encoder.fit_transform(df['sentiment'].values)
+        
+        # 準備模型
+        classifier = SentimentClassifier(output_dir=output_dir, encoder_type=encoder_type)
+        if model_types is None:
+            model_types = ['logistic_regression', 'random_forest', 'xgboost']
+        
+        models_dict = {name: model for name, model in classifier.available_models.items() 
+                      if name in model_types}
+        
+        # 執行交叉驗證
+        cv_results = cv_evaluator.evaluate_multiple_models(
+            features=features,
+            labels=labels,
+            models_dict=models_dict,
+            label_encoder=label_encoder
+        )
+        
+        # 顯示結果
+        if 'comparison' in cv_results and 'ranking' in cv_results['comparison']:
+            ranking = cv_results['comparison']['ranking']
+            if ranking:
+                best = ranking[0]
+                print(f"\n🏆 最佳模型: {best['model_name']}")
+                print(f"   • 準確率: {best['accuracy_mean']:.4f}")
+                print(f"   • F1 分數: {best['f1_mean']:.4f}")
+        
+        return cv_results
+        
+    except Exception as e:
+        logger.error(f"簡單交叉驗證分析失敗: {str(e)}")
+        raise
+
 def main():
     """
     主程式入口點
@@ -1010,6 +1348,16 @@ def main():
             elif sys.argv[1] == '--show-options':
                 # 顯示可用選項
                 show_available_options()
+            elif sys.argv[1] == '--cv':
+                # 執行 K 折交叉驗證
+                input_file = sys.argv[2] if len(sys.argv) > 2 else None
+                n_folds = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+                process_cross_validation_analysis(input_file=input_file, n_folds=n_folds)
+            elif sys.argv[1] == '--simple-cv':
+                # 執行簡單交叉驗證
+                input_file = sys.argv[2] if len(sys.argv) > 2 else None
+                n_folds = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+                process_simple_cross_validation(input_file=input_file, n_folds=n_folds)
         else:
             # 啟動GUI
             from gui.main_window import main as gui_main
@@ -1044,6 +1392,10 @@ BERT情感分析系統 - 使用說明
     --multi-compare [input_file]           # 執行多流程比較分析
     --show-options                         # 顯示可用的編碼器和分類器選項
 
+交叉驗證選項:
+    --cv [input_file] [n_folds]            # 執行注意力機制 K 折交叉驗證
+    --simple-cv [input_file] [n_folds]     # 執行簡單模型 K 折交叉驗證
+
 功能說明:
     --attention: 執行注意力機制分析，計算面向向量的內聚度和分離度
     --classify:  執行完整流程，包括注意力分析和情感分類評估
@@ -1076,6 +1428,11 @@ BERT情感分析系統 - 使用說明
     python Part05_Main.py --new-pipeline data.csv cnn clustering  # CNN+聚類分析
     python Part05_Main.py --new-pipeline data.csv t5 bertopic     # T5+BERTopic主題建模
     python Part05_Main.py --multi-compare data.csv               # 多流程自動比較
+
+交叉驗證範例:
+    python Part05_Main.py --cv data.csv 5                        # 5折注意力機制交叉驗證
+    python Part05_Main.py --cv data.csv 10                       # 10折注意力機制交叉驗證
+    python Part05_Main.py --simple-cv data.csv 5                 # 5折簡單模型交叉驗證
 
 測試進度功能:
     python test_progress.py                           # 測試進度顯示功能

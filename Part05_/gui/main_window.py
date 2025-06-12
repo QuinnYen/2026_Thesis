@@ -9,6 +9,7 @@ import threading
 import queue
 import torch
 from modules.run_manager import RunManager
+from modules.modular_gui_extensions import MODULAR_METHODS
 
 class MainApplication:
     def __init__(self, root):
@@ -28,6 +29,12 @@ class MainApplication:
         
         # 初始化分類器類型
         self.classifier_type = tk.StringVar(value='xgboost')
+        
+        # 初始化編碼器類型
+        self.encoder_type = tk.StringVar(value='bert')
+        
+        # 初始化面向分類器類型
+        self.aspect_classifier_type = tk.StringVar(value='default')
         
         # 初始化步驟狀態
         self.step_states = {
@@ -52,10 +59,11 @@ class MainApplication:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=15, pady=15)
         
-        # 創建三個分頁
+        # 創建四個分頁
         self.create_data_processing_tab()
         self.create_attention_testing_tab()
         self.create_comparison_analysis_tab()
+        self.create_cross_validation_tab()
         
         # 添加當前run目錄標籤
         self.create_run_dir_label()
@@ -65,6 +73,9 @@ class MainApplication:
         
         # 最大化視窗（在所有UI元素創建完成後）
         self.root.after(100, self.maximize_window)
+        
+        # 延遲更新配置顯示（等待GUI元素完全初始化）
+        self.root.after(200, self.update_current_config_safe)
     
     def detect_compute_environment(self):
         """檢測計算環境"""
@@ -81,8 +92,49 @@ class MainApplication:
         except Exception as e:
             self.device_label.config(text="❓ 環境檢測失敗", foreground='red')
     
+    def on_encoder_selected(self, event=None):
+        """編碼器選擇變更時的回調"""
+        selected = self.encoder_type.get()
+        
+        # 顯示編碼器相關信息
+        encoder_info = {
+            'bert': "✨ BERT - 強大的語義理解能力",
+            'gpt': "🚀 GPT - 優秀的生成式語言模型",
+            't5': "🎯 T5 - 統一的Text-to-Text框架",
+            'cnn': "⚡ CNN - 高效的卷積神經網路",
+            'elmo': "🌊 ELMo - 上下文相關嵌入表示"
+        }
+        
+        info_text = encoder_info.get(selected, "")
+        # 安全檢查：只有當標籤存在時才更新
+        if hasattr(self, 'encoder_desc_label') and self.encoder_desc_label:
+            self.encoder_desc_label.config(text=info_text)
+        # 更新模組化流水線配置顯示
+        if hasattr(self, 'current_config_label'):
+            self.update_current_config()
+    
+    def on_aspect_classifier_selected(self, event=None):
+        """面向分類器選擇變更時的回調"""
+        selected = self.aspect_classifier_type.get()
+        
+        # 顯示面向分類器相關信息
+        aspect_info = {
+            'default': "🎯 預設 - 基於注意力機制的高準確率分類",
+            'lda': "📈 LDA - 潛在狄利克雷分配主題建模",
+            'bertopic': "🤖 BERTopic - 基於BERT的高品質主題模型",
+            'nmf': "📊 NMF - 非負矩陣分解方法"
+        }
+        
+        info_text = aspect_info.get(selected, "")
+        # 安全檢查：只有當標籤存在時才更新
+        if hasattr(self, 'aspect_desc_label') and self.aspect_desc_label:
+            self.aspect_desc_label.config(text=info_text)
+        # 更新模組化流水線配置顯示
+        if hasattr(self, 'current_config_label'):
+            self.update_current_config()
+    
     def on_classifier_selected(self, event=None):
-        """分類器選擇變更時的回調"""
+        """情感分類器選擇變更時的回調"""
         selected = self.classifier_type.get()
         
         # 顯示分類器相關信息
@@ -94,7 +146,11 @@ class MainApplication:
         }
         
         info_text = classifier_info.get(selected, "")
-        self.timing_label.config(text=info_text)
+        if hasattr(self, 'timing_label'):
+            self.timing_label.config(text=info_text)
+        # 更新模組化流水線配置顯示
+        if hasattr(self, 'current_config_label'):
+            self.update_current_config()
     
     def center_window(self):
         """將視窗置中於螢幕（已棄用，改用最大化視窗）"""
@@ -264,8 +320,29 @@ class MainApplication:
         self.process_btn = ttk.Button(process_frame, text="開始處理", command=self.start_processing)
         self.process_btn.pack(side='right')
         
-        # 步驟4：Bert編碼 → 開始編碼
-        step4_frame = ttk.LabelFrame(main_frame, text="④ Bert編碼 → 開始編碼", padding=15)
+        # 步驟3.5：選擇編碼器類型
+        encoder_frame = ttk.LabelFrame(main_frame, text="③.5 選擇文本編碼器", padding=15)
+        encoder_frame.pack(fill='x', pady=(0, 15))
+        
+        encoder_content = ttk.Frame(encoder_frame)
+        encoder_content.pack(fill='x')
+        
+        ttk.Label(encoder_content, text="編碼器類型:").pack(side='left')
+        
+        self.encoder_combo = ttk.Combobox(encoder_content,
+                                         textvariable=self.encoder_type,
+                                         values=['bert', 'gpt', 't5', 'cnn', 'elmo'],
+                                         state='readonly',
+                                         width=20)
+        self.encoder_combo.pack(side='left', padx=(10, 0))
+        self.encoder_combo.bind('<<ComboboxSelected>>', self.on_encoder_selected)
+        
+        # 編碼器描述標籤
+        self.encoder_desc_label = ttk.Label(encoder_content, text="✨ BERT - 強大的語義理解能力", foreground='blue')
+        self.encoder_desc_label.pack(side='left', padx=(15, 0))
+        
+        # 步驟4：文本編碼 → 開始編碼
+        step4_frame = ttk.LabelFrame(main_frame, text="④ 文本編碼 → 開始編碼", padding=15)
         step4_frame.pack(fill='x', pady=(0, 15))
         
         encoding_frame = ttk.Frame(step4_frame)
@@ -298,141 +375,191 @@ class MainApplication:
 
         
     def create_attention_testing_tab(self):
-        """第二分頁：注意力機制測試"""
+        """第二分頁：注意力機制測試 - 三列緊湊佈局"""
         frame2 = ttk.Frame(self.notebook)
         self.notebook.add(frame2, text=" 注意力機制測試 ")
         
-        # 創建滾動框架來確保所有內容都可見
-        canvas = tk.Canvas(frame2)
-        scrollbar = ttk.Scrollbar(frame2, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttk.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        main_frame = ttk.Frame(scrollable_frame)
-        main_frame.pack(fill='both', expand=True, padx=15, pady=10)
-        
-        # 打包滾動元件
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # 添加鼠標滾輪支持
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind("<MouseWheel>", _on_mousewheel)
+        # 主容器 - 去除滾動，使用固定佈局
+        main_frame = ttk.Frame(frame2)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=8)
         
         # 標題
         title_label = ttk.Label(main_frame, text="注意力機制測試", font=FONTS['title'])
-        title_label.pack(pady=(0, 12))
+        title_label.pack(pady=(0, 8))
         
-        # 分類器選擇區域
-        classifier_frame = ttk.LabelFrame(main_frame, text="分類器設定", padding=10)
-        classifier_frame.pack(fill='x', pady=(0, 10))
+        # 頂部設定區域 - 橫向緊湊佈局
+        top_config_frame = ttk.Frame(main_frame)
+        top_config_frame.pack(fill='x', pady=(0, 8))
         
-        classifier_content = ttk.Frame(classifier_frame)
-        classifier_content.pack(fill='x')
+        # 面向分類器設定
+        aspect_frame = ttk.LabelFrame(top_config_frame, text="面向分類器", padding=8)
+        aspect_frame.pack(side='left', fill='x', expand=True, padx=(0, 5))
         
-        # 左側：分類器選擇
-        classifier_left = ttk.Frame(classifier_content)
-        classifier_left.pack(side='left', fill='x', expand=True)
+        aspect_content = ttk.Frame(aspect_frame)
+        aspect_content.pack(fill='x')
         
-        ttk.Label(classifier_left, text="選擇分類器:").pack(side='left')
+        self.aspect_classifier_combo = ttk.Combobox(aspect_content,
+                                                   textvariable=self.aspect_classifier_type,
+                                                   values=['default', 'lda', 'bertopic', 'nmf'],
+                                                   state='readonly',
+                                                   width=15)
+        self.aspect_classifier_combo.pack(fill='x')
+        self.aspect_classifier_combo.bind('<<ComboboxSelected>>', self.on_aspect_classifier_selected)
         
-        # 分類器下拉選單
-        self.classifier_combo = ttk.Combobox(classifier_left, 
+        # 面向分類器描述標籤
+        self.aspect_desc_label = ttk.Label(aspect_content, text="🎯 預設 - 基於注意力機制的高準確率分類", 
+                                          foreground='blue', font=('TkDefaultFont', 8))
+        self.aspect_desc_label.pack(pady=(5, 0))
+        
+        # 情感分類器設定
+        classifier_frame = ttk.LabelFrame(top_config_frame, text="情感分類器", padding=8)
+        classifier_frame.pack(side='left', fill='x', expand=True, padx=5)
+        
+        self.classifier_combo = ttk.Combobox(classifier_frame, 
                                            textvariable=self.classifier_type,
                                            values=['xgboost', 'logistic_regression', 'random_forest', 'svm_linear'],
                                            state='readonly',
-                                           width=20)
-        self.classifier_combo.pack(side='left', padx=(10, 0))
+                                           width=15)
+        self.classifier_combo.pack(fill='x')
         self.classifier_combo.bind('<<ComboboxSelected>>', self.on_classifier_selected)
         
-        # 右側：設備信息
-        device_right = ttk.Frame(classifier_content)
-        device_right.pack(side='right')
+        # 狀態信息
+        status_frame = ttk.LabelFrame(top_config_frame, text="狀態", padding=8)
+        status_frame.pack(side='left', fill='x', expand=True, padx=(5, 0))
         
-        self.device_label = ttk.Label(device_right, text="檢測計算環境中...", foreground='gray')
-        self.device_label.pack(side='right')
+        self.device_label = ttk.Label(status_frame, text="檢測中...", foreground='gray', font=('TkDefaultFont', 8))
+        self.device_label.pack(anchor='w')
         
-        # 時間顯示標籤
-        timing_frame = ttk.Frame(classifier_frame)
-        timing_frame.pack(fill='x', pady=(6, 0))
-        
-        self.timing_label = ttk.Label(timing_frame, text="", foreground='blue')
+        self.timing_label = ttk.Label(status_frame, text="", foreground='blue', font=('TkDefaultFont', 8))
         self.timing_label.pack(anchor='w')
         
         # 初始化設備檢測
         self.root.after(100, self.detect_compute_environment)
         
-        # 單一注意力實驗組
-        single_frame = ttk.LabelFrame(main_frame, text="單一注意力實驗組", padding=10)
-        single_frame.pack(fill='x', pady=(0, 8))
+        # 三列注意力實驗區域
+        experiments_frame = ttk.Frame(main_frame)
+        experiments_frame.pack(fill='both', expand=True, pady=(0, 8))
         
-        single_content = ttk.Frame(single_frame)
-        single_content.pack(fill='x')
+        # 第一列：單一注意力實驗組
+        single_frame = ttk.LabelFrame(experiments_frame, text="單一注意力實驗", padding=8)
+        single_frame.pack(side='left', fill='both', expand=True, padx=(0, 5))
         
-        # 單一注意力選項 - 測試基本機制
-        ttk.Label(single_content, text="↳ 無注意力（基準）").pack(anchor='w', pady=(0, 1))
-        ttk.Label(single_content, text="↳ 相似度注意力").pack(anchor='w', pady=(0, 1))
-        ttk.Label(single_content, text="↳ 自注意力").pack(anchor='w', pady=(0, 1))
-        ttk.Label(single_content, text="↳ 關鍵詞注意力").pack(anchor='w', pady=(0, 1))
+        # 單一注意力選項 - 緊湊顯示
+        ttk.Label(single_frame, text="• 無注意力（基準）", font=('TkDefaultFont', 8)).pack(anchor='w')
+        ttk.Label(single_frame, text="• 相似度注意力", font=('TkDefaultFont', 8)).pack(anchor='w')
+        ttk.Label(single_frame, text="• 自注意力", font=('TkDefaultFont', 8)).pack(anchor='w')
+        ttk.Label(single_frame, text="• 關鍵詞注意力", font=('TkDefaultFont', 8)).pack(anchor='w')
         
-        single_btn_frame = ttk.Frame(single_frame)
-        single_btn_frame.pack(fill='x', pady=(8, 0))
+        # 控制按鈕和狀態
+        single_control = ttk.Frame(single_frame)
+        single_control.pack(fill='x', pady=(8, 0))
         
-        self.single_btn = ttk.Button(single_btn_frame, text="執行單一注意力測試", command=self.run_single_attention)
-        self.single_btn.pack(side='left')
+        self.single_btn = ttk.Button(single_control, text="執行測試", command=self.run_single_attention)
+        self.single_btn.pack(fill='x', pady=(0, 3))
         
-        self.single_status = ttk.Label(single_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
-        self.single_status.pack(side='left', padx=(10, 0))
+        self.single_status = ttk.Label(single_control, text=STATUS_TEXT['pending'], foreground=COLORS['pending'], 
+                                     font=('TkDefaultFont', 8))
+        self.single_status.pack(anchor='w')
         
-        # 雙重組合實驗組
-        dual_frame = ttk.LabelFrame(main_frame, text="雙重組合實驗組", padding=10)
-        dual_frame.pack(fill='x', pady=(0, 8))
+        # 第二列：雙重組合實驗組
+        dual_frame = ttk.LabelFrame(experiments_frame, text="雙重組合實驗", padding=8)
+        dual_frame.pack(side='left', fill='both', expand=True, padx=2.5)
         
-        dual_content = ttk.Frame(dual_frame)
-        dual_content.pack(fill='x')
+        # 雙重組合選項 - 緊湊顯示
+        ttk.Label(dual_frame, text="• 基本機制 (4種)", font=('TkDefaultFont', 8, 'italic')).pack(anchor='w')
+        ttk.Label(dual_frame, text="• 相似度+自注意力", font=('TkDefaultFont', 8)).pack(anchor='w')
+        ttk.Label(dual_frame, text="• 相似度+關鍵詞", font=('TkDefaultFont', 8)).pack(anchor='w')
+        ttk.Label(dual_frame, text="• 自注意力+關鍵詞", font=('TkDefaultFont', 8)).pack(anchor='w')
         
-        # 雙重組合選項 - 基本機制 + 三組雙重組合
-        ttk.Label(dual_content, text="↳ 基本機制（無、相似度、自注意力、關鍵詞）", font=('Arial', 9, 'italic')).pack(anchor='w', pady=(0, 1))
-        ttk.Label(dual_content, text="↳ 相似度 + 自注意力 (50%+50%)").pack(anchor='w', pady=(0, 1))
-        ttk.Label(dual_content, text="↳ 相似度 + 關鍵詞 (50%+50%)").pack(anchor='w', pady=(0, 1))
-        ttk.Label(dual_content, text="↳ 自注意力 + 關鍵詞 (50%+50%)").pack(anchor='w', pady=(0, 1))
+        # 控制按鈕和狀態
+        dual_control = ttk.Frame(dual_frame)
+        dual_control.pack(fill='x', pady=(8, 0))
         
-        dual_btn_frame = ttk.Frame(dual_frame)
-        dual_btn_frame.pack(fill='x', pady=(8, 0))
+        self.dual_btn = ttk.Button(dual_control, text="執行測試", command=self.run_dual_attention)
+        self.dual_btn.pack(fill='x', pady=(0, 3))
         
-        self.dual_btn = ttk.Button(dual_btn_frame, text="執行雙重組合測試", command=self.run_dual_attention)
-        self.dual_btn.pack(side='left')
+        self.dual_status = ttk.Label(dual_control, text=STATUS_TEXT['pending'], foreground=COLORS['pending'],
+                                   font=('TkDefaultFont', 8))
+        self.dual_status.pack(anchor='w')
         
-        self.dual_status = ttk.Label(dual_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
-        self.dual_status.pack(side='left', padx=(10, 0))
+        # 第三列：三重組合實驗組
+        triple_frame = ttk.LabelFrame(experiments_frame, text="三重組合實驗", padding=8)
+        triple_frame.pack(side='left', fill='both', expand=True, padx=(5, 0))
         
-        # 三重組合實驗組
-        triple_frame = ttk.LabelFrame(main_frame, text="三重組合實驗組", padding=10)
-        triple_frame.pack(fill='x', pady=(0, 8))
+        # 三重組合選項 - 緊湊顯示
+        ttk.Label(triple_frame, text="• 基本機制 (4種)", font=('TkDefaultFont', 8, 'italic')).pack(anchor='w')
+        ttk.Label(triple_frame, text="• 三重組合:", font=('TkDefaultFont', 8, 'bold')).pack(anchor='w')
+        ttk.Label(triple_frame, text="  相似度+自注意力", font=('TkDefaultFont', 8)).pack(anchor='w')
+        ttk.Label(triple_frame, text="  +關鍵詞", font=('TkDefaultFont', 8)).pack(anchor='w')
         
-        triple_content = ttk.Frame(triple_frame)
-        triple_content.pack(fill='x')
+        # 控制按鈕和狀態
+        triple_control = ttk.Frame(triple_frame)
+        triple_control.pack(fill='x', pady=(8, 0))
         
-        # 三重組合選項 - 基本機制 + 一組三重組合
-        ttk.Label(triple_content, text="↳ 基本機制（無、相似度、自注意力、關鍵詞）", font=('Arial', 9, 'italic')).pack(anchor='w', pady=(0, 1))
-        ttk.Label(triple_content, text="↳ 相似度 + 自注意力 + 關鍵詞 (33%+33%+34%)").pack(anchor='w', pady=(0, 1))
+        self.triple_btn = ttk.Button(triple_control, text="執行測試", command=self.run_triple_attention)
+        self.triple_btn.pack(fill='x', pady=(0, 3))
         
-        triple_btn_frame = ttk.Frame(triple_frame)
-        triple_btn_frame.pack(fill='x', pady=(8, 0))
+        self.triple_status = ttk.Label(triple_control, text=STATUS_TEXT['pending'], foreground=COLORS['pending'],
+                                     font=('TkDefaultFont', 8))
+        self.triple_status.pack(anchor='w')
         
-        self.triple_btn = ttk.Button(triple_btn_frame, text="執行三重組合測試", command=self.run_triple_attention)
-        self.triple_btn.pack(side='left')
+        # 模組化流水線區域 - 緊湊佈局
+        pipeline_frame = ttk.LabelFrame(main_frame, text="🚀 模組化流水線", padding=8)
+        pipeline_frame.pack(fill='both', expand=True, pady=(8, 0))
         
-        self.triple_status = ttk.Label(triple_btn_frame, text=STATUS_TEXT['pending'], foreground=COLORS['pending'])
-        self.triple_status.pack(side='left', padx=(10, 0))
+        # 頂部：配置和控制
+        pipeline_top = ttk.Frame(pipeline_frame)
+        pipeline_top.pack(fill='x', pady=(0, 8))
+        
+        # 左側：配置顯示
+        config_left = ttk.Frame(pipeline_top)
+        config_left.pack(side='left', fill='x', expand=True)
+        
+        self.current_config_label = ttk.Label(config_left,
+                                             text="📝 當前: BERT + 預設 + XGBoost",
+                                             foreground='green',
+                                             font=('TkDefaultFont', 9, 'bold'))
+        self.current_config_label.pack(anchor='w')
+        
+        self.pipeline_status = ttk.Label(config_left,
+                                        text="狀態: 待執行",
+                                        foreground='orange',
+                                        font=('TkDefaultFont', 8))
+        self.pipeline_status.pack(anchor='w')
+        
+        # 右側：控制按鈕
+        control_right = ttk.Frame(pipeline_top)
+        control_right.pack(side='right')
+        
+        button_frame = ttk.Frame(control_right)
+        button_frame.pack()
+        
+        self.run_pipeline_btn = ttk.Button(button_frame,
+                                          text="🚀 運行流水線",
+                                          command=self.run_modular_pipeline)
+        self.run_pipeline_btn.pack(side='left', padx=(0, 5))
+        
+        self.compare_methods_btn = ttk.Button(button_frame,
+                                             text="📊 比較方法",
+                                             command=self.compare_methods)
+        self.compare_methods_btn.pack(side='left')
+        
+        # 進度條
+        self.pipeline_progress_var = tk.DoubleVar()
+        self.pipeline_progress_bar = ttk.Progressbar(pipeline_frame,
+                                                    variable=self.pipeline_progress_var,
+                                                    maximum=100)
+        self.pipeline_progress_bar.pack(fill='x', pady=(0, 8))
+        
+        # 結果顯示區域 - 緊湊
+        self.pipeline_results_text = scrolledtext.ScrolledText(pipeline_frame,
+                                                              height=4,
+                                                              font=('Consolas', 8))
+        self.pipeline_results_text.pack(fill='both', expand=True)
+        
+        # 初始化模組化流水線相關變數
+        self.pipeline_queue = queue.Queue()
+        self.modular_pipeline = None
 
     def run_single_attention(self):
         """執行單一注意力測試 - 測試基本注意力機制[無、相似度、自注意力、關鍵詞]"""
@@ -477,7 +604,8 @@ class MainApplication:
                         output_dir=output_dir,
                         attention_types=attention_types,
                         attention_combinations=attention_combinations,
-                        classifier_type=self.classifier_type.get()
+                        classifier_type=self.classifier_type.get(),
+                        encoder_type=self.encoder_type.get()
                     )
                     
                     # 計算總耗時
@@ -563,7 +691,8 @@ class MainApplication:
                         output_dir=output_dir,
                         attention_types=attention_types,
                         attention_combinations=attention_combinations,
-                        classifier_type=self.classifier_type.get()
+                        classifier_type=self.classifier_type.get(),
+                        encoder_type=self.encoder_type.get()
                     )
                     
                     # 計算總耗時
@@ -635,7 +764,8 @@ class MainApplication:
                         output_dir=output_dir,
                         attention_types=attention_types,
                         attention_combinations=attention_combinations,
-                        classifier_type=self.classifier_type.get()
+                        classifier_type=self.classifier_type.get(),
+                        encoder_type=self.encoder_type.get()
                     )
                     
                     # 計算總耗時
@@ -1108,26 +1238,29 @@ class MainApplication:
             self.root.after(100, self._check_processing_progress)
 
     def start_encoding(self):
-        """開始BERT編碼"""
+        """開始文本編碼"""
         if not self.step_states['processing_done']:
             messagebox.showerror("錯誤", "請先完成文本處理")
             return
             
+        # 獲取選擇的編碼器類型
+        encoder_type = self.encoder_type.get()
+        
         # 更新run目錄
         self.update_run_dir_label()
         
         # 禁用編碼按鈕
         self.encoding_btn.config(state='disabled')
-        self.encoding_status.config(text="狀態: 處理中", foreground="blue")
+        self.encoding_status.config(text=f"狀態: {encoder_type.upper()}編碼中", foreground="blue")
         
         # 開始編碼
         threading.Thread(target=self._run_encoding, daemon=True).start()
         self.root.after(100, self._check_encoding_progress)
     
     def _run_encoding(self):
-        """在背景執行緒中執行BERT編碼"""
+        """在背景執行緒中執行文本編碼"""
         try:
-            from modules.bert_encoder import BertEncoder
+            from modules.encoder_factory import EncoderFactory
             from gui.progress_bridge import create_progress_callback
             
             # 創建進度橋接器
@@ -1151,22 +1284,53 @@ class MainApplication:
             
             progress_callback('status', f'✅ 數據載入完成：{len(df)} 條記錄')
             
-            # 初始化BERT編碼器，傳入BERT編碼目錄和進度回調
-            encoder = BertEncoder(
-                output_dir=self.run_manager.get_bert_encoding_dir(),
+            # 獲取選擇的編碼器類型
+            encoder_type = self.encoder_type.get()
+            
+            # 創建編碼器配置
+            encoder_config = {
+                'batch_size': 32,
+                'max_length': 512
+            }
+            
+            progress_callback('status', f'🔧 初始化{encoder_type.upper()}編碼器...')
+            
+            # 使用工廠創建編碼器
+            encoder = EncoderFactory.create_encoder(
+                encoder_type=encoder_type,
+                config=encoder_config,
                 progress_callback=progress_callback
             )
             
-            # 執行BERT編碼
+            progress_callback('status', f'🚀 開始{encoder_type.upper()}編碼...')
+            
+            # 執行編碼
             embeddings = encoder.encode(df['processed_text'])
             
+            # 保存編碼結果
+            encoding_output_dir = self.run_manager.get_bert_encoding_dir()
+            embeddings_path = os.path.join(encoding_output_dir, f'02_{encoder_type}_embeddings.npy')
+            
+            import numpy as np
+            np.save(embeddings_path, embeddings)
+            
+            # 保存編碼器信息
+            encoder_info = encoder.get_encoder_info()
+            info_path = os.path.join(encoding_output_dir, f'encoder_info_{encoder_type}.json')
+            import json
+            with open(info_path, 'w', encoding='utf-8') as f:
+                json.dump(encoder_info, f, ensure_ascii=False, indent=2)
+            
+            progress_callback('status', f'✅ {encoder_type.upper()}編碼完成，向量維度: {encoder.get_embedding_dim()}')
+            
             # 將結果放入佇列
-            output_dir = self.run_manager.get_bert_encoding_dir()
-            progress_bridge.finish('BERT編碼完成')
-            self.encoding_queue.put(('success', output_dir))
+            progress_bridge.finish(f'{encoder_type.upper()}編碼完成')
+            self.encoding_queue.put(('success', encoding_output_dir))
             
         except Exception as e:
-            self.encoding_queue.put(('error', str(e)))
+            error_msg = f"編碼失敗: {str(e)}"
+            progress_callback('error', error_msg)
+            self.encoding_queue.put(('error', error_msg))
     
     def _check_encoding_progress(self):
         """檢查編碼進度並更新UI"""
@@ -1713,6 +1877,658 @@ class MainApplication:
                 
         except Exception as e:
             print(f"從原始檔案讀取數據時發生錯誤: {str(e)}")
+    
+    def _integrate_modular_methods(self):
+        """整合模組化方法到主類中"""
+        try:
+            for method_name, method_func in MODULAR_METHODS.items():
+                # 將方法繫定到當前實例
+                bound_method = method_func.__get__(self, self.__class__)
+                setattr(self, method_name, bound_method)
+        except Exception as e:
+            print(f"整合模組化方法失敗: {e}")
+            # 方法已直接實現在類中，無需備用方法
+    
+    def update_current_config_safe(self):
+        """安全更新當前配置顯示（檢查GUI元素是否存在）"""
+        try:
+            self.update_current_config()
+        except Exception as e:
+            print(f"配置更新失敗: {e}")
+    
+    def update_current_config(self):
+        """更新當前配置顯示"""
+        if hasattr(self, 'current_config_label') and hasattr(self.current_config_label, 'config'):
+            try:
+                encoder = self.encoder_type.get().upper()
+                aspect = self.aspect_classifier_type.get().upper()
+                classifier = self.classifier_type.get().upper()
+                config_text = f"📝 當前配置: {encoder} + {aspect} + {classifier}"
+                self.current_config_label.config(text=config_text)
+            except Exception as e:
+                # 如果更新失敗，不做任何操作
+                pass
+
+    def run_modular_pipeline(self):
+        """運行模組化流水線"""
+        try:
+            # 檢查是否有檔案導入
+            if not self.step_states['file_imported']:
+                messagebox.showerror("錯誤", "請先導入檔案")
+                return
+            
+            # 禁用按鈕
+            self.run_pipeline_btn.config(state='disabled')
+            self.compare_methods_btn.config(state='disabled')
+            
+            # 更新狀態
+            self.pipeline_status.config(text="狀態: 初始化模組化流水線...", foreground='blue')
+            self.pipeline_progress_var.set(0)
+            
+            # 清空結果顯示
+            self.pipeline_results_text.delete(1.0, tk.END)
+            
+            # 在背景執行緒中運行流水線
+            threading.Thread(target=self._run_modular_pipeline, daemon=True).start()
+            self.root.after(100, self._check_pipeline_progress)
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"運行模組化流水線時發生錯誤: {str(e)}")
+
+    def _run_modular_pipeline(self):
+        """在背景執行緒中運行模組化流水線"""
+        try:
+            from modules.modular_pipeline import ModularPipeline
+            from gui.progress_bridge import create_progress_callback
+            
+            # 創建進度橋接器
+            progress_bridge, progress_callback = create_progress_callback(self.pipeline_queue)
+            
+            # 獲取當前配置
+            encoder_type = self.encoder_type.get()
+            aspect_type = self.aspect_classifier_type.get()
+            
+            # 配置參數
+            encoder_config = {
+                'batch_size': 32,
+                'max_length': 512
+            }
+            
+            aspect_config = {
+                'n_topics': 10,
+                'random_state': 42
+            }
+            
+            # 創建模組化流水線
+            self.pipeline_queue.put(('status', f'🔧 初始化模組化流水線: {encoder_type.upper()} + {aspect_type.upper()}'))
+            
+            pipeline = ModularPipeline(
+                encoder_type=encoder_type,
+                aspect_type=aspect_type,
+                encoder_config=encoder_config,
+                aspect_config=aspect_config,
+                output_dir=self.run_manager.get_run_dir(),
+                progress_callback=progress_callback
+            )
+            
+            # 讀取輸入數據
+            file_path = self.file_path_var.get()
+            file_ext = os.path.splitext(file_path)[1].lower()
+            
+            self.pipeline_queue.put(('status', '📖 讀取輸入數據...'))
+            
+            if file_ext == '.csv':
+                df = pd.read_csv(file_path)
+            elif file_ext == '.json':
+                df = pd.read_json(file_path)
+            else:
+                raise ValueError('不支援的檔案格式')
+            
+            # 檢查是否需要進行抽樣
+            if self.use_sampling_var.get():
+                sample_size = int(self.sample_size_var.get())
+                if sample_size < len(df):
+                    df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+                    self.pipeline_queue.put(('status', f'🎲 數據抽樣: {sample_size} 條記錄'))
+            
+            self.pipeline_queue.put(('progress', 10))
+            
+            # 運行模組化流水線
+            import time
+            start_time = time.time()
+            results = pipeline.process(df)
+            processing_time = time.time() - start_time
+            
+            # 結果統計
+            summary = {
+                'encoder_type': encoder_type,
+                'aspect_type': aspect_type,
+                'data_size': len(df),
+                'embedding_dim': pipeline.text_encoder.get_embedding_dim(),
+                'aspect_count': len(pipeline.aspect_classifier.get_aspect_names()),
+                'processing_time': processing_time
+            }
+            
+            self.pipeline_queue.put(('success', {
+                'results': results,
+                'summary': summary
+            }))
+            
+        except Exception as e:
+            self.pipeline_queue.put(('error', str(e)))
+
+    def _check_pipeline_progress(self):
+        """檢查模組化流水線進度"""
+        try:
+            message_type, message = self.pipeline_queue.get_nowait()
+            
+            if message_type == 'status':
+                self.pipeline_status.config(text=f"狀態: {message}", foreground='blue')
+                
+            elif message_type == 'progress':
+                if isinstance(message, (int, float)):
+                    self.pipeline_progress_var.set(message)
+                elif isinstance(message, str) and '%' in message:
+                    try:
+                        progress_val = float(message.replace('%', ''))
+                        self.pipeline_progress_var.set(progress_val)
+                    except:
+                        pass
+                        
+            elif message_type == 'success':
+                self.pipeline_progress_var.set(100)
+                data = message
+                summary = data['summary']
+                
+                # 更新狀態
+                self.pipeline_status.config(
+                    text=f"狀態: 完成 (耗時: {summary['processing_time']:.1f}秒)",
+                    foreground='green'
+                )
+                
+                # 顯示結果
+                result_text = f"""🎉 模組化流水線完成！
+
+📊 分析結果摘要:
+• 編碼器: {summary['encoder_type'].upper()}
+• 面向分類器: {summary['aspect_type'].upper()}
+• 數據量: {summary['data_size']:,} 條記錄
+• 嵌入向量維度: {summary['embedding_dim']}
+• 發現面向數: {summary['aspect_count']}
+• 處理時間: {summary['processing_time']:.2f} 秒
+
+📝 結果檔案已保存至: {self.run_manager.get_run_dir()}
+"""
+                
+                self.pipeline_results_text.delete(1.0, tk.END)
+                self.pipeline_results_text.insert(tk.END, result_text)
+                
+                # 重新啟用按鈕
+                self.run_pipeline_btn.config(state='normal')
+                self.compare_methods_btn.config(state='normal')
+                
+                return
+                
+            elif message_type == 'comparison_success':
+                self.pipeline_progress_var.set(100)
+                results = message
+                
+                # 更新狀態
+                self.pipeline_status.config(text="狀態: 比較完成", foreground='green')
+                
+                # 生成比較結果文本
+                comparison_text = "📈 方法比較結果:\n\n"
+                comparison_text += f"{'=' * 60}\n"
+                comparison_text += f"{'ID':<3} {'Encoder':<8} {'Aspect':<10} {'Time(s)':<8} {'Embedding':<10} {'Aspects':<8} {'Status':<10}\n"
+                comparison_text += f"{'=' * 60}\n"
+                
+                for i, result in enumerate(results, 1):
+                    if result['success']:
+                        comparison_text += f"{i:<3} {result['encoder']:<8} {result['aspect_classifier']:<10} {result['processing_time']:<8.1f} {result['embedding_dim']:<10} {result['aspect_count']:<8} {'Success':<10}\n"
+                    else:
+                        comparison_text += f"{i:<3} {result['encoder']:<8} {result['aspect_classifier']:<10} {'N/A':<8} {'N/A':<10} {'N/A':<8} {'Failed':<10}\n"
+                
+                comparison_text += f"{'=' * 60}\n"
+                
+                # 統計信息
+                successful_results = [r for r in results if r['success']]
+                if successful_results:
+                    fastest = min(successful_results, key=lambda x: x['processing_time'])
+                    comparison_text += f"\n🏆 最快方法: {fastest['encoder'].upper()} + {fastest['aspect_classifier'].upper()} ({fastest['processing_time']:.1f}秒)\n"
+                    
+                    avg_time = sum(r['processing_time'] for r in successful_results) / len(successful_results)
+                    comparison_text += f"📊 平均處理時間: {avg_time:.1f}秒\n"
+                
+                failed_count = len([r for r in results if not r['success']])
+                if failed_count > 0:
+                    comparison_text += f"\n⚠️  {failed_count} 個方法執行失敗"
+                
+                self.pipeline_results_text.delete(1.0, tk.END)
+                self.pipeline_results_text.insert(tk.END, comparison_text)
+                
+                # 重新啟用按鈕
+                self.run_pipeline_btn.config(state='normal')
+                self.compare_methods_btn.config(state='normal')
+                
+                return
+                
+            elif message_type == 'error':
+                self.pipeline_progress_var.set(0)
+                self.pipeline_status.config(text=f"狀態: 錯誤 - {message}", foreground='red')
+                
+                error_text = f"❌ 模組化流水線執行失敗：\n\n{message}"
+                self.pipeline_results_text.delete(1.0, tk.END)
+                self.pipeline_results_text.insert(tk.END, error_text)
+                
+                # 重新啟用按鈕
+                self.run_pipeline_btn.config(state='normal')
+                self.compare_methods_btn.config(state='normal')
+                
+                return
+                
+        except queue.Empty:
+            pass
+        
+        # 繼續檢查
+        self.root.after(100, self._check_pipeline_progress)
+
+    def compare_methods(self):
+        """比較不同方法的效果"""
+        try:
+            # 檢查是否有檔案導入
+            if not self.step_states['file_imported']:
+                messagebox.showerror("錯誤", "請先導入檔案")
+                return
+            
+            # 禁用按鈕
+            self.run_pipeline_btn.config(state='disabled')
+            self.compare_methods_btn.config(state='disabled')
+            
+            # 更新狀態
+            self.pipeline_status.config(text="狀態: 比較不同方法中...", foreground='purple')
+            self.pipeline_progress_var.set(0)
+            
+            # 清空結果顯示
+            self.pipeline_results_text.delete(1.0, tk.END)
+            
+            # 在背景執行緒中運行比較
+            threading.Thread(target=self._run_method_comparison, daemon=True).start()
+            self.root.after(100, self._check_pipeline_progress)
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"比較方法時發生錯誤: {str(e)}")
+
+    def _run_method_comparison(self):
+        """在背景執行緒中比較不同方法"""
+        try:
+            from modules.modular_pipeline import ModularPipeline
+            
+            # 讀取數據
+            file_path = self.file_path_var.get()
+            file_ext = os.path.splitext(file_path)[1].lower()
+            
+            if file_ext == '.csv':
+                df = pd.read_csv(file_path)
+            elif file_ext == '.json':
+                df = pd.read_json(file_path)
+            else:
+                raise ValueError('不支援的檔案格式')
+            
+            # 抽樣數據以加快比較速度
+            sample_size = min(1000, len(df))
+            df_sample = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+            
+            # 定義要比較的組合
+            combinations = [
+                ('bert', 'default'),
+                ('bert', 'lda'),
+                ('gpt', 'default'),
+                ('t5', 'lda'),
+                ('cnn', 'nmf')
+            ]
+            
+            results = []
+            total_combinations = len(combinations)
+            
+            for i, (encoder_type, aspect_type) in enumerate(combinations):
+                try:
+                    self.pipeline_queue.put(('status', f'正在測試: {encoder_type.upper()} + {aspect_type.upper()}'))
+                    
+                    # 創建流水線
+                    pipeline = ModularPipeline(
+                        encoder_type=encoder_type,
+                        aspect_type=aspect_type,
+                        output_dir=self.run_manager.get_run_dir()
+                    )
+                    
+                    # 測量處理時間
+                    import time
+                    start_time = time.time()
+                    pipeline_results = pipeline.process(df_sample)
+                    processing_time = time.time() - start_time
+                    
+                    # 記錄結果
+                    result = {
+                        'encoder': encoder_type,
+                        'aspect_classifier': aspect_type,
+                        'processing_time': processing_time,
+                        'embedding_dim': pipeline.text_encoder.get_embedding_dim(),
+                        'aspect_count': len(pipeline.aspect_classifier.get_aspect_names()),
+                        'success': True
+                    }
+                    results.append(result)
+                    
+                    # 更新進度
+                    progress = ((i + 1) / total_combinations) * 100
+                    self.pipeline_queue.put(('progress', progress))
+                    
+                except Exception as e:
+                    result = {
+                        'encoder': encoder_type,
+                        'aspect_classifier': aspect_type,
+                        'error': str(e),
+                        'success': False
+                    }
+                    results.append(result)
+            
+            self.pipeline_queue.put(('comparison_success', results))
+            
+        except Exception as e:
+            self.pipeline_queue.put(('error', str(e)))
+
+    def create_cross_validation_tab(self):
+        """第四分頁：交叉驗證"""
+        frame4 = ttk.Frame(self.notebook)
+        self.notebook.add(frame4, text=" 🔄 交叉驗證 ")
+        
+        main_frame = ttk.Frame(frame4)
+        main_frame.pack(fill='both', expand=True, padx=15, pady=10)
+        
+        # 標題
+        title_label = ttk.Label(main_frame, text="K 折交叉驗證", font=FONTS['title'])
+        title_label.pack(pady=(0, 12))
+        
+        # 配置區域
+        config_frame = ttk.LabelFrame(main_frame, text="🔧 交叉驗證配置", padding=10)
+        config_frame.pack(fill='x', pady=(0, 10))
+        
+        # 第一行：基本設定
+        config_row1 = ttk.Frame(config_frame)
+        config_row1.pack(fill='x', pady=(0, 8))
+        
+        # 折數選擇
+        ttk.Label(config_row1, text="K 值 (折數):").pack(side='left')
+        self.cv_folds = tk.StringVar(value='5')
+        folds_combo = ttk.Combobox(config_row1, textvariable=self.cv_folds, 
+                                  values=['3', '5', '10'], width=8, state='readonly')
+        folds_combo.pack(side='left', padx=(5, 20))
+        
+        # 評估模式選擇
+        ttk.Label(config_row1, text="評估模式:").pack(side='left')
+        self.cv_mode = tk.StringVar(value='attention')
+        mode_combo = ttk.Combobox(config_row1, textvariable=self.cv_mode,
+                                 values=['simple', 'attention'], width=12, state='readonly')
+        mode_combo.pack(side='left', padx=(5, 0))
+        
+        # 第二行：模型選擇
+        config_row2 = ttk.Frame(config_frame)
+        config_row2.pack(fill='x', pady=(0, 8))
+        
+        ttk.Label(config_row2, text="分類器:").pack(side='left')
+        
+        # 模型選擇複選框
+        models_frame = ttk.Frame(config_row2)
+        models_frame.pack(side='left', padx=(5, 0))
+        
+        self.cv_models = {}
+        model_options = [
+            ('xgboost', 'XGBoost'),
+            ('logistic_regression', '邏輯迴歸'),
+            ('random_forest', '隨機森林'),
+            ('svm_linear', '線性SVM')
+        ]
+        
+        for i, (key, label) in enumerate(model_options):
+            var = tk.BooleanVar(value=True if key in ['xgboost', 'logistic_regression'] else False)
+            self.cv_models[key] = var
+            cb = ttk.Checkbutton(models_frame, text=label, variable=var)
+            cb.pack(side='left', padx=(0, 10))
+        
+        # 第三行：注意力機制選擇（僅在attention模式下顯示）
+        self.attention_config_frame = ttk.Frame(config_frame)
+        self.attention_config_frame.pack(fill='x')
+        
+        ttk.Label(self.attention_config_frame, text="注意力機制:").pack(side='left')
+        
+        attention_frame = ttk.Frame(self.attention_config_frame)
+        attention_frame.pack(side='left', padx=(5, 0))
+        
+        self.cv_attentions = {}
+        attention_options = [
+            ('no', '無注意力'),
+            ('similarity', '相似度'),
+            ('keyword', '關鍵詞'),
+            ('self', '自注意力'),
+            ('combined', '組合式')
+        ]
+        
+        for key, label in attention_options:
+            var = tk.BooleanVar(value=True if key in ['no', 'similarity', 'self'] else False)
+            self.cv_attentions[key] = var
+            cb = ttk.Checkbutton(attention_frame, text=label, variable=var)
+            cb.pack(side='left', padx=(0, 10))
+        
+        # 模式選擇回調
+        def on_mode_change(*args):
+            mode = self.cv_mode.get()
+            if mode == 'simple':
+                self.attention_config_frame.pack_forget()
+            else:
+                self.attention_config_frame.pack(fill='x')
+        
+        self.cv_mode.trace('w', on_mode_change)
+        
+        # 控制區域
+        control_frame = ttk.Frame(main_frame)
+        control_frame.pack(fill='x', pady=(0, 10))
+        
+        # 開始按鈕
+        self.cv_start_btn = ttk.Button(control_frame, text="🚀 開始交叉驗證", 
+                                      command=self.start_cross_validation)
+        self.cv_start_btn.pack(side='left')
+        
+        # 狀態標籤
+        self.cv_status = ttk.Label(control_frame, text="準備就緒", foreground='green')
+        self.cv_status.pack(side='left', padx=(20, 0))
+        
+        # 進度條
+        self.cv_progress_var = tk.DoubleVar()
+        self.cv_progress_bar = ttk.Progressbar(main_frame, variable=self.cv_progress_var, maximum=100)
+        self.cv_progress_bar.pack(fill='x', pady=(0, 10))
+        
+        # 結果顯示區域
+        results_frame = ttk.LabelFrame(main_frame, text="📊 交叉驗證結果", padding=10)
+        results_frame.pack(fill='both', expand=True)
+        
+        # 結果樹形表格
+        columns = ('Rank', 'Model/Combination', 'Accuracy', 'F1 Score', 'Stability')
+        self.cv_results_tree = ttk.Treeview(results_frame, columns=columns, show='headings', height=8)
+        
+        # 設定標題
+        for col in columns:
+            self.cv_results_tree.heading(col, text=col)
+            self.cv_results_tree.column(col, width=120, anchor='center')
+        
+        # 滾動條
+        cv_scrollbar = ttk.Scrollbar(results_frame, orient='vertical', command=self.cv_results_tree.yview)
+        self.cv_results_tree.configure(yscrollcommand=cv_scrollbar.set)
+        
+        # 佈局
+        self.cv_results_tree.pack(side='left', fill='both', expand=True)
+        cv_scrollbar.pack(side='right', fill='y')
+        
+        # 初始化交叉驗證相關變數
+        self.cv_queue = queue.Queue()
+        self.cv_thread = None
+        
+        # 啟動結果監控
+        self.monitor_cv_queue()
+
+    def start_cross_validation(self):
+        """開始交叉驗證"""
+        try:
+            # 檢查前置條件
+            if not self.last_run_dir:
+                messagebox.showerror("錯誤", "請先完成BERT編碼步驟！")
+                return
+            
+            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            if not os.path.exists(input_file):
+                messagebox.showerror("錯誤", "找不到預處理數據檔案！")
+                return
+            
+            # 獲取配置
+            n_folds = int(self.cv_folds.get())
+            mode = self.cv_mode.get()
+            
+            # 獲取選中的模型
+            selected_models = [key for key, var in self.cv_models.items() if var.get()]
+            if not selected_models:
+                messagebox.showerror("錯誤", "請至少選擇一個分類器！")
+                return
+            
+            # 獲取選中的注意力機制（如果是attention模式）
+            selected_attentions = []
+            if mode == 'attention':
+                selected_attentions = [key for key, var in self.cv_attentions.items() if var.get()]
+                if not selected_attentions:
+                    messagebox.showerror("錯誤", "請至少選擇一個注意力機制！")
+                    return
+            
+            # 禁用按鈕，開始處理
+            self.cv_start_btn['state'] = 'disabled'
+            self.cv_status.config(text="執行中...", foreground='orange')
+            self.cv_progress_var.set(0)
+            
+            # 清空結果表格
+            for item in self.cv_results_tree.get_children():
+                self.cv_results_tree.delete(item)
+            
+            # 在後台執行交叉驗證
+            def run_cv():
+                try:
+                    output_dir = self.run_manager.get_run_dir()
+                    encoder_type = self.encoder_type.get()
+                    
+                    if mode == 'simple':
+                        # 簡單交叉驗證
+                        from Part05_Main import process_simple_cross_validation
+                        results = process_simple_cross_validation(
+                            input_file=input_file,
+                            output_dir=output_dir,
+                            n_folds=n_folds,
+                            model_types=selected_models,
+                            encoder_type=encoder_type
+                        )
+                    else:
+                        # 注意力機制交叉驗證
+                        from Part05_Main import process_cross_validation_analysis
+                        results = process_cross_validation_analysis(
+                            input_file=input_file,
+                            output_dir=output_dir,
+                            n_folds=n_folds,
+                            attention_types=selected_attentions,
+                            model_types=selected_models,
+                            encoder_type=encoder_type
+                        )
+                    
+                    self.cv_queue.put(('success', results))
+                    
+                except Exception as e:
+                    import traceback
+                    error_details = traceback.format_exc()
+                    self.cv_queue.put(('error', str(e), error_details))
+            
+            # 啟動後台線程
+            self.cv_thread = threading.Thread(target=run_cv, daemon=True)
+            self.cv_thread.start()
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"啟動交叉驗證時發生錯誤：{str(e)}")
+            self.cv_start_btn['state'] = 'normal'
+            self.cv_status.config(text="錯誤", foreground='red')
+
+    def monitor_cv_queue(self):
+        """監控交叉驗證佇列"""
+        try:
+            while True:
+                item = self.cv_queue.get_nowait()
+                
+                if item[0] == 'success':
+                    self._handle_cv_success(item[1])
+                elif item[0] == 'error':
+                    self._handle_cv_error(item[1], item[2] if len(item) > 2 else None)
+                elif item[0] == 'progress':
+                    self.cv_progress_var.set(item[1])
+                    
+        except queue.Empty:
+            pass
+        
+        # 重新安排監控
+        self.root.after(100, self.monitor_cv_queue)
+
+    def _handle_cv_success(self, results):
+        """處理交叉驗證成功"""
+        try:
+            self.cv_start_btn['state'] = 'normal'
+            self.cv_status.config(text="完成", foreground='green')
+            self.cv_progress_var.set(100)
+            
+            # 顯示結果
+            if self.cv_mode.get() == 'simple':
+                # 簡單模式結果
+                if 'comparison' in results and 'ranking' in results['comparison']:
+                    ranking = results['comparison']['ranking']
+                    for item in ranking:
+                        rank = item['rank']
+                        model_name = item['model_name']
+                        accuracy = f"{item['accuracy_mean']:.4f}"
+                        f1_score = f"{item['f1_mean']:.4f}"
+                        stability = f"{item['stability_score']:.4f}"
+                        
+                        self.cv_results_tree.insert('', 'end', values=(
+                            rank, model_name, accuracy, f1_score, stability
+                        ))
+            else:
+                # 注意力機制模式結果
+                if 'attention_comparison' in results and 'attention_ranking' in results['attention_comparison']:
+                    ranking = results['attention_comparison']['attention_ranking']
+                    for item in ranking:
+                        rank = item['rank']
+                        combination = item['combination']
+                        accuracy = f"{item['accuracy_mean']:.4f}"
+                        f1_score = f"{item['f1_mean']:.4f}"
+                        stability = f"{item['stability_score']:.4f}"
+                        
+                        self.cv_results_tree.insert('', 'end', values=(
+                            rank, combination, accuracy, f1_score, stability
+                        ))
+            
+            # 顯示完成消息
+            messagebox.showinfo("完成", "交叉驗證已完成！結果已顯示在表格中。")
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"處理交叉驗證結果時發生錯誤：{str(e)}")
+
+    def _handle_cv_error(self, error_msg, error_details=None):
+        """處理交叉驗證錯誤"""
+        self.cv_start_btn['state'] = 'normal'
+        self.cv_status.config(text="錯誤", foreground='red')
+        
+        if error_details:
+            print(f"交叉驗證詳細錯誤：\n{error_details}")
+        
+        messagebox.showerror("錯誤", f"交叉驗證過程中發生錯誤：{error_msg}")
 
 def main():
     root = tk.Tk()

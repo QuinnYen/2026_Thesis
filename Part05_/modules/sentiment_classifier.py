@@ -26,14 +26,16 @@ logger = logging.getLogger(__name__)
 class SentimentClassifier:
     """基於注意力機制特徵的情感分類器"""
     
-    def __init__(self, output_dir: Optional[str] = None):
+    def __init__(self, output_dir: Optional[str] = None, encoder_type: str = 'bert'):
         """
         初始化情感分類器
         
         Args:
             output_dir: 輸出目錄路徑
+            encoder_type: 編碼器類型 (bert, gpt, t5, cnn, elmo)
         """
         self.output_dir = output_dir
+        self.encoder_type = encoder_type
         self.model = None
         self.label_encoder = LabelEncoder()
         self.feature_vectors = None
@@ -216,23 +218,26 @@ class SentimentClassifier:
         # 編碼標籤
         encoded_labels = self.label_encoder.fit_transform(sentiments)
         
-        # 修正：獲取原始BERT嵌入向量
+        # 修正：獲取編碼器嵌入向量（支援多種編碼器）
         if original_embeddings is None:
-            # 嘗試從run目錄根目錄載入BERT嵌入向量
+            # 嘗試載入編碼器嵌入向量
             if self.output_dir:
-                # 確保從run目錄根目錄讀取
-                if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
-                    run_dir = os.path.dirname(self.output_dir)
-                else:
-                    run_dir = self.output_dir
-                embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
-                if os.path.exists(embeddings_file):
-                    original_embeddings = np.load(embeddings_file)
-                    logger.info(f"已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
-                else:
-                    raise ValueError("無法找到原始BERT嵌入向量文件。請提供 original_embeddings 參數或確保BERT特徵向量文件存在於輸出目錄中。")
+                # 使用通用的檔案檢測邏輯
+                try:
+                    from .attention_processor import AttentionProcessor
+                    temp_processor = AttentionProcessor(output_dir=self.output_dir, encoder_type=self.encoder_type)
+                    embeddings_file = temp_processor._find_existing_embeddings(self.encoder_type)
+                    
+                    if embeddings_file and os.path.exists(embeddings_file):
+                        original_embeddings = np.load(embeddings_file)
+                        logger.info(f"已載入 {self.encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
+                        logger.info(f"檔案來源: {embeddings_file}")
+                    else:
+                        raise ValueError(f"無法找到 {self.encoder_type.upper()} 嵌入向量文件。請提供 original_embeddings 參數或確保 {self.encoder_type.upper()} 特徵向量文件存在。")
+                except Exception as e:
+                    raise ValueError(f"載入 {self.encoder_type.upper()} 嵌入向量時發生錯誤: {e}。請提供 original_embeddings 參數。")
             else:
-                raise ValueError("無法找到原始BERT嵌入向量。請提供 original_embeddings 參數。")
+                raise ValueError(f"無法找到 {self.encoder_type.upper()} 嵌入向量。請提供 original_embeddings 參數。")
         
         # 確保嵌入向量數量與元數據匹配
         if len(original_embeddings) != len(metadata):
@@ -246,6 +251,26 @@ class SentimentClassifier:
         similarity_features = []
         
         logger.info(f"計算每個文檔與 {len(aspect_names)} 個面向向量的相似度...")
+        
+        # 檢查維度相容性
+        first_embedding = original_embeddings[0]
+        first_aspect_vector = aspect_vectors[aspect_names[0]]
+        
+        if first_embedding.shape[0] != first_aspect_vector.shape[0]:
+            error_msg = f"維度不匹配: 文檔嵌入向量維度 {first_embedding.shape[0]}, 面向向量維度 {first_aspect_vector.shape[0]}"
+            logger.error(error_msg)
+            logger.error(f"這通常是由於注意力分析和分類評估使用了不同的編碼器造成的")
+            logger.error(f"當前編碼器類型: {self.encoder_type.upper()}")
+            
+            # 嘗試修復：如果面向向量維度是1024而文檔向量是768，說明面向向量來自不同編碼器
+            if first_aspect_vector.shape[0] == 1024 and first_embedding.shape[0] == 768:
+                logger.warning("檢測到面向向量來自1024維編碼器（可能是GPT/T5），但文檔向量是768維（BERT）")
+                logger.warning("建議重新運行完整的流水線以確保編碼器一致性")
+            elif first_aspect_vector.shape[0] == 768 and first_embedding.shape[0] == 1024:
+                logger.warning("檢測到面向向量來自768維編碼器（BERT），但文檔向量是1024維（可能是GPT/T5）")
+                logger.warning("建議重新運行完整的流水線以確保編碼器一致性")
+            
+            raise ValueError(f"{error_msg}。請確保注意力分析和分類評估使用相同的編碼器類型。")
         
         for i, embedding in enumerate(original_embeddings):
             doc_similarities = []
@@ -495,20 +520,23 @@ class SentimentClassifier:
         """
         evaluation_results = {}
         
-        # 修正：如果沒有提供original_embeddings，嘗試載入
+        # 修正：如果沒有提供original_embeddings，嘗試載入（支援多種編碼器）
         if original_embeddings is None:
             if self.output_dir:
-                # 確保從run目錄根目錄讀取
-                if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
-                    run_dir = os.path.dirname(self.output_dir)
-                else:
-                    run_dir = self.output_dir
-                embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
-                if os.path.exists(embeddings_file):
-                    original_embeddings = np.load(embeddings_file)
-                    logger.info(f"已載入原始BERT嵌入向量用於分類評估，形狀: {original_embeddings.shape}")
-                else:
-                    logger.warning("未找到原始BERT嵌入向量文件，將嘗試從prepare_features方法中載入")
+                # 使用通用的檔案檢測邏輯
+                try:
+                    from .attention_processor import AttentionProcessor
+                    temp_processor = AttentionProcessor(output_dir=self.output_dir, encoder_type=self.encoder_type)
+                    embeddings_file = temp_processor._find_existing_embeddings(self.encoder_type)
+                    
+                    if embeddings_file and os.path.exists(embeddings_file):
+                        original_embeddings = np.load(embeddings_file)
+                        logger.info(f"已載入 {self.encoder_type.upper()} 嵌入向量用於分類評估，形狀: {original_embeddings.shape}")
+                        logger.info(f"檔案來源: {embeddings_file}")
+                    else:
+                        logger.warning(f"未找到 {self.encoder_type.upper()} 嵌入向量文件，將嘗試從prepare_features方法中載入")
+                except Exception as e:
+                    logger.warning(f"載入 {self.encoder_type.upper()} 嵌入向量時發生錯誤: {e}，將嘗試從prepare_features方法中載入")
         
         # 過濾出有效的注意力機制
         valid_mechanisms = []

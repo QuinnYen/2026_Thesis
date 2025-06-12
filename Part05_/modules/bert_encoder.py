@@ -115,16 +115,21 @@ class BertEncoder:
                 'total_phases': 3
             })
         
-        # 保存特徵向量到run目錄根目錄
+        # 保存特徵向量到02_bert_encoding目錄
         if self.output_dir:
-            # 確保輸出目錄是run目錄的根目錄
+            # 確定run目錄的根目錄
             if "02_bert_encoding" in self.output_dir:
-                # 如果輸出目錄是子目錄，改為父目錄
-                run_dir = os.path.dirname(self.output_dir)
+                # 如果輸出目錄就是02_bert_encoding目錄，直接使用
+                bert_encoding_dir = self.output_dir
             else:
-                run_dir = self.output_dir
+                # 如果輸出目錄是run根目錄，創建02_bert_encoding子目錄
+                bert_encoding_dir = os.path.join(self.output_dir, "02_bert_encoding")
             
-            output_file = os.path.join(run_dir, "02_bert_embeddings.npy")
+            # 確保02_bert_encoding目錄存在
+            os.makedirs(bert_encoding_dir, exist_ok=True)
+            
+            # 保存到02_bert_encoding目錄
+            output_file = os.path.join(bert_encoding_dir, "02_bert_embeddings.npy")
             np.save(output_file, embeddings)
             logger.info(f"已保存BERT特徵向量到：{output_file}")
             

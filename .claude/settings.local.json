@@ -4,7 +4,11 @@
       "Bash(python:*)",
       "Bash(find:*)",
       "Bash(pip3 list:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(rg:*)",
+      "Bash(grep:*)",
+      "Bash(rm:*)",
+      "Bash(mkdir:*)"
     ],
     "deny": []
   }

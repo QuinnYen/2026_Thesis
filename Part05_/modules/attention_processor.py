@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class AttentionProcessor:
     """注意力機制處理器，用於執行完整的注意力分析流程"""
     
-    def __init__(self, output_dir: Optional[str] = None, config: Optional[Dict] = None, progress_callback=None):
+    def __init__(self, output_dir: Optional[str] = None, config: Optional[Dict] = None, progress_callback=None, encoder_type: str = 'bert'):
         """
         初始化注意力處理器
         
@@ -29,17 +29,19 @@ class AttentionProcessor:
             output_dir: 輸出目錄
             config: 配置參數
             progress_callback: 進度回調函數
+            encoder_type: 編碼器類型 (bert, gpt, t5, cnn, elmo)
         """
         self.output_dir = output_dir
         self.config = config or {}
         self.progress_callback = progress_callback
+        self.encoder_type = encoder_type
         self.run_manager = RunManager(output_dir) if output_dir else None
         
         # 初始化組件
         self.bert_encoder = None
         self.attention_analyzer = None
         
-        logger.info("注意力處理器已初始化")
+        logger.info(f"注意力處理器已初始化，使用 {encoder_type.upper()} 編碼器")
     
     def process_with_attention(self, 
                              input_file: str,
@@ -119,7 +121,7 @@ class AttentionProcessor:
                     'total_phases': total_steps
                 })
             
-            embeddings = self._get_embeddings(df, text_column)
+            embeddings = self._get_embeddings(df, text_column, self.encoder_type)
             print(f"✅ 特徵向量準備完成 (形狀: {embeddings.shape})")
             
             if self.progress_callback:
@@ -200,63 +202,110 @@ class AttentionProcessor:
         
         return None
     
-    def _get_embeddings(self, df: pd.DataFrame, text_column: str) -> np.ndarray:
-        """獲取或生成BERT特徵向量"""
-        # 首先檢查run目錄根目錄是否已存在特徵向量文件
+    def _get_embeddings(self, df: pd.DataFrame, text_column: str, encoder_type: str = 'bert') -> np.ndarray:
+        """獲取或生成文本特徵向量，支援多種編碼器"""
+        # 檢查編碼目錄是否已存在特徵向量文件
         embeddings_file = None
         if self.output_dir:
-            # 確保從run目錄根目錄讀取
-            if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+            # 確定run目錄
+            if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "02_encoding", "03_attention_testing", "04_analysis"]):
                 run_dir = os.path.dirname(self.output_dir)
             else:
                 run_dir = self.output_dir
-            embeddings_file = os.path.join(run_dir, "02_bert_embeddings.npy")
+            
+            # 支援新舊兩種目錄結構
+            # 新結構: 02_encoding/02_{encoder_type}_embeddings.npy
+            # 舊結構: 02_bert_encoding/02_bert_embeddings.npy
+            encoding_dirs = [
+                os.path.join(run_dir, "02_encoding"),        # 新的模組化架構
+                os.path.join(run_dir, "02_bert_encoding")    # 舊的BERT專用結構
+            ]
+            
+            for encoding_dir in encoding_dirs:
+                if os.path.exists(encoding_dir):
+                    # 嘗試不同的檔案命名模式
+                    possible_files = [
+                        f"02_{encoder_type}_embeddings.npy",  # 新的模組化命名
+                        "02_bert_embeddings.npy",             # 舊的BERT命名
+                        f"{encoder_type}_embeddings.npy",     # 簡化命名
+                        "embeddings.npy"                      # 通用命名
+                    ]
+                    
+                    for filename in possible_files:
+                        candidate_file = os.path.join(encoding_dir, filename)
+                        if os.path.exists(candidate_file):
+                            embeddings_file = candidate_file
+                            break
+                    
+                    if embeddings_file:
+                        break
             
         # 如果當前目錄沒有，搜索所有run目錄中的特徵向量文件
         existing_embeddings_file = None
         if not (embeddings_file and os.path.exists(embeddings_file)):
-            existing_embeddings_file = self._find_existing_embeddings()
+            existing_embeddings_file = self._find_existing_embeddings(encoder_type)
             
         if embeddings_file and os.path.exists(embeddings_file):
-            print(f"   📂 發現已存在的特徵向量文件，正在載入...")
+            print(f"   📂 發現已存在的 {encoder_type.upper()} 特徵向量文件，正在載入...")
             logger.info(f"載入已存在的特徵向量: {embeddings_file}")
             embeddings = np.load(embeddings_file)
             print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
             logger.info(f"特徵向量形狀: {embeddings.shape}")
         elif existing_embeddings_file:
-            print(f"   📂 發現已存在的特徵向量文件，正在載入...")
+            print(f"   📂 發現已存在的 {encoder_type.upper()} 特徵向量文件，正在載入...")
             print(f"   📁 來源: {existing_embeddings_file}")
             logger.info(f"載入已存在的特徵向量: {existing_embeddings_file}")
             embeddings = np.load(existing_embeddings_file)
             print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
             logger.info(f"特徵向量形狀: {embeddings.shape}")
             
-            # 將找到的特徵向量複製到當前輸出目錄，以便後續使用
+            # 將找到的特徵向量複製到當前編碼目錄，以便後續使用
             if self.output_dir and embeddings_file:
                 try:
                     import shutil
                     os.makedirs(os.path.dirname(embeddings_file), exist_ok=True)
                     shutil.copy2(existing_embeddings_file, embeddings_file)
-                    print(f"   📋 已複製特徵向量到當前目錄: {embeddings_file}")
-                    logger.info(f"已複製特徵向量到當前目錄: {embeddings_file}")
+                    print(f"   📋 已複製特徵向量到編碼目錄: {embeddings_file}")
+                    logger.info(f"已複製特徵向量到編碼目錄: {embeddings_file}")
                 except Exception as e:
                     logger.warning(f"複製特徵向量文件時發生錯誤: {str(e)}")
         else:
-            # 生成新的特徵向量
-            print(f"   🔄 未發現已存在的特徵向量，開始生成新的BERT特徵向量...")
-            logger.info("生成BERT特徵向量...")
-            if self.bert_encoder is None:
-                self.bert_encoder = BertEncoder(output_dir=self.output_dir)
+            # 生成新的特徵向量（支援多種編碼器）
+            print(f"   🔄 未發現已存在的特徵向量，開始生成新的 {encoder_type.upper()} 特徵向量...")
+            logger.info(f"生成 {encoder_type.upper()} 特徵向量...")
             
-            embeddings = self.bert_encoder.encode(df[text_column])
-            print(f"   ✅ BERT特徵向量生成完成 (形狀: {embeddings.shape})")
+            # 根據編碼器類型選擇合適的編碼器
+            if encoder_type == 'bert':
+                if self.bert_encoder is None:
+                    self.bert_encoder = BertEncoder(output_dir=self.output_dir)
+                encoder = self.bert_encoder
+            else:
+                # 對於其他編碼器類型，使用模組化架構
+                try:
+                    from .encoder_factory import EncoderFactory
+                    encoder = EncoderFactory.create_encoder(encoder_type, output_dir=self.output_dir)
+                except Exception as e:
+                    # 如果模組化架構不可用，回退到BERT
+                    print(f"   ⚠️ {encoder_type.upper()} 編碼器不可用 ({e})，回退使用BERT")
+                    logger.warning(f"{encoder_type.upper()} 編碼器不可用，回退使用BERT: {e}")
+                    if self.bert_encoder is None:
+                        self.bert_encoder = BertEncoder(output_dir=self.output_dir)
+                    encoder = self.bert_encoder
+                    # 更新編碼器類型以保持一致性
+                    self.encoder_type = 'bert'
+            
+            embeddings = encoder.encode(df[text_column])
+            print(f"   ✅ {encoder_type.upper()} 特徵向量生成完成 (形狀: {embeddings.shape})")
             logger.info(f"生成的特徵向量形狀: {embeddings.shape}")
         
         return embeddings
     
-    def _find_existing_embeddings(self) -> Optional[str]:
+    def _find_existing_embeddings(self, encoder_type: str = 'bert') -> Optional[str]:
         """
-        在所有run目錄中搜索已存在的BERT特徵向量文件
+        在所有run目錄中搜索已存在的文本特徵向量文件，支援多種編碼器
+        
+        Args:
+            encoder_type: 編碼器類型 (bert, gpt, t5, cnn, elmo)
         
         Returns:
             Optional[str]: 找到的最新特徵向量文件路徑，如果沒找到則返回None
@@ -289,47 +338,118 @@ class AttentionProcessor:
                         logger.warning(f"無法找到output目錄，搜索路徑: {base_dir}")
                         return None
             
-            logger.info(f"在目錄中搜索BERT特徵向量: {base_dir}")
+            logger.info(f"在目錄中搜索 {encoder_type.upper()} 特徵向量: {base_dir}")
             
             # 搜索所有run_*目錄
             embeddings_files = []
             if os.path.exists(base_dir):
-                for item in os.listdir(base_dir):
-                    if item.startswith('run_'):
-                        run_dir = os.path.join(base_dir, item)
-                        if os.path.isdir(run_dir):
-                            # 首先檢查run目錄根目錄
-                            embeddings_file_root = os.path.join(run_dir, '02_bert_embeddings.npy')
-                            if os.path.exists(embeddings_file_root):
-                                # 獲取文件修改時間
-                                mtime = os.path.getmtime(embeddings_file_root)
-                                embeddings_files.append((embeddings_file_root, mtime))
-                                logger.info(f"找到BERT特徵向量（根目錄）: {embeddings_file_root}")
-                            
-                            # 然後檢查02_bert_encoding子目錄（向後兼容）
-                            bert_encoding_dir = os.path.join(run_dir, '02_bert_encoding')
-                            if os.path.exists(bert_encoding_dir):
-                                embeddings_file = os.path.join(bert_encoding_dir, '02_bert_embeddings.npy')
-                                if os.path.exists(embeddings_file):
-                                    # 獲取文件修改時間
-                                    mtime = os.path.getmtime(embeddings_file)
-                                    embeddings_files.append((embeddings_file, mtime))
-                                    logger.info(f"找到BERT特徵向量（子目錄）: {embeddings_file}")
+                run_dirs = [item for item in os.listdir(base_dir) if item.startswith('run_')]
+                logger.info(f"找到 {len(run_dirs)} 個run目錄: {run_dirs}")
+                
+                for item in run_dirs:
+                    run_dir = os.path.join(base_dir, item)
+                    if os.path.isdir(run_dir):
+                        logger.info(f"檢查run目錄: {run_dir}")
+                        # 檢查不同的編碼目錄結構
+                        encoding_dirs = [
+                            ('02_encoding', [
+                                f'02_{encoder_type}_embeddings.npy',
+                                f'{encoder_type}_embeddings.npy',
+                                'embeddings.npy'
+                            ]),
+                            ('02_bert_encoding', [
+                                f'02_{encoder_type}_embeddings.npy',  # 支援其他編碼器文件
+                                f'{encoder_type}_embeddings.npy',
+                                '02_bert_embeddings.npy',
+                                'bert_embeddings.npy'
+                            ])
+                        ]
+                        
+                        for dir_name, file_patterns in encoding_dirs:
+                            encoding_dir = os.path.join(run_dir, dir_name)
+                            logger.info(f"檢查編碼目錄: {encoding_dir} (存在: {os.path.exists(encoding_dir)})")
+                            if os.path.exists(encoding_dir):
+                                for pattern in file_patterns:
+                                    embeddings_file = os.path.join(encoding_dir, pattern)
+                                    logger.info(f"檢查文件: {embeddings_file} (存在: {os.path.exists(embeddings_file)})")
+                                    if os.path.exists(embeddings_file):
+                                        # 檢查檔案是否對應正確的編碼器類型
+                                        logger.info(f"驗證文件: {embeddings_file}")
+                                        if self._validate_embeddings_file(embeddings_file, encoder_type):
+                                            # 獲取文件修改時間
+                                            mtime = os.path.getmtime(embeddings_file)
+                                            embeddings_files.append((embeddings_file, mtime))
+                                            logger.info(f"✅ 找到並驗證 {encoder_type.upper()} 特徵向量: {embeddings_file}")
+                                        else:
+                                            logger.info(f"❌ 文件驗證失敗: {embeddings_file}")
+                                        break
             
             # 如果找到文件，返回最新的
             if embeddings_files:
                 # 按修改時間排序，返回最新的
                 embeddings_files.sort(key=lambda x: x[1], reverse=True)
                 latest_file = embeddings_files[0][0]
-                logger.info(f"選擇最新的BERT特徵向量文件: {latest_file}")
+                logger.info(f"選擇最新的 {encoder_type.upper()} 特徵向量文件: {latest_file}")
                 return latest_file
             else:
-                logger.info("未找到任何已存在的BERT特徵向量文件")
+                logger.info(f"未找到任何已存在的 {encoder_type.upper()} 特徵向量文件")
                 return None
                 
         except Exception as e:
-            logger.error(f"搜索已存在BERT特徵向量時發生錯誤: {str(e)}")
+            logger.error(f"搜索已存在 {encoder_type.upper()} 特徵向量時發生錯誤: {str(e)}")
             return None
+    
+    def _validate_embeddings_file(self, file_path: str, encoder_type: str) -> bool:
+        """驗證特徵向量檔案是否對應正確的編碼器類型"""
+        try:
+            # 基本檔案名檢查
+            filename = os.path.basename(file_path)
+            logger.info(f"驗證文件: {filename}, 編碼器類型: {encoder_type}")
+            
+            # 如果檔案名包含編碼器類型，直接檢查
+            if encoder_type in filename.lower():
+                logger.info(f"✅ 驗證通過: 檔案名包含編碼器類型 '{encoder_type}'")
+                return True
+            
+            # 如果是舊的BERT檔案格式，只接受BERT編碼器
+            if 'bert' in filename.lower() and encoder_type == 'bert':
+                return True
+            
+            # 如果是通用檔案名，嘗試通過目錄結構或檔案內容推斷
+            if filename in ['embeddings.npy', '02_embeddings.npy']:
+                # 檢查同目錄下是否有編碼器信息檔案
+                dir_path = os.path.dirname(file_path)
+                info_files = [
+                    f'encoder_info_{encoder_type}.json',
+                    f'{encoder_type}_info.json',
+                    'encoder_info.json'
+                ]
+                
+                for info_file in info_files:
+                    info_path = os.path.join(dir_path, info_file)
+                    if os.path.exists(info_path):
+                        try:
+                            import json
+                            with open(info_path, 'r', encoding='utf-8') as f:
+                                info = json.load(f)
+                                # 檢查encoder_type或從檔名推斷
+                                if (info.get('encoder_type') == encoder_type or 
+                                    encoder_type in info_file.lower()):
+                                    return True
+                        except:
+                            pass
+                
+                # 如果沒有信息檔案，但是特定的編碼器目錄，也接受
+                if '02_bert_encoding' in file_path and encoder_type == 'bert':
+                    return True
+                if '02_encoding' in file_path:
+                    return True  # 新的模組化架構，通常是對應的編碼器
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"驗證特徵向量檔案時發生錯誤: {str(e)}")
+            return True  # 如果驗證失敗，就接受檔案
     
     def _prepare_metadata(self, df: pd.DataFrame) -> pd.DataFrame:
         """準備用於注意力分析的元數據"""
