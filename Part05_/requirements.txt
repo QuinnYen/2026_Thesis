@@ -59,36 +59,36 @@ scipy>=1.7.0,<1.12.0         # 科學計算庫，用於數值優化和統計分�
 
 # 🚀 方案一：最小安裝（僅核心功能，約1.5GB）
 # 推薦初次安裝或記憶體有限環境
-pip install torch>=1.9.0 transformers>=4.0.0 scikit-learn>=1.0.0 xgboost>=1.6.0 numpy>=1.21.0 pandas>=1.3.0 nltk>=3.6 beautifulsoup4>=4.9.0 tqdm>=4.60.0 joblib>=1.0.0
+#pip install torch>=1.9.0 transformers>=4.0.0 scikit-learn>=1.0.0 xgboost>=1.6.0 numpy>=1.21.0 pandas>=1.3.0 nltk>=3.6 beautifulsoup4>=4.9.0 tqdm>=4.60.0 joblib>=1.0.0
 
 # 🌟 方案二：進階安裝（包含主題建模，約2.5GB）
 # 推薦大部分使用情境
-pip install torch>=1.9.0 transformers>=4.0.0 scikit-learn>=1.0.0 xgboost>=1.6.0 numpy>=1.21.0 pandas>=1.3.0 nltk>=3.6 beautifulsoup4>=4.9.0 tqdm>=4.60.0 joblib>=1.0.0 gensim>=4.0.0 bertopic>=0.9.0 umap-learn>=0.5.0 hdbscan>=0.8.0 scipy>=1.7.0
+#pip install torch>=1.9.0 transformers>=4.0.0 scikit-learn>=1.0.0 xgboost>=1.6.0 numpy>=1.21.0 pandas>=1.3.0 nltk>=3.6 beautifulsoup4>=4.9.0 tqdm>=4.60.0 joblib>=1.0.0 gensim>=4.0.0 bertopic>=0.9.0 umap-learn>=0.5.0 hdbscan>=0.8.0 scipy>=1.7.0
 
 # 💪 方案三：完整安裝（所有功能）
-pip install -r requirements.txt
+#pip install -r requirements.txt
 
 # 🎮 GPU加速安裝（強烈推薦，提升10-50倍速度）
 # 步驟1：安裝CUDA版本的PyTorch
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 # 步驟2：安裝其餘套件
-pip install -r requirements.txt
+#pip install -r requirements.txt
 
 # =====================================
 # 驗證安裝：
 # =====================================
 
 # ✅ 驗證核心功能
-python -c "import torch, transformers, sklearn, xgboost, pandas, numpy; print('✅ 核心套件安裝成功')"
+#python -c "import torch, transformers, sklearn, xgboost, pandas, numpy; print('✅ 核心套件安裝成功')"
 
 # ✅ 驗證模組化架構
-python -c "from modules.encoder_factory import EncoderFactory; from modules.aspect_factory import AspectFactory; print('✅ 模組化架構可用')"
+#python -c "from modules.encoder_factory import EncoderFactory; from modules.aspect_factory import AspectFactory; print('✅ 模組化架構可用')"
 
 # ✅ 驗證GPU支援（可選）
-python -c "import torch; print(f'✅ GPU可用: {torch.cuda.is_available()}, 設備數量: {torch.cuda.device_count()}')"
+#python -c "import torch; print(f'✅ GPU可用: {torch.cuda.is_available()}, 設備數量: {torch.cuda.device_count()}')"
 
 # ✅ 驗證進階功能（可選）
-python -c "import bertopic, umap, hdbscan; print('✅ 進階主題建模套件可用')"
+#python -c "import bertopic, umap, hdbscan; print('✅ 進階主題建模套件可用')"
 
 # =====================================
 # 系統需求：
@@ -104,7 +104,7 @@ python -c "import bertopic, umap, hdbscan; print('✅ 進階主題建模套件�
 # =====================================
 
 # 📥 下載NLTK語言資源
-python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])"
+#python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])"
 
 # 🤖 BERT模型會在首次使用時自動下載
 # 位置：~/.cache/huggingface/transformers/
@@ -114,15 +114,15 @@ python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4
 # =====================================
 
 # 🔧 升級pip（安裝失敗時）
-python -m pip install --upgrade pip
+#python -m pip install --upgrade pip
 
 # 🚀 使用國內鏡像（網路問題）
-pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+#pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 💻 強制使用CPU（CUDA錯誤）
-export CUDA_VISIBLE_DEVICES=""
+#export CUDA_VISIBLE_DEVICES=""
 
 # 🧹 清理快取（磁碟空間不足）
-pip cache purge
+#pip cache purge
 
 # =====================================
