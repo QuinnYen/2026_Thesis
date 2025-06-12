@@ -21,16 +21,18 @@ logger = logging.getLogger(__name__)
 class AttentionProcessor:
     """注意力機制處理器，用於執行完整的注意力分析流程"""
     
-    def __init__(self, output_dir: Optional[str] = None, config: Optional[Dict] = None):
+    def __init__(self, output_dir: Optional[str] = None, config: Optional[Dict] = None, progress_callback=None):
         """
         初始化注意力處理器
         
         Args:
             output_dir: 輸出目錄
             config: 配置參數
+            progress_callback: 進度回調函數
         """
         self.output_dir = output_dir
         self.config = config or {}
+        self.progress_callback = progress_callback
         self.run_manager = RunManager(output_dir) if output_dir else None
         
         # 初始化組件
@@ -72,6 +74,14 @@ class AttentionProcessor:
             
             # 1. 讀取預處理數據
             print(f"\n📊 步驟 1/{total_steps}: 讀取數據...")
+            if self.progress_callback:
+                self.progress_callback('phase', {
+                    'phase_name': '讀取預處理數據',
+                    'current_phase': 1,
+                    'total_phases': total_steps
+                })
+                self.progress_callback('status', f'讀取數據: {input_file}')
+            
             logger.info(f"讀取數據: {input_file}")
             if not os.path.exists(input_file):
                 raise FileNotFoundError(f"找不到輸入文件: {input_file}")
@@ -80,17 +90,40 @@ class AttentionProcessor:
             print(f"✅ 成功讀取 {len(df)} 條數據")
             logger.info(f"成功讀取 {len(df)} 條數據")
             
+            if self.progress_callback:
+                self.progress_callback('status', f'✅ 成功讀取 {len(df)} 條數據')
+            
             # 2. 檢查必要欄位
             print(f"\n🔍 步驟 2/{total_steps}: 檢查數據欄位...")
+            if self.progress_callback:
+                self.progress_callback('phase', {
+                    'phase_name': '檢查數據欄位',
+                    'current_phase': 2,
+                    'total_phases': total_steps
+                })
+            
             text_column = self._find_text_column(df)
             if text_column is None:
                 raise ValueError("找不到有效的文本欄位")
             print(f"✅ 使用文本欄位: {text_column}")
             
+            if self.progress_callback:
+                self.progress_callback('status', f'✅ 使用文本欄位: {text_column}')
+            
             # 3. 初始化BERT編碼器和獲取特徵向量
             print(f"\n🤖 步驟 3/{total_steps}: 處理BERT特徵向量...")
+            if self.progress_callback:
+                self.progress_callback('phase', {
+                    'phase_name': '處理BERT特徵向量',
+                    'current_phase': 3,
+                    'total_phases': total_steps
+                })
+            
             embeddings = self._get_embeddings(df, text_column)
             print(f"✅ 特徵向量準備完成 (形狀: {embeddings.shape})")
+            
+            if self.progress_callback:
+                self.progress_callback('status', f'✅ 特徵向量準備完成 (形狀: {embeddings.shape})')
             
             # 4. 準備元數據
             print(f"\n📋 步驟 4/{total_steps}: 準備元數據...")

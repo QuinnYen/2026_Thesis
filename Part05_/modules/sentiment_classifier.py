@@ -106,25 +106,53 @@ class SentimentClassifier:
         try:
             import xgboost as xgb
             
-            # 根據GPU可用性配置XGBoost
-            if self.device_info['has_gpu']:
-                # GPU配置
-                xgb_params = {
-                    'tree_method': 'gpu_hist',
-                    'gpu_id': 0,
-                    'n_estimators': 100,
-                    'max_depth': 6,
-                    'learning_rate': 0.1,
-                    'subsample': 0.8,
-                    'colsample_bytree': 0.8,
-                    'random_state': 42,
-                    'n_jobs': -1
-                }
-                logger.info("XGBoost配置為GPU模式")
+            # 檢查XGBoost版本並記錄
+            xgb_version = xgb.__version__
+            logger.info(f"檢測到XGBoost版本: {xgb_version}")
+            
+            # 檢查是否為2.0.0+版本（使用新參數）
+            xgb_major_version = int(xgb_version.split('.')[0])
+            is_new_xgb = xgb_major_version >= 2
+            
+            if is_new_xgb:
+                logger.info("使用XGBoost 2.0.0+新版本參數配置")
             else:
-                # CPU配置
+                logger.info("使用XGBoost 1.x版本參數配置")
+            
+            # 根據XGBoost版本和GPU可用性配置參數
+            if self.device_info['has_gpu']:
+                if is_new_xgb:
+                    # XGBoost 2.0.0+ GPU配置 - 使用新參數
+                    xgb_params = {
+                        'tree_method': 'hist',      # 新版本統一使用 'hist'
+                        'device': 'cuda',           # 使用 'device' 替代 'gpu_id'
+                        'n_estimators': 100,
+                        'max_depth': 6,
+                        'learning_rate': 0.1,
+                        'subsample': 0.8,
+                        'colsample_bytree': 0.8,
+                        'random_state': 42,
+                        'n_jobs': -1
+                    }
+                    logger.info("XGBoost配置為GPU模式 (v2.0+: device='cuda', tree_method='hist')")
+                else:
+                    # XGBoost 1.x GPU配置 - 使用舊參數
+                    xgb_params = {
+                        'tree_method': 'gpu_hist',  # 舊版本使用 'gpu_hist'
+                        'gpu_id': 0,                # 舊版本使用 'gpu_id'
+                        'n_estimators': 100,
+                        'max_depth': 6,
+                        'learning_rate': 0.1,
+                        'subsample': 0.8,
+                        'colsample_bytree': 0.8,
+                        'random_state': 42,
+                        'n_jobs': -1
+                    }
+                    logger.info("XGBoost配置為GPU模式 (v1.x: gpu_id=0, tree_method='gpu_hist')")
+            else:
+                # CPU配置（兩個版本都一樣）
                 xgb_params = {
-                    'tree_method': 'hist',  # CPU上最快的方法
+                    'tree_method': 'hist',      # CPU上最快的方法
                     'n_estimators': 100,
                     'max_depth': 6,
                     'learning_rate': 0.1,
@@ -133,7 +161,11 @@ class SentimentClassifier:
                     'random_state': 42,
                     'n_jobs': -1  # 使用所有CPU核心
                 }
-                logger.info("XGBoost配置為CPU模式")
+                if is_new_xgb:
+                    xgb_params['device'] = 'cpu'  # 新版本明確指定CPU設備
+                    logger.info("XGBoost配置為CPU模式 (v2.0+: device='cpu')")
+                else:
+                    logger.info("XGBoost配置為CPU模式 (v1.x: tree_method='hist')")
             
             models['xgboost'] = xgb.XGBClassifier(**xgb_params)
             logger.info("XGBoost已成功載入並配置")

@@ -13,20 +13,29 @@ logger = logging.getLogger(__name__)
 class BertEncoder:
     """BERT編碼器 - 使用BERT模型提取文本的768維特徵向量"""
     
-    def __init__(self, output_dir: Optional[str] = None):
+    def __init__(self, output_dir: Optional[str] = None, progress_callback=None):
         """
         初始化BERT編碼器
         
         Args:
             output_dir: 輸出目錄路徑，如果為None則使用預設路徑
+            progress_callback: 進度回調函數，用於更新GUI進度
         """
         self.output_dir = output_dir
+        self.progress_callback = progress_callback
         self.model_name = 'bert-base-uncased'
         self.tokenizer = BertTokenizer.from_pretrained(self.model_name)
         self.model = BertModel.from_pretrained(self.model_name)
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         logger.info(f"使用設備: {self.device}")
+        
+        # 通知GPU狀態
+        if self.progress_callback:
+            gpu_info = f"使用設備: {self.device}"
+            if torch.cuda.is_available():
+                gpu_info += f" ({torch.cuda.get_device_name()})"
+            self.progress_callback('status', gpu_info)
     
     def encode(self, texts: pd.Series) -> np.ndarray:
         """
@@ -44,33 +53,85 @@ class BertEncoder:
         
         logger.info(f"開始BERT編碼，共 {len(texts)} 條文本，分 {total_batches} 個批次處理")
         
-        # 使用tqdm顯示進度條
-        for i in tqdm(range(0, len(texts), batch_size), 
-                     desc="BERT編碼進度", 
-                     unit="batch", 
-                     total=total_batches):
-            batch_texts = texts.iloc[i:i+batch_size].tolist()
-            encoded = self.tokenizer(batch_texts, 
-                                   padding=True, 
-                                   truncation=True, 
-                                   max_length=512, 
-                                   return_tensors='pt')
-            
-            with torch.no_grad():
-                encoded = {k: v.to(self.device) for k, v in encoded.items()}
-                outputs = self.model(**encoded)
-                # 使用[CLS]標記的輸出作為文本表示
-                batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
-                embeddings.append(batch_embeddings)
+        # 通知開始編碼
+        if self.progress_callback:
+            self.progress_callback('phase', {
+                'phase_name': 'BERT編碼',
+                'current_phase': 1,
+                'total_phases': 3
+            })
+            self.progress_callback('status', f"開始BERT編碼：{len(texts)} 條文本，{total_batches} 個批次")
+        
+        # 使用進度條或回調顯示進度
+        if self.progress_callback:
+            # 使用進度回調而非tqdm
+            for i in range(0, len(texts), batch_size):
+                batch_num = i // batch_size + 1
+                
+                # 更新進度
+                self.progress_callback('progress', (batch_num, total_batches))
+                
+                batch_texts = texts.iloc[i:i+batch_size].tolist()
+                encoded = self.tokenizer(batch_texts, 
+                                       padding=True, 
+                                       truncation=True, 
+                                       max_length=512, 
+                                       return_tensors='pt')
+                
+                with torch.no_grad():
+                    encoded = {k: v.to(self.device) for k, v in encoded.items()}
+                    outputs = self.model(**encoded)
+                    # 使用[CLS]標記的輸出作為文本表示
+                    batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+                    embeddings.append(batch_embeddings)
+        else:
+            # 沒有回調時使用原始tqdm
+            for i in tqdm(range(0, len(texts), batch_size), 
+                         desc="BERT編碼進度", 
+                         unit="batch", 
+                         total=total_batches):
+                batch_texts = texts.iloc[i:i+batch_size].tolist()
+                encoded = self.tokenizer(batch_texts, 
+                                       padding=True, 
+                                       truncation=True, 
+                                       max_length=512, 
+                                       return_tensors='pt')
+                
+                with torch.no_grad():
+                    encoded = {k: v.to(self.device) for k, v in encoded.items()}
+                    outputs = self.model(**encoded)
+                    # 使用[CLS]標記的輸出作為文本表示
+                    batch_embeddings = outputs.last_hidden_state[:, 0, :].cpu().numpy()
+                    embeddings.append(batch_embeddings)
         
         embeddings = np.vstack(embeddings)
         logger.info(f"BERT編碼完成，生成 {embeddings.shape[0]} x {embeddings.shape[1]} 的特徵矩陣")
+        
+        # 通知保存階段
+        if self.progress_callback:
+            self.progress_callback('phase', {
+                'phase_name': '保存特徵向量',
+                'current_phase': 2,
+                'total_phases': 3
+            })
         
         # 保存特徵向量
         if self.output_dir:
             output_file = os.path.join(self.output_dir, "02_bert_embeddings.npy")
             np.save(output_file, embeddings)
             logger.info(f"已保存BERT特徵向量到：{output_file}")
+            
+            if self.progress_callback:
+                self.progress_callback('status', f"特徵向量已保存：{output_file}")
+        
+        # 完成編碼
+        if self.progress_callback:
+            self.progress_callback('phase', {
+                'phase_name': 'BERT編碼完成',
+                'current_phase': 3,
+                'total_phases': 3
+            })
+            self.progress_callback('progress', 100)
         
         return embeddings
     

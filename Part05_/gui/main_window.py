@@ -63,8 +63,8 @@ class MainApplication:
         # 初始化按鈕狀態
         self.update_button_states()
         
-        # 最後將視窗置中於螢幕（在所有UI元素創建完成後）
-        self.root.after(100, self.center_window)
+        # 最大化視窗（在所有UI元素創建完成後）
+        self.root.after(100, self.maximize_window)
     
     def detect_compute_environment(self):
         """檢測計算環境"""
@@ -97,7 +97,7 @@ class MainApplication:
         self.timing_label.config(text=info_text)
     
     def center_window(self):
-        """將視窗置中於螢幕"""
+        """將視窗置中於螢幕（已棄用，改用最大化視窗）"""
         # 強制更新視窗以獲取實際尺寸
         self.root.update_idletasks()
         
@@ -120,6 +120,29 @@ class MainApplication:
         
         # 設定視窗大小和位置
         self.root.geometry(f"{window_width}x{window_height}+{x}+{y}")
+        
+        # 確保視窗顯示在最前面
+        self.root.lift()
+        self.root.focus_force()
+    
+    def maximize_window(self):
+        """最大化視窗"""
+        try:
+            # 嘗試使用state方法最大化 (Windows/Linux)
+            self.root.state('zoomed')
+        except:
+            try:
+                # 備用方法：使用attributes (某些Linux發行版)
+                self.root.attributes('-zoomed', True)
+            except:
+                try:
+                    # 第三種方法：使用wm_state (macOS兼容)
+                    self.root.wm_state('zoomed')
+                except:
+                    # 最後備用方法：手動設置為螢幕大小
+                    screen_width = self.root.winfo_screenwidth()
+                    screen_height = self.root.winfo_screenheight()
+                    self.root.geometry(f'{screen_width}x{screen_height}+0+0')
         
         # 確保視窗顯示在最前面
         self.root.lift()
@@ -340,7 +363,8 @@ class MainApplication:
         single_content = ttk.Frame(single_frame)
         single_content.pack(fill='x')
         
-        # 單一注意力選項
+        # 單一注意力選項 - 測試基本機制
+        ttk.Label(single_content, text="↳ 無注意力（基準）").pack(anchor='w', pady=(0, 1))
         ttk.Label(single_content, text="↳ 相似度注意力").pack(anchor='w', pady=(0, 1))
         ttk.Label(single_content, text="↳ 自注意力").pack(anchor='w', pady=(0, 1))
         ttk.Label(single_content, text="↳ 關鍵詞注意力").pack(anchor='w', pady=(0, 1))
@@ -361,10 +385,11 @@ class MainApplication:
         dual_content = ttk.Frame(dual_frame)
         dual_content.pack(fill='x')
         
-        # 雙重組合選項
-        ttk.Label(dual_content, text="↳ 相似度 + 自注意力").pack(anchor='w', pady=(0, 1))
-        ttk.Label(dual_content, text="↳ 相似度 + 關鍵詞").pack(anchor='w', pady=(0, 1))
-        ttk.Label(dual_content, text="↳ 自注意力 + 關鍵詞").pack(anchor='w', pady=(0, 1))
+        # 雙重組合選項 - 基本機制 + 三組雙重組合
+        ttk.Label(dual_content, text="↳ 基本機制（無、相似度、自注意力、關鍵詞）", font=('Arial', 9, 'italic')).pack(anchor='w', pady=(0, 1))
+        ttk.Label(dual_content, text="↳ 相似度 + 自注意力 (50%+50%)").pack(anchor='w', pady=(0, 1))
+        ttk.Label(dual_content, text="↳ 相似度 + 關鍵詞 (50%+50%)").pack(anchor='w', pady=(0, 1))
+        ttk.Label(dual_content, text="↳ 自注意力 + 關鍵詞 (50%+50%)").pack(anchor='w', pady=(0, 1))
         
         dual_btn_frame = ttk.Frame(dual_frame)
         dual_btn_frame.pack(fill='x', pady=(8, 0))
@@ -382,9 +407,9 @@ class MainApplication:
         triple_content = ttk.Frame(triple_frame)
         triple_content.pack(fill='x')
         
-        # 三重組合選項
-        label1 = ttk.Label(triple_content, text="↳ 相似度 + 自注意力 + 關鍵詞")
-        label1.pack(anchor='w', pady=(0, 1))
+        # 三重組合選項 - 基本機制 + 一組三重組合
+        ttk.Label(triple_content, text="↳ 基本機制（無、相似度、自注意力、關鍵詞）", font=('Arial', 9, 'italic')).pack(anchor='w', pady=(0, 1))
+        ttk.Label(triple_content, text="↳ 相似度 + 自注意力 + 關鍵詞 (33%+33%+34%)").pack(anchor='w', pady=(0, 1))
         
         triple_btn_frame = ttk.Frame(triple_frame)
         triple_btn_frame.pack(fill='x', pady=(8, 0))
@@ -396,7 +421,7 @@ class MainApplication:
         self.triple_status.pack(side='left', padx=(10, 0))
 
     def run_single_attention(self):
-        """執行單一注意力測試"""
+        """執行單一注意力測試 - 測試基本注意力機制[無、相似度、自注意力、關鍵詞]"""
         self.single_btn['state'] = 'disabled'
         self.single_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
         
@@ -413,37 +438,41 @@ class MainApplication:
                 messagebox.showerror("錯誤", "找不到預處理數據檔案！")
                 return
             
-            # 執行完整的注意力機制分析和分類評估
-            from Part05_Main import process_attention_analysis_with_classification
+            # 執行單一注意力機制分析
+            from Part05_Main import process_attention_analysis_with_multiple_combinations
             
-            # 設定要測試的注意力機制（單一注意力）
+            # 設定要測試的注意力機制（僅基本機制）
             attention_types = ['no', 'similarity', 'self', 'keyword']
+            attention_combinations = []  # 不使用組合
             output_dir = self.run_manager.get_run_dir()
             
-            # 在後台執行完整分析
+            # 在後台執行分析
             def run_analysis():
                 try:
-                    # 記錄開始時間
                     import time
+                    
+                    # 記錄開始時間
                     start_time = time.time()
                     self.root.after(0, lambda: self.timing_label.config(
-                        text=f"🔄 使用 {self.classifier_type.get()} 開始訓練...", 
+                        text=f"🔄 使用 {self.classifier_type.get()} 開始單一注意力測試...", 
                         foreground='orange'
                     ))
                     
-                    results = process_attention_analysis_with_classification(
+                    results = process_attention_analysis_with_multiple_combinations(
                         input_file=input_file,
                         output_dir=output_dir,
                         attention_types=attention_types,
+                        attention_combinations=attention_combinations,
                         classifier_type=self.classifier_type.get()
                     )
                     
                     # 計算總耗時
                     total_time = time.time() - start_time
                     self.root.after(0, lambda: self.timing_label.config(
-                        text=f"✅ 訓練完成！總耗時: {total_time:.1f} 秒", 
+                        text=f"✅ 單一注意力測試完成！總耗時: {total_time:.1f} 秒", 
                         foreground='green'
                     ))
+                    
                     # 將結果存儲供比對分析使用
                     self.analysis_results = results
                     # 在主線程中更新UI
@@ -460,7 +489,7 @@ class MainApplication:
             self.single_btn['state'] = 'normal'
     
     def run_dual_attention(self):
-        """執行雙重組合測試"""
+        """執行雙重組合測試 - 測試基本機制+三組雙重組合"""
         self.dual_btn['state'] = 'disabled'
         self.dual_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
         
@@ -477,18 +506,33 @@ class MainApplication:
                 return
             
             # 執行雙重組合注意力分析
-            from Part05_Main import process_attention_analysis_with_classification
+            from Part05_Main import process_attention_analysis_with_multiple_combinations
             
-            # 設定要測試的注意力機制（包含組合）
-            attention_types = ['no', 'similarity', 'self', 'keyword', 'combined']
+            # 設定要測試的基本注意力機制
+            attention_types = ['no', 'similarity', 'self', 'keyword']
             output_dir = self.run_manager.get_run_dir()
             
-            # 設定雙重組合權重
-            attention_weights = {
-                'similarity': 0.5,
-                'keyword': 0.5,
-                'self': 0.0
-            }
+            # 設定三組雙重組合權重
+            attention_combinations = [
+                # 相似度 + 自注意力
+                {
+                    'similarity': 0.5,
+                    'self': 0.5,
+                    'keyword': 0.0
+                },
+                # 相似度 + 關鍵詞
+                {
+                    'similarity': 0.5,
+                    'keyword': 0.5,
+                    'self': 0.0
+                },
+                # 自注意力 + 關鍵詞
+                {
+                    'similarity': 0.0,
+                    'self': 0.5,
+                    'keyword': 0.5
+                }
+            ]
             
             def run_analysis():
                 try:
@@ -496,22 +540,22 @@ class MainApplication:
                     import time
                     start_time = time.time()
                     self.root.after(0, lambda: self.timing_label.config(
-                        text=f"🔄 使用 {self.classifier_type.get()} 開始雙重組合訓練...", 
+                        text=f"🔄 使用 {self.classifier_type.get()} 開始雙重組合測試...", 
                         foreground='orange'
                     ))
                     
-                    results = process_attention_analysis_with_classification(
+                    results = process_attention_analysis_with_multiple_combinations(
                         input_file=input_file,
                         output_dir=output_dir,
                         attention_types=attention_types,
-                        attention_weights=attention_weights,
+                        attention_combinations=attention_combinations,
                         classifier_type=self.classifier_type.get()
                     )
                     
                     # 計算總耗時
                     total_time = time.time() - start_time
                     self.root.after(0, lambda: self.timing_label.config(
-                        text=f"✅ 雙重組合訓練完成！總耗時: {total_time:.1f} 秒", 
+                        text=f"✅ 雙重組合測試完成！總耗時: {total_time:.1f} 秒", 
                         foreground='green'
                     ))
                     
@@ -529,7 +573,7 @@ class MainApplication:
             self.dual_btn['state'] = 'normal'
     
     def run_triple_attention(self):
-        """執行三重組合測試"""
+        """執行三重組合測試 - 測試基本機制+一組三重組合"""
         self.triple_btn['state'] = 'disabled'
         self.triple_status.config(text=STATUS_TEXT['processing'], foreground=COLORS['processing'])
         
@@ -546,18 +590,21 @@ class MainApplication:
                 return
             
             # 執行三重組合注意力分析
-            from Part05_Main import process_attention_analysis_with_classification
+            from Part05_Main import process_attention_analysis_with_multiple_combinations
             
-            # 設定要測試的注意力機制（全部）
-            attention_types = ['no', 'similarity', 'self', 'keyword', 'combined']
+            # 設定要測試的基本注意力機制
+            attention_types = ['no', 'similarity', 'self', 'keyword']
             output_dir = self.run_manager.get_run_dir()
             
-            # 設定三重組合權重
-            attention_weights = {
-                'similarity': 0.33,
-                'keyword': 0.33,
-                'self': 0.34
-            }
+            # 設定一組三重組合權重
+            attention_combinations = [
+                # 相似度 + 自注意力 + 關鍵詞
+                {
+                    'similarity': 0.33,
+                    'self': 0.33,
+                    'keyword': 0.34
+                }
+            ]
             
             def run_analysis():
                 try:
@@ -565,22 +612,22 @@ class MainApplication:
                     import time
                     start_time = time.time()
                     self.root.after(0, lambda: self.timing_label.config(
-                        text=f"🔄 使用 {self.classifier_type.get()} 開始三重組合訓練...", 
+                        text=f"🔄 使用 {self.classifier_type.get()} 開始三重組合測試...", 
                         foreground='orange'
                     ))
                     
-                    results = process_attention_analysis_with_classification(
+                    results = process_attention_analysis_with_multiple_combinations(
                         input_file=input_file,
                         output_dir=output_dir,
                         attention_types=attention_types,
-                        attention_weights=attention_weights,
+                        attention_combinations=attention_combinations,
                         classifier_type=self.classifier_type.get()
                     )
                     
                     # 計算總耗時
                     total_time = time.time() - start_time
                     self.root.after(0, lambda: self.timing_label.config(
-                        text=f"✅ 三重組合訓練完成！總耗時: {total_time:.1f} 秒", 
+                        text=f"✅ 三重組合測試完成！總耗時: {total_time:.1f} 秒", 
                         foreground='green'
                     ))
                     
@@ -1067,6 +1114,10 @@ class MainApplication:
         """在背景執行緒中執行BERT編碼"""
         try:
             from modules.bert_encoder import BertEncoder
+            from gui.progress_bridge import create_progress_callback
+            
+            # 創建進度橋接器
+            progress_bridge, progress_callback = create_progress_callback(self.encoding_queue)
             
             # 檢查是否有最後一次預處理的 run 目錄
             if self.last_run_dir is None:
@@ -1079,17 +1130,25 @@ class MainApplication:
             if not os.path.exists(input_file):
                 raise FileNotFoundError(f"找不到預處理檔案：{input_file}")
             
+            progress_callback('status', '📖 讀取預處理數據...')
+            
             # 讀取預處理後的數據
             df = pd.read_csv(input_file)
             
-            # 初始化BERT編碼器，傳入BERT編碼目錄
-            encoder = BertEncoder(output_dir=self.run_manager.get_bert_encoding_dir())
+            progress_callback('status', f'✅ 數據載入完成：{len(df)} 條記錄')
+            
+            # 初始化BERT編碼器，傳入BERT編碼目錄和進度回調
+            encoder = BertEncoder(
+                output_dir=self.run_manager.get_bert_encoding_dir(),
+                progress_callback=progress_callback
+            )
             
             # 執行BERT編碼
             embeddings = encoder.encode(df['processed_text'])
             
             # 將結果放入佇列
             output_dir = self.run_manager.get_bert_encoding_dir()
+            progress_bridge.finish('BERT編碼完成')
             self.encoding_queue.put(('success', output_dir))
             
         except Exception as e:
@@ -1100,22 +1159,69 @@ class MainApplication:
         try:
             message_type, message = self.encoding_queue.get_nowait()
             
-            if message_type == 'error':
+            if message_type == 'progress':
+                # 更新進度條
+                if isinstance(message, (list, tuple)) and len(message) == 2:
+                    current, total = message
+                    percentage = (current / total) * 100 if total > 0 else 0
+                    self.progress_var.set(percentage)
+                else:
+                    # 直接是百分比
+                    self.progress_var.set(message)
+            
+            elif message_type == 'status':
+                # 更新狀態文字
+                self.encoding_status.config(
+                    text=str(message),
+                    foreground=COLORS['processing']
+                )
+            
+            elif message_type == 'phase':
+                # 處理階段信息
+                if isinstance(message, dict):
+                    phase_name = message.get('phase_name', '處理中')
+                    current_phase = message.get('current_phase', 0)
+                    total_phases = message.get('total_phases', 0)
+                    
+                    if total_phases > 0:
+                        status_text = f"階段 {current_phase}/{total_phases}: {phase_name}"
+                    else:
+                        status_text = phase_name
+                    
+                    self.encoding_status.config(
+                        text=status_text,
+                        foreground=COLORS['processing']
+                    )
+                else:
+                    self.encoding_status.config(
+                        text=str(message),
+                        foreground=COLORS['processing']
+                    )
+            
+            elif message_type == 'error':
                 error_msg = f"編碼錯誤: {message}"
                 self.encoding_status.config(
                     text=error_msg,
                     foreground=COLORS['error']
                 )
+                self.progress_var.set(0)  # 重置進度條
                 messagebox.showerror("錯誤", error_msg)
                 self.encoding_btn['state'] = 'normal'
+                return  # 停止檢查
+            
             elif message_type == 'success':
-                success_msg = f"編碼完成，結果已儲存至：{message}"
+                success_msg = f"✅ 編碼完成，結果已儲存至：{message}"
                 self.encoding_status.config(
                     text=success_msg,
                     foreground=COLORS['success']
                 )
+                self.progress_var.set(100)  # 完成進度條
                 self.step_states['encoding_done'] = True
                 self.update_button_states()
+                return  # 停止檢查
+            
+            # 繼續檢查
+            self.root.after(100, self._check_encoding_progress)
             
         except queue.Empty:
             self.root.after(100, self._check_encoding_progress)

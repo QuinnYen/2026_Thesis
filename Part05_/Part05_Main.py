@@ -401,6 +401,246 @@ def compare_attention_mechanisms(input_file: Optional[str] = None,
         logger.error(f"注意力機制比較過程中發生錯誤: {str(e)}")
         raise
 
+def process_attention_analysis_with_multiple_combinations(input_file: Optional[str] = None, 
+                                                       output_dir: Optional[str] = None,
+                                                       attention_types: Optional[List[str]] = None,
+                                                       attention_combinations: Optional[List[Dict]] = None,
+                                                       classifier_type: Optional[str] = None) -> Dict:
+    """
+    執行多種注意力機制組合分析
+    
+    Args:
+        input_file: 輸入文件路徑
+        output_dir: 輸出目錄路徑
+        attention_types: 要測試的基本注意力機制類型
+        attention_combinations: 多個組合注意力的權重配置列表
+        classifier_type: 分類器類型
+        
+    Returns:
+        Dict: 完整的分析和分類結果
+    """
+    try:
+        # GPU環境檢測和預處理
+        try:
+            import torch
+            if torch.cuda.is_available():
+                logger.info(f"檢測到GPU環境: {torch.cuda.get_device_name()}")
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
+            else:
+                logger.info("運行在CPU環境")
+        except ImportError:
+            logger.info("PyTorch未安裝，運行在CPU環境")
+        except Exception as gpu_error:
+            logger.warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}")
+        
+        print("\n" + "="*80)
+        print("🚀 開始執行多重注意力機制組合分析")
+        print("="*80)
+        
+        # 初始化注意力處理器
+        processor = AttentionProcessor(output_dir=output_dir)
+        
+        # 檢查輸入文件
+        if input_file is None or not os.path.exists(input_file):
+            raise FileNotFoundError(f"找不到輸入文件：{input_file}")
+        
+        # 設定預設的注意力機制類型
+        if attention_types is None:
+            attention_types = ['no', 'similarity', 'keyword', 'self']
+        
+        # 設定預設的組合配置
+        if attention_combinations is None:
+            attention_combinations = []
+        
+        # 組合所有要測試的注意力機制
+        all_attention_types = attention_types.copy()
+        
+        print(f"\n📋 分析配置:")
+        print(f"   • 輸入文件: {input_file}")
+        print(f"   • 輸出目錄: {output_dir}")
+        print(f"   • 基本注意力機制: {', '.join(attention_types)}")
+        print(f"   • 組合配置數量: {len(attention_combinations)}")
+        
+        # 讀取元數據
+        df = pd.read_csv(input_file)
+        
+        # 第一階段：執行基本注意力分析
+        print(f"\n🔬 階段 1/3: 基本注意力機制分析")
+        print("-" * 50)
+        
+        # 先執行基本注意力機制分析
+        basic_results = processor.process_with_attention(
+            input_file=input_file,
+            attention_types=attention_types,
+            save_results=False
+        )
+        
+        # 第二階段：執行組合注意力分析
+        if attention_combinations:
+            print(f"\n🔗 階段 2/3: 組合注意力機制分析")
+            print("-" * 50)
+            
+            combination_results = {}
+            for i, combination in enumerate(attention_combinations, 1):
+                combination_name = f"combination_{i}"
+                print(f"   🔄 處理組合 {i}/{len(attention_combinations)}: {combination}")
+                
+                # 執行單個組合分析
+                combo_result = processor.process_with_attention(
+                    input_file=input_file,
+                    attention_types=['combined'],
+                    attention_weights=combination,
+                    save_results=False
+                )
+                
+                # 將組合結果添加到基本結果中
+                combination_results[combination_name] = combo_result['combined']
+                # 為了統一格式，也添加到all_attention_types中
+                all_attention_types.append(combination_name)
+            
+            # 合併基本結果和組合結果
+            final_attention_results = basic_results.copy()
+            final_attention_results.update(combination_results)
+        else:
+            final_attention_results = basic_results
+            print(f"\n⏭️ 跳過組合分析階段（無組合配置）")
+        
+        # 第三階段：執行分類評估
+        print(f"\n🎯 階段 3/3: 分類性能評估")
+        print("-" * 50)
+        logger.info("開始執行分類評估...")
+        classifier = SentimentClassifier(output_dir=output_dir)
+        
+        # 獲取或載入原始BERT嵌入向量
+        print(f"   🔍 載入原始BERT嵌入向量用於分類評估...")
+        original_embeddings = None
+        embeddings_file = os.path.join(output_dir, "02_bert_embeddings.npy")
+        
+        if os.path.exists(embeddings_file):
+            original_embeddings = np.load(embeddings_file)
+            print(f"   ✅ 已載入原始BERT嵌入向量，形狀: {original_embeddings.shape}")
+            logger.info(f"載入原始BERT嵌入向量: {original_embeddings.shape}")
+        else:
+            print(f"   🔄 未找到BERT嵌入向量文件，開始重新生成...")
+            logger.info("未找到BERT嵌入向量，開始重新生成...")
+            
+            from modules.bert_encoder import BertEncoder
+            bert_encoder = BertEncoder(output_dir=output_dir)
+            
+            # 找到文本欄位
+            text_column = None
+            for col in ['processed_text', 'clean_text', 'text', 'review']:
+                if col in df.columns:
+                    text_column = col
+                    break
+            
+            if text_column:
+                original_embeddings = bert_encoder.encode(df[text_column])
+                print(f"   ✅ BERT嵌入向量生成完成，形狀: {original_embeddings.shape}")
+                logger.info(f"生成的BERT嵌入向量形狀: {original_embeddings.shape}")
+            else:
+                raise ValueError("無法找到文本欄位來生成BERT嵌入向量")
+        
+        # 評估所有注意力機制的分類性能
+        classification_results = classifier.evaluate_attention_mechanisms(
+            final_attention_results, df, original_embeddings, model_type=classifier_type
+        )
+        
+        # 整合結果
+        print(f"\n📊 整合分析結果...")
+        final_results = {
+            'attention_analysis': final_attention_results,
+            'classification_evaluation': classification_results,
+            'processing_info': basic_results.get('processing_info', {}),
+            'summary': {}
+        }
+        
+        # 生成綜合摘要
+        if 'comparison' in classification_results:
+            class_comparison = classification_results['comparison']
+            summary = class_comparison.get('summary', {})
+            if summary:
+                final_results['summary'] = {
+                    'best_attention_mechanism': class_comparison.get('best_mechanism', 'N/A'),
+                    'best_classification_accuracy': summary.get('best_accuracy', 0),
+                    'best_f1_score': summary.get('best_f1', 0),
+                    'mechanisms_tested': len(all_attention_types),
+                    'combinations_tested': len(attention_combinations),
+                    'evaluation_completed': True
+                }
+            else:
+                final_results['summary'] = {
+                    'best_attention_mechanism': class_comparison.get('best_mechanism', 'N/A'),
+                    'best_classification_accuracy': 0,
+                    'best_f1_score': 0,
+                    'mechanisms_tested': len(all_attention_types),
+                    'combinations_tested': len(attention_combinations),
+                    'evaluation_completed': False,
+                    'error': 'Summary not available'
+                }
+            
+            print(f"\n🏆 最終評估結果:")
+            print(f"   • 最佳注意力機制: {final_results['summary']['best_attention_mechanism']}")
+            print(f"   • 最佳分類準確率: {final_results['summary']['best_classification_accuracy']:.4f}")
+            print(f"   • 最佳F1分數: {final_results['summary']['best_f1_score']:.4f}")
+            print(f"   • 測試機制總數: {final_results['summary']['mechanisms_tested']}")
+            print(f"   • 組合配置數量: {final_results['summary']['combinations_tested']}")
+            
+            logger.info(f"評估完成！最佳注意力機制: {final_results['summary']['best_attention_mechanism']}")
+            logger.info(f"最佳分類準確率: {final_results['summary']['best_classification_accuracy']:.4f}")
+            logger.info(f"最佳F1分數: {final_results['summary']['best_f1_score']:.4f}")
+        else:
+            final_results['summary'] = {
+                'best_attention_mechanism': 'N/A',
+                'best_classification_accuracy': 0,
+                'best_f1_score': 0,
+                'mechanisms_tested': len(all_attention_types),
+                'combinations_tested': len(attention_combinations),
+                'evaluation_completed': False,
+                'error': 'Classification comparison not available'
+            }
+        
+        # 保存完整結果
+        if output_dir:
+            print(f"\n💾 保存完整分析結果...")
+            results_file = os.path.join(output_dir, "multiple_combinations_analysis_results.json")
+            with open(results_file, 'w', encoding='utf-8') as f:
+                import json
+                serializable_results = _make_serializable(final_results)
+                json.dump(serializable_results, f, ensure_ascii=False, indent=2)
+            print(f"✅ 完整結果已保存至: {results_file}")
+            logger.info(f"完整結果已保存至: {results_file}")
+        
+        print(f"\n🎉 多重組合分析完成！")
+        print(f"📁 所有結果保存在: {output_dir}")
+        print("="*80)
+        
+        logger.info(f"多重組合分析結果保存在: {output_dir}")
+        return final_results
+        
+    except Exception as e:
+        # 詳細的錯誤追蹤
+        import traceback
+        error_details = traceback.format_exc()
+        
+        logger.error(f"多重組合分析過程中發生錯誤: {str(e)}")
+        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        
+        # 嘗試GPU記憶體清理
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
+                logger.info("已清理GPU記憶體")
+        except:
+            pass
+        
+        raise RuntimeError(f"多重組合分析失敗: {str(e)}。請檢查日誌文件以獲取詳細的錯誤追蹤信息。") from e
+
 def main():
     """
     主程式入口點
@@ -432,8 +672,6 @@ def main():
                 else:
                     input_file = None
                 compare_attention_mechanisms(input_file=input_file)
-            elif sys.argv[1] == '--help':
-                print_help()
             elif sys.argv[1] == '--new-run':
                 # 清除上次執行的記錄，強制創建新的run目錄
                 pass  # 已移除clear_last_run，保留佔位
