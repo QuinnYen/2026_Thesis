@@ -2,124 +2,127 @@
 # =========================================
 # 更新日期: 2025-06-12
 # 系統：跨領域情感分析與多重編碼器/分類器架構平台
-# 新增功能：BERT/GPT/T5/CNN/ELMo編碼器 + LDA/BERTopic/NMF/注意力機制分類器
+# 功能：BERT/GPT/T5編碼器 + XGBoost/邏輯迴歸/隨機森林/SVM分類器 + 注意力機制分析
 
-# 核心深度學習框架
-# ================
-torch>=1.9.0,<2.1.0          # PyTorch深度學習框架，支援CUDA加速
-torchvision>=0.10.0,<0.16.0  # PyTorch視覺庫（CNN編碼器相關）
+# ============================
+# 核心依賴套件 (必需安裝)
+# ============================
+
+# 深度學習框架
+# ============
+torch>=1.9.0,<2.1.0          # PyTorch深度學習框架，支援CUDA加速，用於BERT編碼和注意力機制
 transformers>=4.0.0,<5.0.0   # Hugging Face Transformers：BERT/GPT/T5等預訓練模型
-tokenizers>=0.13.0,<1.0.0    # 高速分詞器（Transformers依賴）
+tokenizers>=0.13.0,<1.0.0    # 高速分詞器（Transformers依賴，自動安裝）
 
 # 機器學習核心套件
 # ================
-scikit-learn>=1.0.0,<1.4.0   # 機器學習工具包：分類器、評估指標、數據預處理
-xgboost>=1.6.0,<2.1.0        # 高性能梯度提升樹，支援GPU加速
-numpy>=1.21.0,<1.26.0        # 數值計算基礎庫
-pandas>=1.3.0,<2.1.0         # 數據分析與操作庫
+scikit-learn>=1.0.0,<1.4.0   # 機器學習工具包：邏輯迴歸、隨機森林、SVM、評估指標、數據預處理
+xgboost>=1.6.0,<2.1.0        # 高性能梯度提升樹分類器（預設分類器），支援GPU加速
+numpy>=1.21.0,<1.26.0        # 數值計算基礎庫，用於特徵向量處理
+pandas>=1.3.0,<2.1.0         # 數據分析與操作庫，用於CSV讀寫和數據框操作
 
-# 自然語言處理與文本處理
-# =======================
-nltk>=3.6,<4.0               # 自然語言處理工具包：分詞、停用詞、語言資源
-beautifulsoup4>=4.9.0,<5.0.0 # HTML解析器，用於文本清理
-spacy>=3.4.0,<4.0.0          # 進階NLP庫（可選，用於某些文本處理任務）
-sentencepiece>=0.1.90,<1.0.0 # 子詞分割庫（T5等模型需要）
+# 自然語言處理
+# ============
+nltk>=3.6,<4.0               # 自然語言處理工具包：分詞、停用詞移除、語言資源
+beautifulsoup4>=4.9.0,<5.0.0 # HTML解析器，用於文本清理和預處理
 
-# 工具與界面套件
-# ==============
-tqdm>=4.60.0,<5.0.0          # 進度條顯示，提升用戶體驗
-joblib>=1.0.0,<2.0.0         # 高效的序列化庫，用於模型持久化
+# 工具套件
+# ========
+tqdm>=4.60.0,<5.0.0          # 進度條顯示，用於GUI進度追蹤
+joblib>=1.0.0,<2.0.0         # 高效序列化庫，用於模型持久化和向量保存
 
-# 主題建模與面向分類套件
-# ========================
-# 以下套件支援新增的面向分類器功能
-gensim>=4.0.0,<5.0.0         # 主題建模庫：LDA、Word2Vec等
-bertopic>=0.9.0,<1.0.0       # 基於BERT的進階主題建模
-umap-learn>=0.5.0,<1.0.0     # 降維算法（BERTopic依賴）
-hdbscan>=0.8.0,<1.0.0        # 密度聚類算法（BERTopic依賴）
+# ============================
+# 進階功能套件 (可選安裝)
+# ============================
 
-# 矩陣分解與線性代數加速
-# ======================
-scipy>=1.7.0,<1.12.0         # 科學計算庫（NMF等算法需要）
-numba>=0.56.0,<1.0.0         # JIT編譯器（可選，用於數值計算加速）
+# 主題建模與分群分析
+# ==================
+gensim>=4.0.0,<5.0.0         # 主題建模庫：LDA主題分析（實際使用）
+bertopic>=0.9.0,<1.0.0       # 基於BERT的進階主題建模（實際使用）
+umap-learn>=0.5.0,<1.0.0     # 非線性降維算法（BERTopic依賴，實際使用）
+hdbscan>=0.8.0,<1.0.0        # 密度聚類算法（BERTopic依賴，實際使用）
 
-# 深度學習擴展與特殊編碼器
-# ===========================
-# 注意：以下套件為進階功能，需要額外配置
-allennlp>=2.0.0,<3.0.0       # ELMo文本編碼器支援（可選）
-allennlp-models>=2.0.0,<3.0.0 # ELMo預訓練模型（可選）
+# 科學計算擴展
+# ============
+scipy>=1.7.0,<1.12.0         # 科學計算庫，用於數值優化和統計分析
 
-# 神經網路架構擴展
-# ===============
-torch-audio>=0.10.0,<1.0.0   # 音頻處理（某些多模態任務可能需要）
-
-# 可視化與分析套件
-# ================
-matplotlib>=3.3.0,<4.0.0     # 基礎繪圖庫
-seaborn>=0.11.0,<1.0.0       # 統計視覺化
-plotly>=5.0.0,<6.0.0         # 互動式圖表（可選，用於進階可視化）
-wordcloud>=1.8.0,<2.0.0      # 詞雲生成（可選，用於主題可視化）
-
-# 配置與模型管理
-# ==============
-hydra-core>=1.1.0,<2.0.0     # 配置管理（可選，用於實驗管理）
-mlflow>=1.20.0,<3.0.0        # 機器學習實驗追蹤（可選）
+# ============================
+# 特殊編碼器套件 (高級功能)
+# ============================
+# 注意：以下套件為進階功能，需要額外配置和大量記憶體
+# allennlp>=2.0.0,<3.0.0       # ELMo文本編碼器支援（可選，需8GB+ RAM）
+# allennlp-models>=2.0.0,<3.0.0 # ELMo預訓練模型（可選，需大量磁碟空間）
 
 # =====================================
 # 安裝指南：
 # =====================================
-#
-# 1. 基本安裝（僅核心功能）：
-#    pip install torch transformers scikit-learn xgboost numpy pandas nltk beautifulsoup4 tqdm joblib
-#
-# 1.5. 模組化架構基本安裝（推薦）：
-#    pip install torch transformers scikit-learn xgboost numpy pandas nltk beautifulsoup4 tqdm joblib gensim scipy
-#
-# 2. 完整安裝（包含所有功能）：
-#    pip install -r requirements.txt
-#
-# 3. GPU加速安裝（推薦）：
-#    # 先安裝CUDA版本的PyTorch
-#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-#    # 再安裝其他套件
-#    pip install -r requirements.txt
-#
-# 4. 驗證核心安裝：
-#    python -c "import torch, transformers, sklearn, xgboost; print('✅ 核心套件安裝成功')"
-#
-# 5. 驗證模組化架構：
-#    python -c "from modules.encoder_factory import EncoderFactory; from modules.aspect_factory import AspectFactory; print('✅ 模組化架構安裝成功')"
-#
-# 6. 驗證可選套件：
-#    python -c "import bertopic, umap, hdbscan; print('✅ 進階主題建模套件安裝成功')" || echo '⚠️  進階套件未安裝，部分功能可能不可用'
-#
+
+# 🚀 方案一：最小安裝（僅核心功能，約1.5GB）
+# 推薦初次安裝或記憶體有限環境
+pip install torch>=1.9.0 transformers>=4.0.0 scikit-learn>=1.0.0 xgboost>=1.6.0 numpy>=1.21.0 pandas>=1.3.0 nltk>=3.6 beautifulsoup4>=4.9.0 tqdm>=4.60.0 joblib>=1.0.0
+
+# 🌟 方案二：進階安裝（包含主題建模，約2.5GB）
+# 推薦大部分使用情境
+pip install torch>=1.9.0 transformers>=4.0.0 scikit-learn>=1.0.0 xgboost>=1.6.0 numpy>=1.21.0 pandas>=1.3.0 nltk>=3.6 beautifulsoup4>=4.9.0 tqdm>=4.60.0 joblib>=1.0.0 gensim>=4.0.0 bertopic>=0.9.0 umap-learn>=0.5.0 hdbscan>=0.8.0 scipy>=1.7.0
+
+# 💪 方案三：完整安裝（所有功能）
+pip install -r requirements.txt
+
+# 🎮 GPU加速安裝（強烈推薦，提升10-50倍速度）
+# 步驟1：安裝CUDA版本的PyTorch
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+# 步驟2：安裝其餘套件
+pip install -r requirements.txt
+
+# =====================================
+# 驗證安裝：
+# =====================================
+
+# ✅ 驗證核心功能
+python -c "import torch, transformers, sklearn, xgboost, pandas, numpy; print('✅ 核心套件安裝成功')"
+
+# ✅ 驗證模組化架構
+python -c "from modules.encoder_factory import EncoderFactory; from modules.aspect_factory import AspectFactory; print('✅ 模組化架構可用')"
+
+# ✅ 驗證GPU支援（可選）
+python -c "import torch; print(f'✅ GPU可用: {torch.cuda.is_available()}, 設備數量: {torch.cuda.device_count()}')"
+
+# ✅ 驗證進階功能（可選）
+python -c "import bertopic, umap, hdbscan; print('✅ 進階主題建模套件可用')"
+
 # =====================================
 # 系統需求：
 # =====================================
-# - Python 3.7+ (建議3.8+)
-# - RAM: 8GB 最低 / 16GB 推薦 / 32GB 用於大規模實驗
-# - GPU: 4GB+ VRAM (可選，用於GPU加速) / 8GB+ 用於大模型
-# - 磁碟空間: 10GB+ (包含多個模型下載)
-# - 網路: 首次運行需要下載模型（總計約2-5GB）
-#
+# 🖥️  Python: 3.8+ (建議3.9+)
+# 💾 記憶體: 8GB 最低 / 16GB 推薦 / 32GB 大規模實驗
+# 🎮 GPU: 4GB+ VRAM (可選，用於加速) / 8GB+ 大模型
+# 💿 磁碟: 10GB+ (包含模型下載)
+# 🌐 網路: 首次使用需下載BERT模型（約2-5GB）
+
 # =====================================
-# 首次運行配置：
+# 首次運行設定：
 # =====================================
-# 執行以下命令下載必要的NLTK資源：
-# python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])"
-#
-# BERT模型會在首次使用時自動下載（約400MB）
-#
+
+# 📥 下載NLTK語言資源
+python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'])"
+
+# 🤖 BERT模型會在首次使用時自動下載
+# 位置：~/.cache/huggingface/transformers/
+
 # =====================================
-# 故障排除：
+# 常見問題解決：
 # =====================================
-# 1. 如果pip安裝失敗，嘗試升級pip：
-#    python -m pip install --upgrade pip
-#
-# 2. 如果網路問題，使用國內鏡像：
-#    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
-#
-# 3. 如果CUDA相關錯誤，強制使用CPU：
-#    export CUDA_VISIBLE_DEVICES=""
-#
+
+# 🔧 升級pip（安裝失敗時）
+python -m pip install --upgrade pip
+
+# 🚀 使用國內鏡像（網路問題）
+pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+# 💻 強制使用CPU（CUDA錯誤）
+export CUDA_VISIBLE_DEVICES=""
+
+# 🧹 清理快取（磁碟空間不足）
+pip cache purge
+
 # =====================================
