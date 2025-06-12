@@ -449,7 +449,8 @@ class MainApplication:
                     # 在主線程中更新UI
                     self.root.after(0, self._complete_attention_analysis, '單一注意力測試')
                 except Exception as e:
-                    self.root.after(0, lambda: self._handle_analysis_error(str(e), 'single'))
+                    error_msg = str(e)
+                    self.root.after(0, lambda msg=error_msg: self._handle_analysis_error(msg, 'single'))
             
             threading.Thread(target=run_analysis, daemon=True).start()
             
@@ -517,7 +518,8 @@ class MainApplication:
                     self.analysis_results = results
                     self.root.after(0, self._complete_attention_analysis, '雙重組合測試')
                 except Exception as e:
-                    self.root.after(0, lambda: self._handle_analysis_error(str(e), 'dual'))
+                    error_msg = str(e)
+                    self.root.after(0, lambda msg=error_msg: self._handle_analysis_error(msg, 'dual'))
             
             threading.Thread(target=run_analysis, daemon=True).start()
             
@@ -585,7 +587,8 @@ class MainApplication:
                     self.analysis_results = results
                     self.root.after(0, self._complete_attention_analysis, '三重組合測試')
                 except Exception as e:
-                    self.root.after(0, lambda: self._handle_analysis_error(str(e), 'triple'))
+                    error_msg = str(e)
+                    self.root.after(0, lambda msg=error_msg: self._handle_analysis_error(msg, 'triple'))
             
             threading.Thread(target=run_analysis, daemon=True).start()
             

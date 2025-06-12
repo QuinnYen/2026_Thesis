@@ -160,6 +160,23 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         Dict: 完整的分析和分類結果
     """
     try:
+        # GPU環境檢測和預處理
+        try:
+            import torch
+            if torch.cuda.is_available():
+                logger.info(f"檢測到GPU環境: {torch.cuda.get_device_name()}")
+                # 設置GPU記憶體管理
+                torch.cuda.empty_cache()
+                # 防止GPU記憶體碎片化
+                import gc
+                gc.collect()
+            else:
+                logger.info("運行在CPU環境")
+        except ImportError:
+            logger.info("PyTorch未安裝，運行在CPU環境")
+        except Exception as gpu_error:
+            logger.warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}")
+        
         print("\n" + "="*80)
         print("🚀 開始執行完整的注意力機制分析和分類評估")
         print("="*80)
@@ -253,13 +270,26 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         # 生成綜合摘要
         if 'comparison' in classification_results:
             class_comparison = classification_results['comparison']
-            final_results['summary'] = {
-                'best_attention_mechanism': class_comparison.get('best_mechanism', 'N/A'),
-                'best_classification_accuracy': class_comparison['summary'].get('best_accuracy', 0),
-                'best_f1_score': class_comparison['summary'].get('best_f1', 0),
-                'mechanisms_tested': len(attention_types),
-                'evaluation_completed': True
-            }
+            # 添加安全檢查
+            summary = class_comparison.get('summary', {})
+            if summary:  # 確保summary不為空
+                final_results['summary'] = {
+                    'best_attention_mechanism': class_comparison.get('best_mechanism', 'N/A'),
+                    'best_classification_accuracy': summary.get('best_accuracy', 0),
+                    'best_f1_score': summary.get('best_f1', 0),
+                    'mechanisms_tested': len(attention_types),
+                    'evaluation_completed': True
+                }
+            else:
+                # 如果沒有summary，創建基本摘要
+                final_results['summary'] = {
+                    'best_attention_mechanism': class_comparison.get('best_mechanism', 'N/A'),
+                    'best_classification_accuracy': 0,
+                    'best_f1_score': 0,
+                    'mechanisms_tested': len(attention_types),
+                    'evaluation_completed': False,
+                    'error': 'Summary not available'
+                }
             
             print(f"\n🏆 最終評估結果:")
             print(f"   • 最佳注意力機制: {final_results['summary']['best_attention_mechanism']}")
@@ -269,6 +299,16 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
             logger.info(f"評估完成！最佳注意力機制: {final_results['summary']['best_attention_mechanism']}")
             logger.info(f"最佳分類準確率: {final_results['summary']['best_classification_accuracy']:.4f}")
             logger.info(f"最佳F1分數: {final_results['summary']['best_f1_score']:.4f}")
+        else:
+            # 如果沒有comparison結果，創建錯誤摘要
+            final_results['summary'] = {
+                'best_attention_mechanism': 'N/A',
+                'best_classification_accuracy': 0,
+                'best_f1_score': 0,
+                'mechanisms_tested': len(attention_types),
+                'evaluation_completed': False,
+                'error': 'Classification comparison not available'
+            }
         
         # 保存完整結果
         if output_dir:
@@ -290,8 +330,26 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         return final_results
         
     except Exception as e:
+        # 詳細的錯誤追蹤
+        import traceback
+        error_details = traceback.format_exc()
+        
         logger.error(f"完整分析過程中發生錯誤: {str(e)}")
-        raise
+        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        
+        # 嘗試GPU記憶體清理
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
+                logger.info("已清理GPU記憶體")
+        except:
+            pass
+        
+        # 重新拋出錯誤，但添加更多上下文信息
+        raise RuntimeError(f"完整分析失敗: {str(e)}。請檢查日誌文件以獲取詳細的錯誤追蹤信息。") from e
 
 def _make_serializable(obj):
     """將物件轉換為可序列化的格式"""

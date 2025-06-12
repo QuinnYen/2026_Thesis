@@ -514,8 +514,15 @@ class SentimentClassifier:
         print(f"✅ 分類性能評估完成！")
         if comparison and 'best_mechanism' in comparison:
             print(f"🏆 最佳分類性能機制: {comparison['best_mechanism']}")
-            print(f"📊 最佳準確率: {comparison['summary']['best_accuracy']:.4f}")
-            print(f"📊 最佳F1分數: {comparison['summary']['best_f1']:.4f}")
+            # 安全訪問 summary 鍵
+            summary = comparison.get('summary', {})
+            if summary:
+                print(f"📊 最佳準確率: {summary.get('best_accuracy', 0):.4f}")
+                print(f"📊 最佳F1分數: {summary.get('best_f1', 0):.4f}")
+            else:
+                print("📊 警告：無法獲取性能統計摘要")
+        else:
+            print("⚠️  警告：無法進行性能比較")
         
         return evaluation_results
     
@@ -568,8 +575,19 @@ class SentimentClassifier:
     
     def _compare_mechanisms(self, evaluation_results: Dict[str, Dict]) -> Dict[str, Any]:
         """比較不同注意力機制的性能"""
+        # 如果沒有評估結果，返回空的但結構完整的比較結果
         if not evaluation_results:
-            return {}
+            return {
+                'best_mechanism': None,
+                'accuracy_ranking': [],
+                'f1_ranking': [],
+                'summary': {
+                    'best_accuracy': 0,
+                    'best_f1': 0,
+                    'mechanisms_tested': 0,
+                    'error': 'No evaluation results available'
+                }
+            }
         
         # 提取性能指標
         mechanisms = []
@@ -582,11 +600,30 @@ class SentimentClassifier:
             if mechanism == 'comparison':
                 continue
             
-            mechanisms.append(mechanism)
-            accuracies.append(results['test_accuracy'])
-            f1_scores.append(results['test_f1'])
-            precisions.append(results['test_precision'])
-            recalls.append(results['test_recall'])
+            # 添加安全檢查，確保結果包含必要的鍵
+            try:
+                mechanisms.append(mechanism)
+                accuracies.append(results.get('test_accuracy', 0))
+                f1_scores.append(results.get('test_f1', 0))
+                precisions.append(results.get('test_precision', 0))
+                recalls.append(results.get('test_recall', 0))
+            except (KeyError, TypeError) as e:
+                logger.warning(f"機制 {mechanism} 的結果不完整，跳過: {str(e)}")
+                continue
+        
+        # 確保有有效的結果才進行排序
+        if not mechanisms:
+            return {
+                'best_mechanism': None,
+                'accuracy_ranking': [],
+                'f1_ranking': [],
+                'summary': {
+                    'best_accuracy': 0,
+                    'best_f1': 0,
+                    'mechanisms_tested': 0,
+                    'error': 'No valid mechanism results found'
+                }
+            }
         
         # 排序
         accuracy_ranking = sorted(zip(mechanisms, accuracies), key=lambda x: x[1], reverse=True)

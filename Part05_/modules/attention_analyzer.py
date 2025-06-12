@@ -163,7 +163,10 @@ class AttentionAnalyzer:
                 }
             }
         
-        logger.info(f"注意力機制比較完成。最佳機制: {comparison['summary'].get('best_mechanism', 'N/A')}")
+        # 安全訪問 summary 鍵
+        summary = comparison.get('summary', {})
+        best_mechanism = summary.get('best_mechanism', 'N/A') if summary else 'N/A'
+        logger.info(f"注意力機制比較完成。最佳機制: {best_mechanism}")
         
         return comparison
     
