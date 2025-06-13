@@ -1,0 +1,56 @@
+# CPU版本 Dockerfile - BERT情感分析系統
+# 適用於沒有GPU的開發環境
+FROM python:3.9-slim
+
+# 設定環境變數
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONIOENCODING=utf-8
+ENV TZ=Asia/Taipei
+
+# 設置工作目錄
+WORKDIR /app
+
+# 安裝系統依賴
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    pkg-config \
+    libx11-dev \
+    libxext-dev \
+    libxrender-dev \
+    tk-dev \
+    git \
+    curl \
+    wget \
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
+
+# 升級pip
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# 複製requirements文件
+COPY Part05_/requirements.txt /app/requirements.txt
+
+# 安裝PyTorch CPU版本
+RUN pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# 安裝專案依賴
+RUN pip install --no-cache-dir -r requirements.txt
+
+# 複製專案代碼
+COPY Part05_/ /app/
+
+# 創建必要目錄
+RUN mkdir -p /app/output /app/data /app/models /app/logs
+
+# 設定權限
+RUN chmod +x /app/Part05_Main.py
+
+# 下載NLTK資源
+RUN python -c "import nltk; nltk.download(['punkt', 'stopwords', 'wordnet', 'omw-1.4'], quiet=True)"
+
+# 暴露端口
+EXPOSE 8080 5000
+
+# 設定入口點
+CMD ["python", "Part05_Main.py"] 
