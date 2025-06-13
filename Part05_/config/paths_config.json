@@ -1,0 +1,19 @@
+{
+  "base_output_dir": "D:\\Project\\2026_Thesis\\output",
+  "subdirectories": {
+    "preprocessing": "01_preprocessing",
+    "bert_encoding": "02_bert_encoding",
+    "attention_testing": "03_attention_testing",
+    "analysis": "04_analysis"
+  },
+  "file_patterns": {
+    "preprocessed_data": "01_preprocessed_data.csv",
+    "bert_embeddings": "02_bert_embeddings.npy",
+    "gpt_embeddings": "02_gpt_embeddings.npy",
+    "t5_embeddings": "02_t5_embeddings.npy",
+    "cnn_embeddings": "02_cnn_embeddings.npy",
+    "elmo_embeddings": "02_elmo_embeddings.npy",
+    "complete_analysis": "complete_analysis_results.json",
+    "multiple_analysis": "multiple_combinations_analysis_results.json"
+  }
+}

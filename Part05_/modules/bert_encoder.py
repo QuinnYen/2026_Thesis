@@ -5,8 +5,13 @@ import numpy as np
 from typing import Union, List, Optional
 import logging
 import os
+import sys
 from tqdm import tqdm
 from .run_manager import RunManager
+
+# 添加父目錄到路徑以導入config模組
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.paths import get_path_config
 
 logger = logging.getLogger(__name__)
 
@@ -118,18 +123,22 @@ class BertEncoder:
         # 保存特徵向量到02_bert_encoding目錄
         if self.output_dir:
             # 確定run目錄的根目錄
-            if "02_bert_encoding" in self.output_dir:
-                # 如果輸出目錄就是02_bert_encoding目錄，直接使用
+            path_config = get_path_config()
+            bert_encoding_subdir = path_config.get_subdirectory_name("bert_encoding")
+            
+            if bert_encoding_subdir in self.output_dir:
+                # 如果輸出目錄就是bert_encoding目錄，直接使用
                 bert_encoding_dir = self.output_dir
             else:
-                # 如果輸出目錄是run根目錄，創建02_bert_encoding子目錄
-                bert_encoding_dir = os.path.join(self.output_dir, "02_bert_encoding")
+                # 如果輸出目錄是run根目錄，創建bert_encoding子目錄
+                bert_encoding_dir = os.path.join(self.output_dir, bert_encoding_subdir)
             
-            # 確保02_bert_encoding目錄存在
+            # 確保bert_encoding目錄存在
             os.makedirs(bert_encoding_dir, exist_ok=True)
             
-            # 保存到02_bert_encoding目錄
-            output_file = os.path.join(bert_encoding_dir, "02_bert_embeddings.npy")
+            # 保存到bert_encoding目錄
+            filename = path_config.get_file_pattern("bert_embeddings")
+            output_file = os.path.join(bert_encoding_dir, filename)
             np.save(output_file, embeddings)
             logger.info(f"已保存BERT特徵向量到：{output_file}")
             

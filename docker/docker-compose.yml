@@ -4,8 +4,8 @@ services:
   # GPU版本服務
   bert-analysis-gpu:
     build:
-      context: .
-      dockerfile: Dockerfile-gpu
+      context: ..
+      dockerfile: docker/Dockerfile-gpu
     container_name: bert-analysis-gpu
     runtime: nvidia
     environment:
@@ -37,8 +37,8 @@ services:
   # CPU版本服務
   bert-analysis-cpu:
     build:
-      context: .
-      dockerfile: Dockerfile-cpu
+      context: ..
+      dockerfile: docker/Dockerfile-cpu
     container_name: bert-analysis-cpu
     environment:
       - DISPLAY=${DISPLAY:-:0}
@@ -59,8 +59,8 @@ services:
   # 開發環境（可選）
   bert-dev:
     build:
-      context: .
-      dockerfile: Dockerfile-cpu
+      context: ..
+      dockerfile: docker/Dockerfile-cpu
     container_name: bert-dev
     environment:
       - DISPLAY=${DISPLAY:-:0}

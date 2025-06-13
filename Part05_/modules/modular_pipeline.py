@@ -10,6 +10,7 @@ import pandas as pd
 from typing import Dict, Any, Optional, Tuple
 import logging
 import json
+import sys
 from datetime import datetime
 from .base_interfaces import BasePipeline
 from .encoder_factory import EncoderFactory
@@ -17,6 +18,10 @@ from .aspect_factory import AspectFactory
 from .text_preprocessor import TextPreprocessor
 from .sentiment_classifier import SentimentClassifier
 from .run_manager import RunManager
+
+# 添加父目錄到路徑以導入config模組
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.paths import get_path_config
 
 logger = logging.getLogger(__name__)
 
@@ -160,10 +165,12 @@ class ModularPipeline(BasePipeline):
         preprocessed_data = self.preprocessor.preprocess_dataframe(data)
         
         # 保存預處理結果
-        preprocessing_dir = os.path.join(self.output_dir, '01_preprocessing')
+        path_config = get_path_config()
+        preprocessing_dir = os.path.join(self.output_dir, path_config.get_subdirectory_name("preprocessing"))
         os.makedirs(preprocessing_dir, exist_ok=True)
         
-        output_path = os.path.join(preprocessing_dir, '01_preprocessed_data.csv')
+        filename = path_config.get_file_pattern("preprocessed_data")
+        output_path = os.path.join(preprocessing_dir, filename)
         preprocessed_data.to_csv(output_path, index=False, encoding='utf-8')
         
         return preprocessed_data

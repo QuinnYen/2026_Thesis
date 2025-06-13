@@ -17,6 +17,9 @@ import numpy as np
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, CURRENT_DIR)
 
+# 匯入路徑配置
+from config.paths import get_base_output_dir, setup_custom_output_dir
+
 from modules.run_manager import RunManager
 from modules.attention_processor import AttentionProcessor
 from modules.sentiment_classifier import SentimentClassifier
@@ -48,9 +51,9 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
     from modules.bert_encoder import BertEncoder
     
     try:
-        # 如果沒有指定輸出目錄，使用預設目錄
+        # 如果沒有指定輸出目錄，使用配置的預設目錄
         if output_dir is None:
-            output_dir = os.path.join(CURRENT_DIR, "output")
+            output_dir = get_base_output_dir()
             
         # 初始化BERT編碼器，傳入輸出目錄
         encoder = BertEncoder(output_dir=output_dir)
@@ -340,13 +343,18 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         if output_dir:
             print(f"\n💾 保存完整分析結果...")
             # 確保保存到run目錄的根目錄
-            if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+            from config.paths import get_path_config as get_config_for_results
+            path_config = get_config_for_results()
+            subdirs = [path_config.get_subdirectory_name(key) for key in ["preprocessing", "bert_encoding", "attention_testing", "analysis"]]
+            
+            if any(subdir in output_dir for subdir in subdirs):
                 # 如果輸出目錄是子目錄，改為父目錄（run目錄根目錄）
                 run_dir = os.path.dirname(output_dir)
             else:
                 run_dir = output_dir
             
-            results_file = os.path.join(run_dir, "complete_analysis_results.json")
+            filename = path_config.get_file_pattern("complete_analysis")
+            results_file = os.path.join(run_dir, filename)
             with open(results_file, 'w', encoding='utf-8') as f:
                 import json
                 # 處理不可序列化的對象
@@ -696,13 +704,18 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         if output_dir:
             print(f"\n💾 保存完整分析結果...")
             # 確保保存到run目錄的根目錄
-            if any(subdir in output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "03_attention_testing", "04_analysis"]):
+            from config.paths import get_path_config as get_config_for_multi_results
+            path_config = get_config_for_multi_results()
+            subdirs = [path_config.get_subdirectory_name(key) for key in ["preprocessing", "bert_encoding", "attention_testing", "analysis"]]
+            
+            if any(subdir in output_dir for subdir in subdirs):
                 # 如果輸出目錄是子目錄，改為父目錄（run目錄根目錄）
                 run_dir = os.path.dirname(output_dir)
             else:
                 run_dir = output_dir
             
-            results_file = os.path.join(run_dir, "multiple_combinations_analysis_results.json")
+            filename = path_config.get_file_pattern("multiple_analysis")
+            results_file = os.path.join(run_dir, filename)
             with open(results_file, 'w', encoding='utf-8') as f:
                 import json
                 serializable_results = _make_serializable(final_results)

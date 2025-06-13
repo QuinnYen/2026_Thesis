@@ -14,6 +14,10 @@ import os
 from datetime import datetime
 from .run_manager import RunManager
 
+# 添加父目錄到路徑以導入config模組
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.paths import get_path_config
+
 # 配置日誌
 logging.basicConfig(
     level=logging.INFO,
@@ -82,7 +86,9 @@ class TextPreprocessor:
         
         # 保存處理後的數據
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            filename = path_config.get_file_pattern("preprocessed_data")
+            output_file = os.path.join(self.output_dir, filename)
             df.to_csv(output_file, index=False, encoding='utf-8')
             logger.info(f"已保存預處理後的數據到：{output_file}")
         

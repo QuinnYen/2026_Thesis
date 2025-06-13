@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 import os
+import sys
 from pathlib import Path
 import pandas as pd
 from gui.config import WINDOW_TITLE, WINDOW_SIZE, WINDOW_MIN_SIZE, COLORS, STATUS_TEXT, SUPPORTED_FILE_TYPES, FONTS, SIMULATION_DELAYS, DATASETS, PREPROCESSING_STEPS
@@ -10,6 +11,10 @@ import queue
 import torch
 from modules.run_manager import RunManager
 from modules.modular_gui_extensions import MODULAR_METHODS
+
+# 添加父目錄到路徑以導入config模組
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.paths import get_base_output_dir, get_path_config
 
 class MainApplication:
     def __init__(self, root):
@@ -21,8 +26,8 @@ class MainApplication:
         # 設定資料庫目錄路徑
         self.database_dir = self.get_database_dir()
         
-        # 初始化RunManager
-        self.run_manager = RunManager(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # 初始化RunManager - 使用配置的輸出目錄
+        self.run_manager = RunManager(get_base_output_dir())
         
         # 初始化數據集類型
         self.dataset_type = tk.StringVar()
@@ -573,7 +578,8 @@ class MainApplication:
                 return
                 
             # 設定檔案路徑
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             
             if not os.path.exists(input_file):
                 messagebox.showerror("錯誤", "找不到預處理數據檔案！")
@@ -641,7 +647,8 @@ class MainApplication:
                 messagebox.showerror("錯誤", "請先完成BERT編碼步驟！")
                 return
                 
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             
             if not os.path.exists(input_file):
                 messagebox.showerror("錯誤", "找不到預處理數據檔案！")
@@ -726,7 +733,8 @@ class MainApplication:
                 messagebox.showerror("錯誤", "請先完成BERT編碼步驟！")
                 return
                 
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             
             if not os.path.exists(input_file):
                 messagebox.showerror("錯誤", "找不到預處理數據檔案！")
@@ -932,7 +940,7 @@ class MainApplication:
         # 從目前檔案位置往上找到專案根目錄
         current_dir = Path(__file__).resolve().parent.parent.parent
         # 設定資料庫目錄路徑
-        database_dir = current_dir / "ReviewsDataBase"
+        database_dir = current_dir / "data"
         
         # 如果目錄不存在，建立它
         if not database_dir.exists():
@@ -1271,7 +1279,8 @@ class MainApplication:
                 raise ValueError("請先執行文本預處理步驟")
             
             # 使用最後一次預處理的檔案
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             
             # 檢查檔案是否存在
             if not os.path.exists(input_file):
@@ -1309,7 +1318,9 @@ class MainApplication:
             
             # 保存編碼結果
             encoding_output_dir = self.run_manager.get_bert_encoding_dir()
-            embeddings_path = os.path.join(encoding_output_dir, f'02_{encoder_type}_embeddings.npy')
+            path_config = get_path_config()
+            filename = path_config.get_file_pattern(f"{encoder_type}_embeddings")
+            embeddings_path = os.path.join(encoding_output_dir, filename)
             
             import numpy as np
             np.save(embeddings_path, embeddings)
@@ -1455,7 +1466,7 @@ class MainApplication:
         try:
             file_path = filedialog.askopenfilename(
                 title="選擇BERT編碼檔案",
-                initialdir=os.path.join(os.path.dirname(os.path.dirname(__file__)), "output"),
+                initialdir=get_base_output_dir(),
                 filetypes=[("NumPy檔案", "*.npy"), ("所有檔案", "*.*")]
             )
             
@@ -1610,7 +1621,8 @@ class MainApplication:
             if not self.last_run_dir:
                 return
                 
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             if not os.path.exists(input_file):
                 return
             
@@ -1749,7 +1761,8 @@ class MainApplication:
             if not self.last_run_dir:
                 return
                 
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             if not os.path.exists(input_file):
                 return
             
@@ -2382,7 +2395,8 @@ class MainApplication:
                 messagebox.showerror("錯誤", "請先完成BERT編碼步驟！")
                 return
             
-            input_file = os.path.join(self.last_run_dir, "01_preprocessed_data.csv")
+            path_config = get_path_config()
+            input_file = os.path.join(self.last_run_dir, path_config.get_file_pattern("preprocessed_data"))
             if not os.path.exists(input_file):
                 messagebox.showerror("錯誤", "找不到預處理數據檔案！")
                 return

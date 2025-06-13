@@ -8,6 +8,11 @@ import os
 import logging
 from datetime import datetime
 from typing import Optional
+import sys
+
+# 添加父目錄到路徑以導入config模組
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.paths import get_path_config
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +30,8 @@ class RunManager:
     
     def _ensure_output_dir(self):
         """確保輸出目錄存在"""
-        if os.path.basename(self.base_dir) == "output":
-            self.output_base = self.base_dir
-        else:
-            self.output_base = os.path.join(self.base_dir, "output")
-        
+        # 直接使用傳入的base_dir作為輸出目錄，不再自動添加output子目錄
+        self.output_base = self.base_dir
         os.makedirs(self.output_base, exist_ok=True)
     
     def get_run_dir(self) -> str:
@@ -47,12 +49,13 @@ class RunManager:
         run_dir = os.path.join(self.output_base, f"run_{timestamp}")
         
         try:
-            # 創建run目錄及其子目錄
+            # 創建run目錄及其子目錄 - 使用配置的目錄名稱
+            path_config = get_path_config()
             os.makedirs(run_dir, exist_ok=True)
-            os.makedirs(os.path.join(run_dir, "01_preprocessing"), exist_ok=True)
-            os.makedirs(os.path.join(run_dir, "02_bert_encoding"), exist_ok=True)
-            os.makedirs(os.path.join(run_dir, "03_attention_testing"), exist_ok=True)
-            os.makedirs(os.path.join(run_dir, "04_analysis"), exist_ok=True)
+            os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("preprocessing")), exist_ok=True)
+            os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("bert_encoding")), exist_ok=True)
+            os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("attention_testing")), exist_ok=True)
+            os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("analysis")), exist_ok=True)
             
             logger.info(f"已創建新的執行目錄：{run_dir}")
             
@@ -66,19 +69,23 @@ class RunManager:
     
     def get_preprocessing_dir(self) -> str:
         """獲取預處理目錄"""
-        return os.path.join(self.get_run_dir(), "01_preprocessing")
+        path_config = get_path_config()
+        return os.path.join(self.get_run_dir(), path_config.get_subdirectory_name("preprocessing"))
     
     def get_bert_encoding_dir(self) -> str:
         """獲取BERT編碼目錄"""
-        return os.path.join(self.get_run_dir(), "02_bert_encoding")
+        path_config = get_path_config()
+        return os.path.join(self.get_run_dir(), path_config.get_subdirectory_name("bert_encoding"))
     
     def get_attention_testing_dir(self) -> str:
         """獲取注意力測試目錄"""
-        return os.path.join(self.get_run_dir(), "03_attention_testing")
+        path_config = get_path_config()
+        return os.path.join(self.get_run_dir(), path_config.get_subdirectory_name("attention_testing"))
     
     def get_analysis_dir(self) -> str:
         """獲取分析目錄"""
-        return os.path.join(self.get_run_dir(), "04_analysis")
+        path_config = get_path_config()
+        return os.path.join(self.get_run_dir(), path_config.get_subdirectory_name("analysis"))
     
     def clear_current_run(self):
         """清除當前執行目錄"""

@@ -120,22 +120,18 @@ Part05_/output/
 Part05_/logs/
 Part05_/temp/
 
-# 舊版本輸出目錄
-1_output/
-2_output/
-
 # ------------------------------------------------------------------------------
 # 數據集目錄 (建議保留結構但忽略內容)
 # ------------------------------------------------------------------------------
-ReviewsDataBase/
-*/ReviewsDataBase/
+data/
+*data/
 
 # 保留目錄結構但忽略數據文件
-ReviewsDataBase/**/*.csv
-ReviewsDataBase/**/*.json
-ReviewsDataBase/**/*.txt
-ReviewsDataBase/**/*.xlsx
-ReviewsDataBase/**/*.xls
+data/**/*.csv
+data/**/*.json
+data/**/*.txt
+data/**/*.xlsx
+data/**/*.xls
 
 # ------------------------------------------------------------------------------
 # 系統和日誌檔案
