@@ -1,0 +1,65 @@
+# BERT 情感分析系統 - GPU 版本依賴套件
+# =========================================
+# 適用於：有 NVIDIA GPU 的電腦、工作站、伺服器
+# 特點：高性能、GPU 加速、處理大數據集
+# 需求：NVIDIA GPU (4GB+ VRAM)、CUDA 11.8+
+# 更新日期：2025-06-14
+
+# ============================
+# 深度學習框架 (GPU 版本)
+# ============================
+# 注意：請先安裝 CUDA 版本的 PyTorch，再安裝其他套件
+# torch>=2.0.0                 # 將透過 CUDA 版本安裝
+# torchvision>=0.15.0          # 將透過 CUDA 版本安裝
+
+transformers>=4.20.0           # Hugging Face Transformers：BERT預訓練模型
+
+# ============================
+# 機器學習套件
+# ============================
+scikit-learn>=1.2.0            # 機器學習工具包：邏輯迴歸、隨機森林、SVM
+xgboost>=1.7.0                 # XGBoost 梯度提升樹分類器 (支援 GPU 加速)
+numpy>=1.21.0,<1.25.0          # 數值計算基礎庫
+pandas>=1.5.0,<2.1.0           # 數據分析與操作庫
+
+# ============================
+# 自然語言處理
+# ============================
+nltk>=3.8                      # 自然語言處理工具包：分詞、停用詞
+beautifulsoup4>=4.11.0         # HTML解析器，用於文本清理
+
+# ============================
+# 工具套件
+# ============================
+tqdm>=4.64.0                   # 進度條顯示，GUI進度追蹤
+joblib>=1.2.0                  # 序列化庫，模型儲存
+scipy>=1.9.0,<1.12.0           # 科學計算庫
+
+# ============================
+# 額外依賴 (特定套件需要)
+# ============================
+requests>=2.28.0               # HTTP 請求庫 (transformers 需要)
+packaging>=21.0                # 套件版本管理 (transformers 需要)
+pyyaml>=6.0                    # YAML 配置檔解析
+regex>=2022.0                  # 正則表達式增強版
+tokenizers>=0.13.0             # 快速文本分詞器
+safetensors>=0.3.0             # 安全的模型儲存格式
+
+# ============================
+# GPU 加速套件 (可選)
+# ============================
+# accelerate>=0.20.0           # Hugging Face 加速庫 (可選)
+# cupy-cuda11x>=11.0.0          # GPU 加速 NumPy (可選，需大量記憶體)
+
+# ============================
+# 安裝指令 (重要：順序很重要)
+# ============================
+# 步驟 1：安裝 CUDA 版本的 PyTorch
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#
+# 步驟 2：安裝其他套件
+# pip install -r requirements-gpu.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+#
+# 驗證安裝：
+# python -c "import torch; print(f'✅ GPU 可用: {torch.cuda.is_available()}, 設備數量: {torch.cuda.device_count()}')"
+# python -c "import transformers, sklearn, xgboost; print('✅ GPU 版本安裝成功')"

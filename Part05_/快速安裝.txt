@@ -1,0 +1,32 @@
+🎯 BERT 情感分析系統 - 快速安裝參考
+
+====================
+環境準備
+====================
+cd "D:\Quinn_Small_House\2026_Thesis\2026_Thesis\Part05_"
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+
+====================
+CPU 版本 (推薦一般電腦)
+====================
+pip install -r requirements-cpu.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+====================
+GPU 版本 (有 NVIDIA GPU)
+====================
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+pip install -r requirements-gpu.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
+
+====================
+啟動程式
+====================
+python Part05_Main.py
+
+====================
+日後啟動
+====================
+cd "D:\Quinn_Small_House\2026_Thesis\2026_Thesis\Part05_"
+.\venv\Scripts\Activate.ps1
+python Part05_Main.py

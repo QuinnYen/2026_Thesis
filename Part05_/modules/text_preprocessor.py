@@ -94,9 +94,22 @@ class TextPreprocessor:
         
         return df
     
+    def preprocess_text(self, text: str, **kwargs) -> str:
+        """
+        預處理單個文本（公開方法，供GUI使用）
+        
+        Args:
+            text: 輸入文本
+            **kwargs: 預處理選項
+            
+        Returns:
+            處理後的文本
+        """
+        return self._process_text(text)
+    
     def _process_text(self, text: str) -> str:
         """
-        處理單個文本
+        處理單個文本（內部方法）
         
         Args:
             text: 輸入文本

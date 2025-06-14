@@ -20,6 +20,12 @@ sys.path.insert(0, CURRENT_DIR)
 # 匯入路徑配置
 from config.paths import get_base_output_dir, setup_custom_output_dir
 
+# 匯入錯誤處理工具
+from utils.error_handler import handle_error, handle_warning, handle_info, with_error_handling
+
+# 匯入儲存管理工具
+from utils.storage_manager import StorageManager
+
 from modules.run_manager import RunManager
 from modules.attention_processor import AttentionProcessor
 from modules.sentiment_classifier import SentimentClassifier
@@ -88,7 +94,7 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
         return encoder.output_dir
         
     except Exception as e:
-        logger.error(f"BERT編碼過程中發生錯誤: {str(e)}")
+        handle_error(e, "BERT編碼處理", show_traceback=True)
         raise
 
 def process_attention_analysis(input_file: Optional[str] = None, 
@@ -145,7 +151,7 @@ def process_attention_analysis(input_file: Optional[str] = None,
         return results
         
     except Exception as e:
-        logger.error(f"注意力機制分析過程中發生錯誤: {str(e)}")
+        handle_error(e, "注意力機制分析", show_traceback=True)
         raise
 
 def process_attention_analysis_with_classification(input_file: Optional[str] = None, 
@@ -153,7 +159,8 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
                                                  attention_types: Optional[List[str]] = None,
                                                  topics_path: Optional[str] = None,
                                                  attention_weights: Optional[Dict] = None,
-                                                 classifier_type: Optional[str] = None) -> Dict:
+                                                 classifier_type: Optional[str] = None,
+                                                 encoder_type: str = 'bert') -> Dict:
     """
     執行完整的注意力機制分析和分類評估
     
@@ -164,6 +171,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         topics_path: 關鍵詞文件路徑
         attention_weights: 組合注意力權重配置
         classifier_type: 分類器類型 (xgboost, logistic_regression, random_forest, svm_linear)
+        encoder_type: 編碼器類型 (bert, gpt, t5等，預設為bert)
         
     Returns:
         Dict: 完整的分析和分類結果
@@ -184,14 +192,14 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         except ImportError:
             logger.info("PyTorch未安裝，運行在CPU環境")
         except Exception as gpu_error:
-            logger.warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}")
+            handle_warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}", "GPU檢測")
         
         print("\n" + "="*80)
         print("🚀 開始執行完整的注意力機制分析和分類評估")
         print("="*80)
         
         # 初始化注意力處理器
-        processor = AttentionProcessor(output_dir=output_dir, encoder_type='bert')
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
         
         # 檢查輸入文件
         if input_file is None or not os.path.exists(input_file):
@@ -371,12 +379,8 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         return final_results
         
     except Exception as e:
-        # 詳細的錯誤追蹤
-        import traceback
-        error_details = traceback.format_exc()
-        
-        logger.error(f"完整分析過程中發生錯誤: {str(e)}")
-        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        # 使用新的錯誤處理機制
+        handle_error(e, "完整分析過程", show_traceback=True)
         
         # 嘗試GPU記憶體清理
         try:
@@ -385,12 +389,12 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
                 torch.cuda.empty_cache()
                 import gc
                 gc.collect()
-                logger.info("已清理GPU記憶體")
+                print("🧹 已清理GPU記憶體")
         except:
             pass
         
         # 重新拋出錯誤，但添加更多上下文信息
-        raise RuntimeError(f"完整分析失敗: {str(e)}。請檢查日誌文件以獲取詳細的錯誤追蹤信息。") from e
+        raise RuntimeError(f"完整分析失敗: {str(e)}。請檢查終端機輸出以獲取詳細的錯誤信息。") from e
 
 def _make_serializable(obj):
     """將物件轉換為可序列化的格式"""
@@ -409,7 +413,8 @@ def _make_serializable(obj):
 
 def compare_attention_mechanisms(input_file: Optional[str] = None,
                                output_dir: Optional[str] = None,
-                               attention_types: Optional[List[str]] = None) -> Dict:
+                               attention_types: Optional[List[str]] = None,
+                               encoder_type: str = 'bert') -> Dict:
     """
     專門用於比較不同注意力機制效果
     
@@ -417,13 +422,14 @@ def compare_attention_mechanisms(input_file: Optional[str] = None,
         input_file: 輸入文件路徑
         output_dir: 輸出目錄路徑
         attention_types: 要比較的注意力機制類型
+        encoder_type: 編碼器類型 (bert, gpt, t5等，預設為bert)
         
     Returns:
         Dict: 比較結果
     """
     try:
         # 初始化注意力處理器
-        processor = AttentionProcessor(output_dir=output_dir, encoder_type='bert')
+        processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
         
         # 執行比較
         results = processor.compare_attention_mechanisms(
@@ -439,8 +445,43 @@ def compare_attention_mechanisms(input_file: Optional[str] = None,
         return results
         
     except Exception as e:
-        logger.error(f"注意力機制比較過程中發生錯誤: {str(e)}")
+        handle_error(e, "注意力機制比較", show_traceback=True)
         raise
+
+def _generate_combination_name(combination_weights: Dict, index: int) -> str:
+    """生成有意義的組合注意力名稱
+    
+    Args:
+        combination_weights: 組合權重字典，如 {'similarity': 0.5, 'self': 0.5}
+        index: 組合索引
+        
+    Returns:
+        str: 有意義的組合名稱，如 "相似度+自注意力組合"
+    """
+    # 中文名稱映射
+    name_mapping = {
+        'similarity': '相似度',
+        'keyword': '關鍵詞', 
+        'self': '自注意力',
+        'no': '無注意力'
+    }
+    
+    # 找出非零權重的注意力機制
+    active_mechanisms = []
+    for mechanism, weight in combination_weights.items():
+        if weight > 0:
+            chinese_name = name_mapping.get(mechanism, mechanism)
+            active_mechanisms.append(chinese_name)
+    
+    if len(active_mechanisms) == 0:
+        return f"組合{index}"
+    elif len(active_mechanisms) == 1:
+        return f"{active_mechanisms[0]}組合"
+    else:
+        # 將機制名稱用 "+" 連接
+        combined_name = "+".join(active_mechanisms)
+        return f"{combined_name}組合"
+
 
 def process_attention_analysis_with_multiple_combinations(input_file: Optional[str] = None, 
                                                        output_dir: Optional[str] = None,
@@ -476,7 +517,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         except ImportError:
             logger.info("PyTorch未安裝，運行在CPU環境")
         except Exception as gpu_error:
-            logger.warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}")
+            handle_warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}", "GPU檢測")
         
         print("\n" + "="*80)
         print("🚀 開始執行多重注意力機制組合分析")
@@ -524,7 +565,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         actual_encoder_type = processor.encoder_type
         if actual_encoder_type != encoder_type:
             print(f"   ⚠️ 編碼器已從 {encoder_type.upper()} 回退到 {actual_encoder_type.upper()}")
-            logger.warning(f"編碼器已從 {encoder_type.upper()} 回退到 {actual_encoder_type.upper()}")
+            handle_warning(f"編碼器已從 {encoder_type.upper()} 回退到 {actual_encoder_type.upper()}", "編碼器回退")
             
             # 檢查是否存在舊的注意力分析結果（可能使用不同編碼器）
             print(f"   🔍 檢查注意力分析結果的編碼器一致性...")
@@ -562,8 +603,10 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
             
             combination_results = {}
             for i, combination in enumerate(attention_combinations, 1):
-                combination_name = f"combination_{i}"
+                # 生成有意義的組合名稱
+                combination_name = _generate_combination_name(combination, i)
                 print(f"   🔄 處理組合 {i}/{len(attention_combinations)}: {combination}")
+                print(f"      組合名稱: {combination_name}")
                 
                 # 執行單個組合分析
                 combo_result = processor.process_with_attention(
@@ -1372,17 +1415,35 @@ def main():
                 n_folds = int(sys.argv[3]) if len(sys.argv) > 3 else 5
                 process_simple_cross_validation(input_file=input_file, n_folds=n_folds)
         else:
-            # 啟動GUI
-            from gui.main_window import main as gui_main
-            print("正在啟動BERT情感分析系統...")
-            gui_main()
+            # 嘗試啟動GUI，失敗時顯示幫助信息
+            try:
+                from gui.main_window import main as gui_main
+                print("正在啟動BERT情感分析系統...")
+                gui_main()
+            except Exception as gui_error:
+                if "display" in str(gui_error).lower() or "tkinter" in str(gui_error).lower():
+                    print("無法啟動圖形介面（這在 Docker 容器中是正常的）")
+                    print("請使用命令行參數運行程式。")
+                    print("\n使用 --help 查看可用選項，或嘗試以下命令：")
+                    print("  --process              # 執行BERT編碼處理")
+                    print("  --attention data.csv   # 執行注意力機制分析")
+                    print("  --classify data.csv    # 執行完整分類評估")
+                    print("  --cv data.csv 5        # 執行5折交叉驗證")
+                    print("  --show-options         # 顯示所有可用選項")
+                else:
+                    raise gui_error
             
     except ImportError as e:
-        print(f"導入錯誤: {e}")
+        handle_error(e, "模組導入", show_traceback=True)
         print("請確保所有必要的模組都已安裝")
     except Exception as e:
-        print(f"執行錯誤: {e}")
-        input("按Enter鍵退出...")
+        handle_error(e, "程式執行", show_traceback=True)
+        # 在 Docker 容器中避免等待輸入
+        import os
+        if os.getenv('DOCKER_CONTAINER'):
+            print("程式已結束")
+        else:
+            input("按Enter鍵退出...")
 
 def print_help():
     """輸出幫助信息"""

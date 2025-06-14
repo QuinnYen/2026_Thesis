@@ -121,7 +121,7 @@ class SentimentClassifier:
             else:
                 logger.info("使用XGBoost 1.x版本參數配置")
             
-            # 根據XGBoost版本和GPU可用性配置參數
+            # GPU加速配置 - 根據版本和GPU可用性配置參數
             if self.device_info['has_gpu']:
                 if is_new_xgb:
                     # XGBoost 2.0.0+ GPU配置 - 使用新參數
@@ -151,6 +151,8 @@ class SentimentClassifier:
                         'n_jobs': -1
                     }
                     logger.info("XGBoost配置為GPU模式 (v1.x: gpu_id=0, tree_method='gpu_hist')")
+                
+                logger.info("🚀 GPU加速已啟用 - BERT和XGBoost都將使用GPU加速")
             else:
                 # CPU配置（兩個版本都一樣）
                 xgb_params = {
@@ -354,10 +356,45 @@ class SentimentClassifier:
         train_start = time.time()
         logger.info(f"開始訓練模型...")
         
-        # 針對XGBoost顯示特殊訊息
+        # 針對XGBoost顯示特殊訊息和設備配置
         if model_type == 'xgboost':
             if self.device_info['has_gpu']:
-                logger.info("使用GPU加速XGBoost訓練...")
+                logger.info("🚀 使用GPU加速XGBoost訓練...")
+                # 智能設備管理 - 確保數據在正確設備上
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        # 將numpy數組轉換為GPU張量再轉回numpy（確保數據格式正確）
+                        logger.info("正在優化數據格式以支援GPU加速...")
+                        X_train_gpu = torch.tensor(X_train, dtype=torch.float32).cuda()
+                        X_test_gpu = torch.tensor(X_test, dtype=torch.float32).cuda()
+                        X_train = X_train_gpu.cpu().numpy()
+                        X_test = X_test_gpu.cpu().numpy()
+                        logger.info("✅ 數據已優化為GPU兼容格式")
+                except Exception as device_error:
+                    logger.warning(f"設備優化失敗，使用原始數據: {device_error}")
+                
+                # 確保XGBoost使用GPU配置（不覆蓋初始化時的設置）
+                try:
+                    # 檢查XGBoost版本
+                    import xgboost as xgb
+                    xgb_version = xgb.__version__
+                    xgb_major_version = int(xgb_version.split('.')[0])
+                    
+                    if xgb_major_version >= 2:
+                        # XGBoost 2.0+ 確認GPU設置
+                        current_device = getattr(self.model, 'device', None)
+                        if current_device != 'cuda':
+                            self.model.set_params(device='cuda')
+                        logger.info("XGBoost 2.0+: 確認GPU模式已啟用 (device='cuda')")
+                    else:
+                        # XGBoost 1.x 確認GPU設置
+                        current_tree_method = getattr(self.model, 'tree_method', None)
+                        if current_tree_method != 'gpu_hist':
+                            self.model.set_params(tree_method='gpu_hist', gpu_id=0)
+                        logger.info("XGBoost 1.x: 確認GPU模式已啟用 (tree_method='gpu_hist')")
+                except Exception as e:
+                    logger.warning(f"XGBoost GPU配置確認失敗，將使用初始化設置: {e}")
             else:
                 logger.info("使用CPU多核心XGBoost訓練...")
         

@@ -16,6 +16,12 @@ from .attention_analyzer import AttentionAnalyzer
 from .bert_encoder import BertEncoder
 from .run_manager import RunManager
 
+# 匯入錯誤處理工具
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from utils.error_handler import handle_error, handle_warning, handle_info
+from utils.storage_manager import StorageManager
+
 logger = logging.getLogger(__name__)
 
 class AttentionProcessor:
@@ -37,11 +43,16 @@ class AttentionProcessor:
         self.encoder_type = encoder_type
         self.run_manager = RunManager(output_dir) if output_dir else None
         
+        # 初始化儲存管理器
+        self.storage_manager = StorageManager(output_dir) if output_dir else None
+        
         # 初始化組件
         self.bert_encoder = None
         self.attention_analyzer = None
         
         logger.info(f"注意力處理器已初始化，使用 {encoder_type.upper()} 編碼器")
+        if self.storage_manager:
+            logger.info("📁 儲存管理器已啟用，將優化檔案儲存")
     
     def process_with_attention(self, 
                              input_file: str,
@@ -91,6 +102,10 @@ class AttentionProcessor:
             df = pd.read_csv(input_file)
             print(f"✅ 成功讀取 {len(df)} 條數據")
             logger.info(f"成功讀取 {len(df)} 條數據")
+            
+            # 創建輸入文件參考記錄（不複製原始數據集）
+            if self.storage_manager:
+                self.storage_manager.create_input_reference(input_file)
             
             if self.progress_callback:
                 self.progress_callback('status', f'✅ 成功讀取 {len(df)} 條數據')
@@ -172,7 +187,18 @@ class AttentionProcessor:
             # 8. 保存結果
             if save_results and self.output_dir:
                 print(f"\n💾 保存分析結果...")
-                self._save_analysis_results(results)
+                if self.storage_manager:
+                    # 使用儲存管理器保存結果
+                    self.storage_manager.save_analysis_results(
+                        results, 
+                        "attention_analysis", 
+                        "attention_analysis_results.json"
+                    )
+                    # 生成摘要報告
+                    summary = self.storage_manager.generate_summary_report()
+                    print(f"📊 已生成儲存摘要報告，共 {summary['total_files']} 個文件")
+                else:
+                    self._save_analysis_results(results)
                 print(f"✅ 結果已保存至: {self.output_dir}")
             
             print(f"\n🎉 注意力機制分析完成！")
@@ -188,7 +214,7 @@ class AttentionProcessor:
             return results
             
         except Exception as e:
-            logger.error(f"注意力機制分析過程中發生錯誤: {str(e)}")
+            handle_error(e, "注意力機制分析", show_traceback=True)
             raise
     
     def _find_text_column(self, df: pd.DataFrame) -> Optional[str]:

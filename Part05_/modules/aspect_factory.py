@@ -155,8 +155,11 @@ class BERTopicAspectClassifier(BaseAspectClassifier):
         super().__init__(config, progress_callback)
         self.min_topic_size = self.config.get('min_topic_size', 10)
         self.n_topics = self.config.get('n_topics', 'auto')
+        self.topic_model = None
+        self.fallback_mode = False
         
         try:
+            # 嘗試匯入所有必需的套件
             from bertopic import BERTopic
             from umap import UMAP
             from hdbscan import HDBSCAN
@@ -177,62 +180,152 @@ class BERTopicAspectClassifier(BaseAspectClassifier):
                 self.progress_callback('status', 'BERTopic分類器已初始化')
                 
         except ImportError as e:
-            logger.error(f"BERTopic依賴項缺失: {e}")
-            raise ImportError("BERTopic需要安裝: pip install bertopic")
+            logger.warning(f"BERTopic依賴項缺失，將使用降級方案: {e}")
+            self.fallback_mode = True
+            
+            # 檢查哪些套件缺失
+            missing_packages = []
+            try:
+                import bertopic
+            except ImportError:
+                missing_packages.append("bertopic")
+            try:
+                import umap
+            except ImportError:
+                missing_packages.append("umap-learn")
+            try:
+                import hdbscan
+            except ImportError:
+                missing_packages.append("hdbscan")
+            
+            if self.progress_callback:
+                missing_str = ", ".join(missing_packages)
+                self.progress_callback('warning', f'BERTopic功能不可用，缺失套件: {missing_str}')
+                self.progress_callback('status', '將使用基於NMF的降級主題建模')
+            
+            logger.info(f"BERTopic降級到NMF，缺失套件: {missing_packages}")
         
         self.aspect_names = []
     
     def fit_transform(self, embeddings: np.ndarray, metadata: pd.DataFrame) -> Tuple[np.ndarray, Dict]:
-        """使用BERTopic進行主題建模"""
+        """使用BERTopic進行主題建模，如果不可用則降級到NMF"""
         
         # 確保有文本數據
         if 'text' not in metadata.columns:
-            raise ValueError("BERTopic需要原始文本數據，metadata中必須包含'text'欄位")
+            raise ValueError("主題建模需要原始文本數據，metadata中必須包含'text'欄位")
         
         texts = metadata['text'].fillna('').astype(str).tolist()
+        
+        if self.fallback_mode:
+            # 降級到NMF方案
+            return self._fallback_nmf_fit_transform(embeddings, metadata, texts)
         
         if self.progress_callback:
             self.progress_callback('status', 'BERTopic正在訓練主題模型...')
         
-        # 使用預計算的嵌入向量進行主題建模
-        topics, probs = self.topic_model.fit_transform(texts, embeddings)
+        try:
+            # 使用預計算的嵌入向量進行主題建模
+            topics, probs = self.topic_model.fit_transform(texts, embeddings)
+            
+            # 獲取主題信息
+            topic_info = self.topic_model.get_topic_info()
+            topic_keywords = {}
+            
+            for topic_id in topic_info['Topic']:
+                if topic_id != -1:  # 排除噪音主題
+                    keywords = [word for word, _ in self.topic_model.get_topic(topic_id)]
+                    topic_name = f"Topic_{topic_id}_{'+'.join(keywords[:3])}"
+                    self.aspect_names.append(topic_name)
+                    topic_keywords[topic_name] = keywords
+            
+            # 計算主題向量（使用主題的關鍵詞表示）
+            aspect_vectors = []
+            for topic_id in sorted(set(topics)):
+                if topic_id != -1:  # 排除噪音主題
+                    # 獲取屬於該主題的文檔索引
+                    topic_docs = [i for i, t in enumerate(topics) if t == topic_id]
+                    if topic_docs:
+                        # 計算該主題的平均嵌入向量
+                        topic_vector = embeddings[topic_docs].mean(axis=0)
+                        aspect_vectors.append(topic_vector)
+            
+            aspect_vectors = np.array(aspect_vectors)
+            
+            results = {
+                'topics': topics,
+                'topic_probs': probs,
+                'topic_info': topic_info,
+                'topic_keywords': topic_keywords,
+                'aspect_names': self.aspect_names,
+                'topic_model': self.topic_model,
+                'method': 'bertopic'
+            }
+            
+            if self.progress_callback:
+                self.progress_callback('status', f'BERTopic完成，發現 {len(self.aspect_names)} 個主題')
+            
+            return aspect_vectors, results
+            
+        except Exception as e:
+            logger.error(f"BERTopic執行時錯誤，降級到NMF: {e}")
+            if self.progress_callback:
+                self.progress_callback('warning', f'BERTopic執行失敗，降級到NMF: {str(e)}')
+            
+            return self._fallback_nmf_fit_transform(embeddings, metadata, texts)
+            
+    def _fallback_nmf_fit_transform(self, embeddings: np.ndarray, metadata: pd.DataFrame, texts: List[str]) -> Tuple[np.ndarray, Dict]:
+        """NMF降級方案"""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.decomposition import NMF
         
-        # 獲取主題信息
-        topic_info = self.topic_model.get_topic_info()
-        topic_keywords = {}
+        if self.progress_callback:
+            self.progress_callback('status', '使用NMF降級方案進行主題建模...')
         
-        for topic_id in topic_info['Topic']:
-            if topic_id != -1:  # 排除噪音主題
-                keywords = [word for word, _ in self.topic_model.get_topic(topic_id)]
-                topic_name = f"Topic_{topic_id}_{'+'.join(keywords[:3])}"
-                self.aspect_names.append(topic_name)
-                topic_keywords[topic_name] = keywords
+        # 使用TF-IDF向量化
+        n_topics = int(self.n_topics) if isinstance(self.n_topics, (int, str)) and str(self.n_topics).isdigit() else 10
         
-        # 計算主題向量（使用主題的關鍵詞表示）
-        aspect_vectors = []
-        for topic_id in sorted(set(topics)):
-            if topic_id != -1:  # 排除噪音主題
-                # 獲取屬於該主題的文檔索引
-                topic_docs = [i for i, t in enumerate(topics) if t == topic_id]
-                if topic_docs:
-                    # 計算該主題的平均嵌入向量
-                    topic_vector = embeddings[topic_docs].mean(axis=0)
-                    aspect_vectors.append(topic_vector)
+        vectorizer = TfidfVectorizer(
+            max_features=1000,
+            stop_words='english',
+            ngram_range=(1, 2)
+        )
         
-        aspect_vectors = np.array(aspect_vectors)
+        doc_term_matrix = vectorizer.fit_transform(texts)
+        
+        # 執行NMF分解
+        nmf_model = NMF(n_components=n_topics, random_state=42, max_iter=200)
+        W = nmf_model.fit_transform(doc_term_matrix)  # 文檔-主題矩陣
+        H = nmf_model.components_  # 主題-詞語矩陣
+        
+        # 為每個主題生成名稱
+        feature_names = vectorizer.get_feature_names_out()
+        
+        for topic_idx, topic in enumerate(H):
+            top_words = [feature_names[i] for i in topic.argsort()[::-1][:5]]
+            topic_name = f"Topic_{topic_idx}_{'+'.join(top_words[:3])}"
+            self.aspect_names.append(topic_name)
+        
+        # 計算主題向量（使用主題的詞語分佈）
+        aspect_vectors = H
+        
+        # 生成主題分配（每個文檔的主要主題）
+        topics = W.argmax(axis=1)
+        topic_probs = W / W.sum(axis=1, keepdims=True)
         
         results = {
             'topics': topics,
-            'topic_probs': probs,
-            'topic_info': topic_info,
-            'topic_keywords': topic_keywords,
+            'topic_probs': topic_probs,
+            'doc_topic_matrix': W,
+            'topic_word_matrix': H,
+            'feature_names': feature_names,
             'aspect_names': self.aspect_names,
-            'topic_model': self.topic_model,
-            'method': 'bertopic'
+            'nmf_model': nmf_model,
+            'vectorizer': vectorizer,
+            'method': 'nmf_fallback'
         }
         
         if self.progress_callback:
-            self.progress_callback('status', f'BERTopic完成，發現 {len(self.aspect_names)} 個主題')
+            self.progress_callback('status', f'NMF降級方案完成，發現 {n_topics} 個主題')
         
         return aspect_vectors, results
     

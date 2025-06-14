@@ -1,5 +1,5 @@
 {
-  "base_output_dir": "D:\\Project\\2026_Thesis\\output",
+  "base_output_dir": "",
   "subdirectories": {
     "preprocessing": "01_preprocessing",
     "bert_encoding": "02_bert_encoding",

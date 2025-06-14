@@ -68,18 +68,25 @@ class PathConfig:
             self.config["base_output_dir"] = env_output
             return
         
-        # 檢查是否為指定的專案目錄結構
-        current_dir = Path(__file__).parent.parent.absolute()
-        project_root = current_dir.parent
+        # 獲取當前文件的路徑，並向上尋找專案根目錄
+        current_file = Path(__file__).absolute()
         
-        # 如果是在 2026_Thesis 專案中，使用指定的輸出路徑
-        if project_root.name == "2026_Thesis":
-            output_dir = project_root / "output"
-        else:
-            # 否則使用當前目錄下的 output 資料夾
-            output_dir = current_dir / "output"
+        # 從當前文件位置開始向上搜尋，找到包含Part05_的目錄的父目錄
+        search_path = current_file.parent
+        while search_path.parent != search_path:  # 避免無限循環到根目錄
+            # 檢查當前目錄是否包含Part05_目錄
+            part05_dir = search_path / "Part05_"
+            if part05_dir.exists() and part05_dir.is_dir():
+                # 找到專案根目錄，使用其下的output目錄
+                output_dir = search_path / "output"
+                self.config["base_output_dir"] = str(output_dir)
+                return
+            search_path = search_path.parent
         
-        self.config["base_output_dir"] = str(output_dir)
+        # 如果沒有找到標準結構，使用當前目錄的相對位置
+        # 假設當前文件在 Part05_/config/paths.py
+        fallback_output = current_file.parent.parent.parent / "output"
+        self.config["base_output_dir"] = str(fallback_output)
     
     def get_base_output_dir(self) -> str:
         """獲取基礎輸出目錄"""

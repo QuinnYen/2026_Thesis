@@ -12,6 +12,7 @@ from .run_manager import RunManager
 # 添加父目錄到路徑以導入config模組
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config.paths import get_path_config
+from utils.storage_manager import StorageManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,9 @@ class BertEncoder:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
         logger.info(f"使用設備: {self.device}")
+        
+        # 初始化儲存管理器
+        self.storage_manager = StorageManager(output_dir) if output_dir else None
         
         # 通知GPU狀態
         if self.progress_callback:
@@ -122,25 +126,30 @@ class BertEncoder:
         
         # 保存特徵向量到02_bert_encoding目錄
         if self.output_dir:
-            # 確定run目錄的根目錄
-            path_config = get_path_config()
-            bert_encoding_subdir = path_config.get_subdirectory_name("bert_encoding")
-            
-            if bert_encoding_subdir in self.output_dir:
-                # 如果輸出目錄就是bert_encoding目錄，直接使用
-                bert_encoding_dir = self.output_dir
+            if self.storage_manager:
+                # 使用儲存管理器保存特徵向量
+                metadata = {
+                    'model_name': self.model_name,
+                    'device': str(self.device),
+                    'batch_size': batch_size
+                }
+                output_file = self.storage_manager.save_embeddings(embeddings, 'bert', metadata)
+                logger.info(f"✅ 已通過儲存管理器保存BERT特徵向量：{output_file}")
             else:
-                # 如果輸出目錄是run根目錄，創建bert_encoding子目錄
-                bert_encoding_dir = os.path.join(self.output_dir, bert_encoding_subdir)
-            
-            # 確保bert_encoding目錄存在
-            os.makedirs(bert_encoding_dir, exist_ok=True)
-            
-            # 保存到bert_encoding目錄
-            filename = path_config.get_file_pattern("bert_embeddings")
-            output_file = os.path.join(bert_encoding_dir, filename)
-            np.save(output_file, embeddings)
-            logger.info(f"已保存BERT特徵向量到：{output_file}")
+                # 原有的保存方式
+                path_config = get_path_config()
+                bert_encoding_subdir = path_config.get_subdirectory_name("bert_encoding")
+                
+                if bert_encoding_subdir in self.output_dir:
+                    bert_encoding_dir = self.output_dir
+                else:
+                    bert_encoding_dir = os.path.join(self.output_dir, bert_encoding_subdir)
+                
+                os.makedirs(bert_encoding_dir, exist_ok=True)
+                filename = path_config.get_file_pattern("bert_embeddings")
+                output_file = os.path.join(bert_encoding_dir, filename)
+                np.save(output_file, embeddings)
+                logger.info(f"已保存BERT特徵向量到：{output_file}")
             
             if self.progress_callback:
                 self.progress_callback('status', f"特徵向量已保存：{output_file}")
