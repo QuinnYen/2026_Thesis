@@ -4,7 +4,7 @@ GUI配置檔案
 """
 
 # 視窗設定
-WINDOW_TITLE = "BERT情感分析系統"
+WINDOW_TITLE = "情感分析系統"
 WINDOW_SIZE = "900x680"
 WINDOW_MIN_SIZE = (800, 620)
 

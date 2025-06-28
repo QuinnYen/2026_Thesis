@@ -35,10 +35,16 @@ class MainApplication:
         self.dataset_type = tk.StringVar()
         self.classifier_type = tk.StringVar(value='xgboost')
         self.encoder_type = tk.StringVar(value='bert')
-        self.aspect_classifier_type = tk.StringVar(value='default')
+        self.aspect_classifier_type = tk.StringVar(value='lda')
         
         # 分析結果存儲
         self.analysis_results = None
+        
+        # 初始化比對報告相關變數
+        self.selected_mechanism = None
+        self.mechanism_combo = None
+        self.update_comparison_btn = None
+        self.comparison_tree = None
         
         # 分步驟數據文件追蹤
         self.step1_data_file = None
@@ -65,9 +71,9 @@ class MainApplication:
         """取得資料庫目錄路徑"""
         try:
             config = get_path_config()
-            return config.get('database_dir', '../data')
+            return config.get('database_dir', './data')
         except:
-            return '../data'
+            return './data'
     
     def maximize_window(self):
         """最大化視窗"""
@@ -92,7 +98,7 @@ class MainApplication:
         main_frame.pack(fill='both', expand=True, padx=15, pady=10)
         
         # 標題
-        title_label = ttk.Label(main_frame, text="BERT 情感分析 - 分步驟數據處理", font=FONTS['title'])
+        title_label = ttk.Label(main_frame, text="情感分析 - 分步驟數據處理", font=FONTS['title'])
         title_label.pack(pady=(0, 15))
         
         # 建立分步驟處理區域
@@ -148,7 +154,7 @@ class MainApplication:
         sampling_row = ttk.Frame(step1_frame)
         sampling_row.pack(fill='x', pady=(0, 10))
         
-        self.enable_sampling = tk.BooleanVar(value=True)
+        self.enable_sampling = tk.BooleanVar(value=False)
         sampling_check = ttk.Checkbutton(sampling_row, 
                                        text="啟用數據抽樣 (推薦大數據集)",
                                        variable=self.enable_sampling)
@@ -272,7 +278,7 @@ class MainApplication:
         classifier_combo.pack(side='left', padx=(5, 20))
         
         ttk.Label(classifier_row, text="面向分類:").pack(side='left')
-        self.aspect_classifier_type = tk.StringVar(value='default')
+        self.aspect_classifier_type = tk.StringVar(value='lda')
         aspect_combo = ttk.Combobox(classifier_row,
                                   textvariable=self.aspect_classifier_type,
                                   values=['default', 'lda', 'nmf'],
@@ -588,6 +594,14 @@ class MainApplication:
                 self.working_data = df
                 self.working_embeddings = embeddings
                 
+                # 保存數據檔案路徑供步驟4使用
+                data_file = storage_manager.save_processed_data(
+                    df, 'encoding', 'step3_vectorized_data.csv',
+                    metadata={'step': 'vectorization', 'embeddings_shape': embeddings.shape}
+                )
+                self.step3_data_file = data_file
+                self.step3_embeddings_file = embeddings_file
+                
                 self.root.after(0, lambda: self.step3_progress.config(value=100))
                 self.root.after(0, lambda: self.step3_status.config(
                     text=f"✅ 向量處理完成 ({embeddings.shape[0]} 個向量, 維度: {embeddings.shape[1]})",
@@ -667,7 +681,7 @@ class MainApplication:
                 
                 self.root.after(0, lambda: self.step4_progress.config(value=100))
                 self.root.after(0, lambda: self.step4_status.config(
-                    text=f"✅ 注意力分析完成 (耗時: {total_time:.1f}秒)",
+                    text=f"✅ 注意力分析完成 (耗時: {total_time:.4f}秒)",
                     foreground=COLORS['success']
                 ))
                 
@@ -770,12 +784,30 @@ class MainApplication:
     def _update_analysis_results(self, results, total_time):
         """更新分析結果到表格"""
         try:
+            print(f"🔍 GUI除錯：開始更新分析結果...")
+            print(f"🔍 GUI除錯：results的鍵: {list(results.keys())}")
+            
             # 清空表格
             for item in self.results_tree.get_children():
                 self.results_tree.delete(item)
             
             # 獲取分類結果
-            classification_results = results.get('classification_results', {})
+            classification_evaluation = results.get('classification_evaluation', {})
+            print(f"🔍 GUI除錯：classification_evaluation的鍵: {list(classification_evaluation.keys())}")
+            
+            # 從 classification_evaluation 中過濾出機制結果（排除 'comparison' 鍵）
+            classification_results = {}
+            for key, value in classification_evaluation.items():
+                if key != 'comparison' and isinstance(value, dict):
+                    classification_results[key] = value
+                    print(f"🔍 GUI除錯：找到機制結果: {key}")
+            
+            # 如果沒有找到，嘗試舊格式
+            if not classification_results:
+                classification_results = results.get('classification_results', {})
+                print(f"🔍 GUI除錯：使用舊格式，classification_results的鍵: {list(classification_results.keys())}")
+            
+            print(f"🔍 GUI除錯：最終classification_results的鍵: {list(classification_results.keys())}")
             
             # 顯示結果
             for mechanism, result in classification_results.items():
@@ -788,9 +820,9 @@ class MainApplication:
                 
                 self.results_tree.insert('', 'end', values=(
                     display_name,
-                    f"{accuracy:.2f}%",
-                    f"{f1_score:.2f}%",
-                    f"{train_time:.1f}s"
+                    f"{accuracy:.4f}%",
+                    f"{f1_score:.4f}%",
+                    f"{train_time:.4f}s"
                 ))
             
             # 獲取摘要信息
@@ -801,6 +833,9 @@ class MainApplication:
             # 保存結果供其他頁面使用
             self.analysis_results = results
             
+            # 更新機制選擇下拉菜單
+            self._update_mechanism_combo(classification_results)
+            
             # 自動切換到第二頁顯示結果
             self.notebook.select(1)  # 切換到第二頁（索引為1）
             
@@ -808,7 +843,7 @@ class MainApplication:
             self._update_detailed_results(results)
             
             # 顯示完成訊息到終端
-            print(f"✅ 分析完成！最佳機制: {self._format_mechanism_name(best_mechanism)} ({best_accuracy:.2f}%) | 總耗時: {total_time:.1f}秒")
+            print(f"✅ 分析完成！最佳機制: {self._format_mechanism_name(best_mechanism)} ({best_accuracy:.4f}%) | 總耗時: {total_time:.4f}秒")
             
         except Exception as e:
             error_msg = f"結果更新失敗: {str(e)}"
@@ -848,17 +883,29 @@ class MainApplication:
     def _update_detailed_results(self, results):
         """更新第二頁的詳細結果顯示"""
         try:
+            print(f"🔍 GUI除錯：開始更新詳細結果...")
+            
             # 清空文字區域
             self.analysis_text.delete('1.0', tk.END)
             
             # 獲取結果數據
-            classification_results = results.get('classification_results', {})
+            classification_evaluation = results.get('classification_evaluation', {})
+            
+            # 從 classification_evaluation 中過濾出機制結果（排除 'comparison' 鍵）
+            classification_results = {}
+            for key, value in classification_evaluation.items():
+                if key != 'comparison' and isinstance(value, dict):
+                    classification_results[key] = value
+            
+            # 如果沒有找到，嘗試舊格式
+            if not classification_results:
+                classification_results = results.get('classification_results', {})
             summary = results.get('summary', {})
             
             # 構建詳細報告
             report = []
             report.append("=" * 60)
-            report.append("BERT 情感分析 - 注意力機制比較分析報告")
+            report.append("情感分析 - 注意力機制比較分析報告")
             report.append("=" * 60)
             report.append("")
             
@@ -869,7 +916,7 @@ class MainApplication:
                 best_mechanism = summary.get('best_attention_mechanism', 'N/A')
                 best_accuracy = summary.get('best_classification_accuracy', 0) * 100
                 report.append(f"最佳注意力機制: {self._format_mechanism_name(best_mechanism)}")
-                report.append(f"最佳準確率: {best_accuracy:.2f}%")
+                report.append(f"最佳準確率: {best_accuracy:.4f}%")
                 report.append("")
             
             # 詳細結果
@@ -885,11 +932,11 @@ class MainApplication:
                 train_time = result.get('training_time', 0)
                 
                 report.append(f"🔹 {display_name}")
-                report.append(f"   準確率: {accuracy:.2f}%")
-                report.append(f"   F1分數: {f1_score:.2f}%")
-                report.append(f"   精確率: {precision:.2f}%")
-                report.append(f"   召回率: {recall:.2f}%")
-                report.append(f"   訓練時間: {train_time:.1f} 秒")
+                report.append(f"   準確率: {accuracy:.4f}%")
+                report.append(f"   F1分數: {f1_score:.4f}%")
+                report.append(f"   精確率: {precision:.4f}%")
+                report.append(f"   召回率: {recall:.4f}%")
+                report.append(f"   訓練時間: {train_time:.4f} 秒")
                 report.append("")
             
             # 顯示報告
@@ -904,34 +951,371 @@ class MainApplication:
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text=" 結果分析 ")
         
-        # 主要容器
-        main_frame = ttk.Frame(frame)
-        main_frame.pack(fill='both', expand=True, padx=15, pady=10)
+        # 主要容器 - 使用 Paned Window 來分割上下兩部分
+        main_paned = ttk.PanedWindow(frame, orient='vertical')
+        main_paned.pack(fill='both', expand=True, padx=15, pady=10)
+        
+        # 上半部分：分析結果摘要
+        top_frame = ttk.Frame(main_paned)
+        main_paned.add(top_frame, weight=1)
         
         # 標題
-        title_label = ttk.Label(main_frame, text="注意力機制比較分析", font=FONTS['title'])
+        title_label = ttk.Label(top_frame, text="注意力機制比較分析", font=FONTS['title'])
         title_label.pack(pady=(0, 15))
         
         # 說明
-        info_label = ttk.Label(main_frame, 
+        info_label = ttk.Label(top_frame, 
                              text="在第一頁完成分析後，詳細結果將顯示在這裡",
                              foreground='gray')
         info_label.pack(pady=(0, 10))
         
         # 結果預覽區域
-        results_frame = ttk.LabelFrame(main_frame, text="分析結果預覽", padding=10)
+        results_frame = ttk.LabelFrame(top_frame, text="分析結果預覽", padding=10)
         results_frame.pack(fill='x', pady=(0, 15))
         
         # 結果表格  
         self.create_results_preview_table(results_frame)
         
         # 詳細結果顯示區域
-        details_frame = ttk.LabelFrame(main_frame, text="詳細分析結果", padding=10)
+        details_frame = ttk.LabelFrame(top_frame, text="詳細分析結果", padding=10)
         details_frame.pack(fill='both', expand=True)
         
-        self.analysis_text = scrolledtext.ScrolledText(details_frame, height=15, width=80)
+        self.analysis_text = scrolledtext.ScrolledText(details_frame, height=8, width=80)
         self.analysis_text.pack(fill='both', expand=True)
         self.analysis_text.insert('1.0', "等待分析結果...")
+        
+        # 下半部分：原始數據與預測比對
+        bottom_frame = ttk.Frame(main_paned)
+        main_paned.add(bottom_frame, weight=1)
+        
+        # 比對報告區域
+        comparison_frame = ttk.LabelFrame(bottom_frame, text="原始數據與模型預測比對報告", padding=10)
+        comparison_frame.pack(fill='both', expand=True)
+        
+        # 機制選擇和控制按鈕
+        control_frame = ttk.Frame(comparison_frame)
+        control_frame.pack(fill='x', pady=(0, 10))
+        
+        ttk.Label(control_frame, text="選擇注意力機制:").pack(side='left')
+        self.selected_mechanism = tk.StringVar()
+        self.mechanism_combo = ttk.Combobox(control_frame, 
+                                          textvariable=self.selected_mechanism,
+                                          state='readonly',
+                                          width=20)
+        self.mechanism_combo.pack(side='left', padx=(5, 10))
+        self.mechanism_combo.bind('<<ComboboxSelected>>', self.on_mechanism_selected)
+        
+        # 顯示數量控制
+        ttk.Label(control_frame, text="顯示筆數:").pack(side='left')
+        self.display_count = tk.IntVar(value=50)
+        count_spin = ttk.Spinbox(control_frame, from_=10, to=200, increment=10,
+                               textvariable=self.display_count, width=8)
+        count_spin.pack(side='left', padx=(5, 10))
+        
+        # 更新按鈕
+        self.update_comparison_btn = ttk.Button(control_frame, text="更新比對報告", 
+                                              command=self.update_comparison_report,
+                                              state='disabled')
+        self.update_comparison_btn.pack(side='left', padx=(10, 0))
+        
+        # 快速更新按鈕（使用最佳機制）
+        self.quick_update_btn = ttk.Button(control_frame, text="使用最佳機制", 
+                                         command=self.quick_update_best_mechanism,
+                                         state='disabled')
+        self.quick_update_btn.pack(side='left', padx=(5, 0))
+        
+        # 比對表格
+        self.create_comparison_table(comparison_frame)
+    
+    def create_comparison_table(self, parent):
+        """創建原始數據與預測比對表格"""
+        # 表格框架
+        table_frame = ttk.Frame(parent)
+        table_frame.pack(fill='both', expand=True)
+        
+        # 創建表格
+        columns = ('原始索引', '原始句子', '原始評分', '模型預測', '比對結果')
+        self.comparison_tree = ttk.Treeview(table_frame, columns=columns, show='headings', height=12)
+        
+        # 設置標籤樣式
+        self.comparison_tree.tag_configure('correct', background='lightgreen')
+        self.comparison_tree.tag_configure('incorrect', background='lightcoral')
+        
+        # 設定列標題和寬度
+        self.comparison_tree.heading('原始索引', text='索引')
+        self.comparison_tree.heading('原始句子', text='原始句子(縮減版)')
+        self.comparison_tree.heading('原始評分', text='原始評分')
+        self.comparison_tree.heading('模型預測', text='模型預測')
+        self.comparison_tree.heading('比對結果', text='比對結果')
+        
+        self.comparison_tree.column('原始索引', width=80, anchor='center')
+        self.comparison_tree.column('原始句子', width=300, anchor='w')
+        self.comparison_tree.column('原始評分', width=100, anchor='center')
+        self.comparison_tree.column('模型預測', width=100, anchor='center')
+        self.comparison_tree.column('比對結果', width=100, anchor='center')
+        
+        # 添加滾動條
+        scrollbar_y = ttk.Scrollbar(table_frame, orient='vertical', command=self.comparison_tree.yview)
+        scrollbar_x = ttk.Scrollbar(table_frame, orient='horizontal', command=self.comparison_tree.xview)
+        self.comparison_tree.configure(yscrollcommand=scrollbar_y.set, xscrollcommand=scrollbar_x.set)
+        
+        # 布局
+        self.comparison_tree.grid(row=0, column=0, sticky='nsew')
+        scrollbar_y.grid(row=0, column=1, sticky='ns')
+        scrollbar_x.grid(row=1, column=0, sticky='ew')
+        
+        # 配置grid權重
+        table_frame.grid_rowconfigure(0, weight=1)
+        table_frame.grid_columnconfigure(0, weight=1)
+        
+        # 初始提示
+        self.comparison_tree.insert('', 'end', values=('--', '等待分析完成...', '--', '--', '--'))
+    
+    def on_mechanism_selected(self, event=None):
+        """當選擇注意力機制時啟用更新按鈕"""
+        if self.selected_mechanism.get():
+            self.update_comparison_btn['state'] = 'normal'
+    
+    def update_comparison_report(self):
+        """更新比對報告"""
+        try:
+            print(f"🔍 GUI除錯：開始更新比對報告...")
+            
+            if not hasattr(self, 'analysis_results') or not self.analysis_results:
+                print(f"🔍 GUI除錯：沒有分析結果")
+                messagebox.showwarning("警告", "尚無分析結果，請先完成分析")
+                return
+            
+            selected_mechanism = self.selected_mechanism.get()
+            print(f"🔍 GUI除錯：選擇的機制: {selected_mechanism}")
+            if not selected_mechanism:
+                messagebox.showwarning("警告", "請選擇要比對的注意力機制")
+                return
+            
+            # 獲取對應機制的分析結果
+            classification_evaluation = self.analysis_results.get('classification_evaluation', {})
+            print(f"🔍 GUI除錯：classification_evaluation的鍵: {list(classification_evaluation.keys())}")
+            
+            # 從 classification_evaluation 中過濾出機制結果（排除 'comparison' 鍵）
+            classification_results = {}
+            for key, value in classification_evaluation.items():
+                if key != 'comparison' and isinstance(value, dict):
+                    classification_results[key] = value
+                    print(f"🔍 GUI除錯：找到機制結果: {key}")
+            
+            # 如果沒有找到，嘗試舊格式
+            if not classification_results:
+                classification_results = self.analysis_results.get('classification_results', {})
+                print(f"🔍 GUI除錯：使用舊格式，classification_results的鍵: {list(classification_results.keys())}")
+            
+            print(f"🔍 GUI除錯：比對報告中的classification_results鍵: {list(classification_results.keys())}")
+            
+            # 找到選擇的機制結果
+            mechanism_result = None
+            for mechanism, result in classification_results.items():
+                formatted_name = self._format_mechanism_name(mechanism)
+                print(f"🔍 GUI除錯：檢查機制 {mechanism} -> {formatted_name}")
+                if formatted_name == selected_mechanism:
+                    mechanism_result = result
+                    print(f"🔍 GUI除錯：找到匹配的機制結果")
+                    break
+            
+            if not mechanism_result:
+                messagebox.showerror("錯誤", f"找不到機制 '{selected_mechanism}' 的分析結果")
+                return
+            
+            # 獲取預測結果 - 修正：從prediction_details中獲取
+            prediction_details = mechanism_result.get('prediction_details', {})
+            predicted_labels = prediction_details.get('predicted_label_names', [])
+            true_labels = prediction_details.get('true_label_names', [])
+            test_texts = prediction_details.get('test_texts', [])
+            
+            if not predicted_labels:
+                messagebox.showwarning("警告", f"機制 '{selected_mechanism}' 沒有預測結果")
+                return
+            
+            # 獲取原始數據
+            if not hasattr(self, 'working_data') or self.working_data is None:
+                messagebox.showwarning("警告", "找不到原始數據")
+                return
+            
+            # 清空表格
+            for item in self.comparison_tree.get_children():
+                self.comparison_tree.delete(item)
+            
+            # 獲取顯示數量
+            display_count = min(self.display_count.get(), len(predicted_labels))
+            
+            # 填充比對數據
+            sentiment_mapping = {'positive': '正面', 'negative': '負面', 'neutral': '中性'}
+            
+            # 使用測試集數據或回退到工作數據
+            if test_texts and len(test_texts) > 0:
+                # 使用模型測試集的文本
+                for i in range(display_count):
+                    if i >= len(predicted_labels) or i >= len(true_labels):
+                        break
+                    
+                    # 原始索引（測試集中的索引）
+                    original_index = i
+                    
+                    # 原始句子(縮減版) - 來自測試集
+                    if i < len(test_texts):
+                        original_text = str(test_texts[i])
+                        short_text = original_text[:50] + "..." if len(original_text) > 50 else original_text
+                    else:
+                        short_text = "無文本數據"
+                    
+                    # 原始評分 - 來自測試集真實標籤
+                    original_sentiment = true_labels[i] if i < len(true_labels) else "未知"
+                    original_sentiment_cn = sentiment_mapping.get(original_sentiment, original_sentiment)
+                    
+                    # 模型預測
+                    predicted_sentiment = predicted_labels[i]
+                    predicted_sentiment_cn = sentiment_mapping.get(predicted_sentiment, predicted_sentiment)
+                    
+                    # 比對結果
+                    is_correct = (original_sentiment == predicted_sentiment)
+                    comparison_result = "✓ 正確" if is_correct else "✗ 錯誤"
+                    
+                    # 添加到表格（帶顏色標籤）
+                    tag = 'correct' if is_correct else 'incorrect'
+                    self.comparison_tree.insert('', 'end', values=(
+                        original_index,
+                        short_text,
+                        original_sentiment_cn,
+                        predicted_sentiment_cn,
+                        comparison_result
+                    ), tags=(tag,))
+            else:
+                # 回退方案：使用工作數據（如果可用）
+                if hasattr(self, 'working_data') and self.working_data is not None:
+                    df = self.working_data
+                    for i in range(min(display_count, len(df))):
+                        if i >= len(predicted_labels):
+                            break
+                        
+                        # 原始索引
+                        original_index = i
+                        
+                        # 原始句子(縮減版)
+                        text_column = None
+                        for col in ['processed_text', 'clean_text', 'text', 'review']:
+                            if col in df.columns:
+                                text_column = col
+                                break
+                        
+                        if text_column:
+                            original_text = str(df.iloc[i][text_column])
+                            short_text = original_text[:50] + "..." if len(original_text) > 50 else original_text
+                        else:
+                            short_text = "無文本數據"
+                        
+                        # 原始評分
+                        original_sentiment = "未知"
+                        for col in ['sentiment', 'label', 'category']:
+                            if col in df.columns:
+                                original_sentiment = str(df.iloc[i][col])
+                                break
+                        
+                        original_sentiment_cn = sentiment_mapping.get(original_sentiment, original_sentiment)
+                        
+                        # 模型預測
+                        predicted_sentiment = predicted_labels[i] if i < len(predicted_labels) else "未知"
+                        predicted_sentiment_cn = sentiment_mapping.get(predicted_sentiment, predicted_sentiment)
+                        
+                        # 比對結果
+                        is_correct = (original_sentiment == predicted_sentiment)
+                        comparison_result = "✓ 正確" if is_correct else "✗ 錯誤"
+                        
+                        # 添加到表格（帶顏色標籤）
+                        tag = 'correct' if is_correct else 'incorrect'
+                        self.comparison_tree.insert('', 'end', values=(
+                            original_index,
+                            short_text,
+                            original_sentiment_cn,
+                            predicted_sentiment_cn,
+                            comparison_result
+                        ), tags=(tag,))
+                else:
+                    messagebox.showwarning("警告", "無法獲取原始文本數據")
+                    return
+            
+            # 更新狀態 - 使用實際的標籤數據計算準確率
+            total_samples = len(predicted_labels)
+            if len(true_labels) == len(predicted_labels):
+                correct_count = sum(1 for i in range(len(predicted_labels)) 
+                                  if true_labels[i] == predicted_labels[i])
+            else:
+                correct_count = 0
+            accuracy = (correct_count / total_samples) * 100 if total_samples > 0 else 0
+            
+            messagebox.showinfo("更新完成", 
+                              f"已更新前 {display_count} 筆比對結果\n"
+                              f"總樣本數: {total_samples}\n"
+                              f"正確預測: {correct_count}\n"
+                              f"準確率: {accuracy:.4f}%")
+            
+        except Exception as e:
+            messagebox.showerror("錯誤", f"更新比對報告時發生錯誤：{str(e)}")
+    
+    def _get_original_sentiment(self, df, index):
+        """獲取原始情感標籤"""
+        for col in ['sentiment', 'label', 'category']:
+            if col in df.columns:
+                return str(df.iloc[index][col])
+        return "unknown"
+    
+    def _update_mechanism_combo(self, classification_results):
+        """更新機制選擇下拉菜單"""
+        try:
+            # 獲取所有可用的機制名稱並轉換為中文
+            mechanism_names = []
+            for mechanism in classification_results.keys():
+                display_name = self._format_mechanism_name(mechanism)
+                mechanism_names.append(display_name)
+            
+            # 更新下拉菜單選項
+            if hasattr(self, 'mechanism_combo') and self.mechanism_combo is not None:
+                self.mechanism_combo['values'] = mechanism_names
+                if mechanism_names:
+                    # 預設選擇第一個機制
+                    self.mechanism_combo.set(mechanism_names[0])
+                    self.update_comparison_btn['state'] = 'normal'
+                    self.quick_update_btn['state'] = 'normal'
+                    
+        except Exception as e:
+            print(f"更新機制下拉菜單時發生錯誤: {str(e)}")
+    
+    def quick_update_best_mechanism(self):
+        """快速更新最佳機制的比對報告"""
+        try:
+            if not hasattr(self, 'analysis_results') or not self.analysis_results:
+                messagebox.showwarning("警告", "尚無分析結果")
+                return
+            
+            # 獲取最佳機制
+            summary = self.analysis_results.get('summary', {})
+            best_mechanism = summary.get('best_attention_mechanism', None)
+            
+            if not best_mechanism:
+                messagebox.showwarning("警告", "無法找到最佳機制信息")
+                return
+            
+            # 格式化機制名稱
+            best_mechanism_display = self._format_mechanism_name(best_mechanism)
+            
+            # 設置到下拉菜單
+            if hasattr(self, 'mechanism_combo') and self.mechanism_combo is not None:
+                self.mechanism_combo.set(best_mechanism_display)
+                
+                # 直接調用更新報告
+                self.update_comparison_report()
+            else:
+                messagebox.showerror("錯誤", "機制選擇組件未初始化")
+                
+        except Exception as e:
+            messagebox.showerror("錯誤", f"快速更新失敗：{str(e)}")
     
     def create_cross_validation_tab(self):
         """第三分頁：交叉驗證（保留原有功能）"""

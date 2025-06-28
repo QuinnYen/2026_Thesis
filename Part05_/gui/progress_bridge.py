@@ -55,9 +55,9 @@ class ProgressBridge:
             self.gui_queue.put(('progress', percentage))
             
             if description:
-                status_msg = f"{description}: {current}/{total} ({percentage:.1f}%)"
+                status_msg = f"{description}: {current}/{total} ({percentage:.4f}%)"
             else:
-                status_msg = f"進度: {current}/{total} ({percentage:.1f}%)"
+                status_msg = f"進度: {current}/{total} ({percentage:.4f}%)"
             
             self.gui_queue.put(('status', status_msg))
             
