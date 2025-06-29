@@ -14,7 +14,8 @@ COLORS = {
     'processing': 'blue',   # 處理中
     'success': 'green',     # 成功
     'error': 'red',         # 錯誤
-    'info': 'black'         # 一般資訊
+    'info': 'black',        # 一般資訊
+    'warning': '#FF8C00'    # 警告
 }
 
 # 狀態文字

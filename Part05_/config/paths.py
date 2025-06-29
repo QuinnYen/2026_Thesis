@@ -92,22 +92,33 @@ class PathConfig:
         """獲取基礎輸出目錄"""
         return self.config["base_output_dir"]
     
-    def get_subdirectory_name(self, subdir_key: str) -> str:
-        """獲取子目錄名稱"""
-        return self.config["subdirectories"].get(subdir_key, subdir_key)
+    def get_subdirectory_name(self, subdir_key: str, encoder_type: str = 'bert') -> str:
+        """獲取子目錄名稱，支援編碼器類型動態替換"""
+        pattern = self.config["subdirectories"].get(subdir_key, subdir_key)
+        if "{encoder_type}" in pattern:
+            return pattern.format(encoder_type=encoder_type)
+        return pattern
     
-    def get_file_pattern(self, file_key: str) -> str:
-        """獲取檔案命名模式"""
-        return self.config["file_patterns"].get(file_key, f"{file_key}.txt")
+    def get_file_pattern(self, file_key: str, encoder_type: str = 'bert') -> str:
+        """獲取檔案命名模式，支援編碼器類型動態替換"""
+        # 優先使用通用模式
+        if file_key == "embeddings" or (file_key.endswith("_embeddings") and file_key != f"{encoder_type}_embeddings"):
+            pattern = self.config["file_patterns"].get("embeddings", f"02_{encoder_type}_embeddings.npy")
+        else:
+            pattern = self.config["file_patterns"].get(file_key, f"{file_key}.txt")
+        
+        if "{encoder_type}" in pattern:
+            return pattern.format(encoder_type=encoder_type)
+        return pattern
     
-    def get_full_subdirectory_path(self, run_dir: str, subdir_key: str) -> str:
+    def get_full_subdirectory_path(self, run_dir: str, subdir_key: str, encoder_type: str = 'bert') -> str:
         """獲取完整子目錄路徑"""
-        subdir_name = self.get_subdirectory_name(subdir_key)
+        subdir_name = self.get_subdirectory_name(subdir_key, encoder_type)
         return os.path.join(run_dir, subdir_name)
     
-    def get_full_file_path(self, directory: str, file_key: str) -> str:
+    def get_full_file_path(self, directory: str, file_key: str, encoder_type: str = 'bert') -> str:
         """獲取完整檔案路徑"""
-        file_pattern = self.get_file_pattern(file_key)
+        file_pattern = self.get_file_pattern(file_key, encoder_type)
         return os.path.join(directory, file_pattern)
     
     def save_config(self, config_file: Optional[str] = None):
@@ -178,6 +189,14 @@ def get_preprocessing_dir_name() -> str:
 def get_bert_encoding_dir_name() -> str:
     """獲取BERT編碼目錄名稱"""
     return path_config.get_subdirectory_name("bert_encoding")
+
+def get_encoding_dir_name(encoder_type: str = 'bert') -> str:
+    """獲取編碼器編碼目錄名稱（動態）"""
+    return path_config.get_subdirectory_name("encoding", encoder_type)
+
+def get_embeddings_file_pattern(encoder_type: str = 'bert') -> str:
+    """獲取嵌入向量檔案名稱模式（動態）"""
+    return path_config.get_file_pattern("embeddings", encoder_type)
 
 
 def get_attention_testing_dir_name() -> str:

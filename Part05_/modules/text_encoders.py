@@ -117,14 +117,21 @@ class BertEncoder(BaseTextEncoder):
                 self.progress_callback('progress', (batch_num, total_batches))
         
         embeddings = np.vstack(embeddings)
-        self._save_embeddings(embeddings, "bert_embeddings.npy")
+        self._save_embeddings(embeddings, "02_bert_embeddings.npy")
         return embeddings
     
     def _save_embeddings(self, embeddings: np.ndarray, filename: str):
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, filename)
-            np.save(output_file, embeddings)
-            logger.info(f"已保存{self.__class__.__name__}特徵向量到：{output_file}")
+            encoder_type = self.__class__.__name__.lower().replace('encoder', '')
+            try:
+                from ..utils.storage_manager import StorageManager
+                storage_manager = StorageManager(self.output_dir)
+                output_file = storage_manager.save_embeddings(embeddings, encoder_type)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
+            except Exception as e:
+                output_file = os.path.join(self.output_dir, filename)
+                np.save(output_file, embeddings)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
 
 class GPTEncoder(BaseTextEncoder):
     """GPT編碼器"""
@@ -184,14 +191,21 @@ class GPTEncoder(BaseTextEncoder):
                 self.progress_callback('progress', (batch_num, total_batches))
         
         embeddings = np.vstack(embeddings)
-        self._save_embeddings(embeddings, "gpt_embeddings.npy")
+        self._save_embeddings(embeddings, "02_gpt_embeddings.npy")
         return embeddings
     
     def _save_embeddings(self, embeddings: np.ndarray, filename: str):
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, filename)
-            np.save(output_file, embeddings)
-            logger.info(f"已保存{self.__class__.__name__}特徵向量到：{output_file}")
+            encoder_type = self.__class__.__name__.lower().replace('encoder', '')
+            try:
+                from ..utils.storage_manager import StorageManager
+                storage_manager = StorageManager(self.output_dir)
+                output_file = storage_manager.save_embeddings(embeddings, encoder_type)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
+            except Exception as e:
+                output_file = os.path.join(self.output_dir, filename)
+                np.save(output_file, embeddings)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
 
 class T5Encoder(BaseTextEncoder):
     """T5編碼器"""
@@ -250,14 +264,21 @@ class T5Encoder(BaseTextEncoder):
                 self.progress_callback('progress', (batch_num, total_batches))
         
         embeddings = np.vstack(embeddings)
-        self._save_embeddings(embeddings, "t5_embeddings.npy")
+        self._save_embeddings(embeddings, "02_t5_embeddings.npy")
         return embeddings
     
     def _save_embeddings(self, embeddings: np.ndarray, filename: str):
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, filename)
-            np.save(output_file, embeddings)
-            logger.info(f"已保存{self.__class__.__name__}特徵向量到：{output_file}")
+            encoder_type = self.__class__.__name__.lower().replace('encoder', '')
+            try:
+                from ..utils.storage_manager import StorageManager
+                storage_manager = StorageManager(self.output_dir)
+                output_file = storage_manager.save_embeddings(embeddings, encoder_type)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
+            except Exception as e:
+                output_file = os.path.join(self.output_dir, filename)
+                np.save(output_file, embeddings)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
 
 class CNNEncoder(BaseTextEncoder):
     """CNN文本編碼器"""
@@ -384,20 +405,35 @@ class CNNEncoder(BaseTextEncoder):
                     self.progress_callback('progress', (batch_num, total_batches))
         
         embeddings = np.vstack(embeddings)
-        self._save_embeddings(embeddings, "cnn_embeddings.npy")
+        self._save_embeddings(embeddings, "02_cnn_embeddings.npy")
         return embeddings
     
     def _save_embeddings(self, embeddings: np.ndarray, filename: str):
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, filename)
-            np.save(output_file, embeddings)
-            # 同時保存詞彙表
-            vocab_file = os.path.join(self.output_dir, "cnn_vocabulary.json")
-            import json
-            with open(vocab_file, 'w', encoding='utf-8') as f:
-                json.dump(self.word_to_idx, f, ensure_ascii=False, indent=2)
-            logger.info(f"已保存CNN特徵向量到：{output_file}")
-            logger.info(f"已保存CNN詞彙表到：{vocab_file}")
+            encoder_type = 'cnn'
+            try:
+                from ..utils.storage_manager import StorageManager
+                storage_manager = StorageManager(self.output_dir)
+                # 保存特徵向量
+                output_file = storage_manager.save_embeddings(embeddings, encoder_type)
+                # 保存詞彙表到同一目錄
+                encoding_dir = storage_manager.get_encoding_dir(encoder_type)
+                vocab_file = encoding_dir / "cnn_vocabulary.json"
+                import json
+                with open(vocab_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.word_to_idx, f, ensure_ascii=False, indent=2)
+                logger.info(f"已保存CNN特徵向量到：{output_file}")
+                logger.info(f"已保存CNN詞彙表到：{vocab_file}")
+            except Exception as e:
+                # 回退到直接保存方式
+                output_file = os.path.join(self.output_dir, filename)
+                np.save(output_file, embeddings)
+                vocab_file = os.path.join(self.output_dir, "cnn_vocabulary.json")
+                import json
+                with open(vocab_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.word_to_idx, f, ensure_ascii=False, indent=2)
+                logger.info(f"已保存CNN特徵向量到：{output_file}")
+                logger.info(f"已保存CNN詞彙表到：{vocab_file}")
 
 class ELMoEncoder(BaseTextEncoder):
     """ELMo編碼器"""
@@ -450,14 +486,21 @@ class ELMoEncoder(BaseTextEncoder):
                 self.progress_callback('progress', (batch_num, total_batches))
         
         embeddings = np.vstack(embeddings)
-        self._save_embeddings(embeddings, "elmo_embeddings.npy")
+        self._save_embeddings(embeddings, "02_elmo_embeddings.npy")
         return embeddings
     
     def _save_embeddings(self, embeddings: np.ndarray, filename: str):
         if self.output_dir:
-            output_file = os.path.join(self.output_dir, filename)
-            np.save(output_file, embeddings)
-            logger.info(f"已保存ELMo特徵向量到：{output_file}")
+            encoder_type = 'elmo'
+            try:
+                from ..utils.storage_manager import StorageManager
+                storage_manager = StorageManager(self.output_dir)
+                output_file = storage_manager.save_embeddings(embeddings, encoder_type)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
+            except Exception as e:
+                output_file = os.path.join(self.output_dir, filename)
+                np.save(output_file, embeddings)
+                logger.info(f"已保存{encoder_type.upper()}特徵向量到：{output_file}")
 
 class TextEncoderFactory:
     """文本編碼器工廠類"""

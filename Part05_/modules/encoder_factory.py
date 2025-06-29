@@ -337,10 +337,11 @@ class CNNEncoder(BaseTextEncoder):
 
 
 class ELMoEncoder(BaseTextEncoder):
-    """ELMo編碼器實現（簡化版，使用預訓練模型）"""
+    """ELMo編碼器實現（簡化版，使用預訓練模型或TF-IDF回退）"""
     
     def __init__(self, config: Optional[Dict] = None, progress_callback=None):
         super().__init__(config, progress_callback)
+        self.use_tfidf = False
         
         try:
             # 使用allennlp的ELMo實現
@@ -358,15 +359,20 @@ class ELMoEncoder(BaseTextEncoder):
             if self.progress_callback:
                 self.progress_callback('status', f'ELMo編碼器已載入 ({self.device})')
                 
-        except ImportError:
-            # 如果allennlp不可用，使用簡化的實現
+        except ImportError as e:
+            # 如果allennlp不可用，使用TF-IDF回退
+            logger.warning(f"ELMo需要allennlp庫，回退使用TF-IDF: {e}")
             if self.progress_callback:
-                self.progress_callback('status', 'ELMo需要allennlp庫，使用TF-IDF替代')
-            self.vectorizer = TfidfVectorizer(max_features=1024)
+                self.progress_callback('status', '⚠️ ELMo需要allennlp庫，回退使用TF-IDF')
+            self.vectorizer = TfidfVectorizer(max_features=1024, ngram_range=(1, 2))
             self.use_tfidf = True
         except Exception as e:
-            logger.error(f"ELMo編碼器初始化失敗: {e}")
-            raise
+            # 其他錯誤也回退到TF-IDF
+            logger.warning(f"ELMo編碼器初始化失敗，回退使用TF-IDF: {e}")
+            if self.progress_callback:
+                self.progress_callback('status', '⚠️ ELMo初始化失敗，回退使用TF-IDF')
+            self.vectorizer = TfidfVectorizer(max_features=1024, ngram_range=(1, 2))
+            self.use_tfidf = True
     
     def encode(self, texts: Union[pd.Series, List[str]]) -> np.ndarray:
         """編碼文本為ELMo向量"""
@@ -379,6 +385,11 @@ class ELMoEncoder(BaseTextEncoder):
                 embeddings = self.vectorizer.fit_transform(texts)
             else:
                 embeddings = self.vectorizer.transform(texts)
+            
+            # 更新進度
+            if self.progress_callback:
+                self.progress_callback('progress', f'TF-IDF編碼進度: 100%')
+            
             return embeddings.toarray()
         
         # 使用真正的ELMo
@@ -413,6 +424,134 @@ class ELMoEncoder(BaseTextEncoder):
         return 1024  # ELMo的標準維度
 
 
+class RoBERTaEncoder(BaseTextEncoder):
+    """RoBERTa編碼器實現"""
+    
+    def __init__(self, config: Optional[Dict] = None, progress_callback=None):
+        super().__init__(config, progress_callback)
+        self.model_name = self.config.get('model_name', 'roberta-base')
+        self.max_length = self.config.get('max_length', 512)
+        self.batch_size = self.config.get('batch_size', 32)
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModel.from_pretrained(self.model_name)
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            self.model.to(self.device)
+            self.model.eval()
+            
+            if self.progress_callback:
+                self.progress_callback('status', f'RoBERTa編碼器已載入 ({self.device})')
+                
+        except Exception as e:
+            logger.error(f"RoBERTa編碼器初始化失敗: {e}")
+            raise
+    
+    def encode(self, texts: Union[pd.Series, List[str]]) -> np.ndarray:
+        """編碼文本為RoBERTa向量"""
+        if isinstance(texts, pd.Series):
+            texts = texts.tolist()
+        
+        embeddings = []
+        total_batches = len(texts) // self.batch_size + (1 if len(texts) % self.batch_size > 0 else 0)
+        
+        with torch.no_grad():
+            for i in range(0, len(texts), self.batch_size):
+                batch_texts = texts[i:i + self.batch_size]
+                
+                # 編碼文本
+                encoded = self.tokenizer(
+                    batch_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors='pt'
+                )
+                
+                # 移到設備
+                input_ids = encoded['input_ids'].to(self.device)
+                attention_mask = encoded['attention_mask'].to(self.device)
+                
+                # 獲取嵌入向量
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                batch_embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
+                embeddings.append(batch_embeddings)
+                
+                # 更新進度
+                if self.progress_callback:
+                    progress = (i // self.batch_size + 1) / total_batches * 100
+                    self.progress_callback('progress', f'RoBERTa編碼進度: {progress:.1f}%')
+        
+        return np.vstack(embeddings)
+    
+    def get_embedding_dim(self) -> int:
+        return 768  # RoBERTa-base的維度
+
+
+class DistilBERTEncoder(BaseTextEncoder):
+    """DistilBERT編碼器實現"""
+    
+    def __init__(self, config: Optional[Dict] = None, progress_callback=None):
+        super().__init__(config, progress_callback)
+        self.model_name = self.config.get('model_name', 'distilbert-base-uncased')
+        self.max_length = self.config.get('max_length', 512)
+        self.batch_size = self.config.get('batch_size', 32)
+        
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            self.model = AutoModel.from_pretrained(self.model_name)
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            self.model.to(self.device)
+            self.model.eval()
+            
+            if self.progress_callback:
+                self.progress_callback('status', f'DistilBERT編碼器已載入 ({self.device})')
+                
+        except Exception as e:
+            logger.error(f"DistilBERT編碼器初始化失敗: {e}")
+            raise
+    
+    def encode(self, texts: Union[pd.Series, List[str]]) -> np.ndarray:
+        """編碼文本為DistilBERT向量"""
+        if isinstance(texts, pd.Series):
+            texts = texts.tolist()
+        
+        embeddings = []
+        total_batches = len(texts) // self.batch_size + (1 if len(texts) % self.batch_size > 0 else 0)
+        
+        with torch.no_grad():
+            for i in range(0, len(texts), self.batch_size):
+                batch_texts = texts[i:i + self.batch_size]
+                
+                # 編碼文本
+                encoded = self.tokenizer(
+                    batch_texts,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors='pt'
+                )
+                
+                # 移到設備
+                input_ids = encoded['input_ids'].to(self.device)
+                attention_mask = encoded['attention_mask'].to(self.device)
+                
+                # 獲取嵌入向量
+                outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
+                batch_embeddings = outputs.last_hidden_state.mean(dim=1).cpu().numpy()
+                embeddings.append(batch_embeddings)
+                
+                # 更新進度
+                if self.progress_callback:
+                    progress = (i // self.batch_size + 1) / total_batches * 100
+                    self.progress_callback('progress', f'DistilBERT編碼進度: {progress:.1f}%')
+        
+        return np.vstack(embeddings)
+    
+    def get_embedding_dim(self) -> int:
+        return 768  # DistilBERT-base的維度
+
+
 class EncoderFactory:
     """編碼器工廠類"""
     
@@ -421,7 +560,9 @@ class EncoderFactory:
         'gpt': GPTEncoder,
         't5': T5Encoder,
         'cnn': CNNEncoder,
-        'elmo': ELMoEncoder
+        'elmo': ELMoEncoder,
+        'roberta': RoBERTaEncoder,
+        'distilbert': DistilBERTEncoder
     }
     
     @classmethod
@@ -487,7 +628,22 @@ class EncoderFactory:
                 'description': 'Embeddings from Language Models',
                 'embedding_dim': 1024,
                 'advantages': ['上下文相關嵌入', '字符級建模'],
-                'disadvantages': ['計算較慢', '相比Transformer效果稍差']
+                'disadvantages': ['計算較慢', '相比Transformer效果稍差'],
+                'note': '需要allennlp庫，不可用時會回退到TF-IDF'
+            },
+            'roberta': {
+                'name': 'RoBERTa',
+                'description': 'Robustly Optimized BERT Pretraining Approach',
+                'embedding_dim': 768,
+                'advantages': ['相比BERT更好的預訓練', '去除NSP任務', '動態掩碼'],
+                'disadvantages': ['計算資源需求高', '模型較大']
+            },
+            'distilbert': {
+                'name': 'DistilBERT',
+                'description': 'Distilled version of BERT (smaller, faster)',
+                'embedding_dim': 768,
+                'advantages': ['比BERT快60%', '模型小40%', '保留97%性能'],
+                'disadvantages': ['性能略低於BERT', '某些複雜任務效果不如BERT']
             }
         }
         

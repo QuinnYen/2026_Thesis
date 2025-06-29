@@ -231,13 +231,25 @@ class MainApplication:
         encoder_row.pack(fill='x', pady=(0, 10))
         
         ttk.Label(encoder_row, text="編碼器類型:").pack(side='left')
-        self.encoder_type = tk.StringVar(value='bert')
+        # ✅ 修復：動態獲取編碼器工廠中支援的編碼器類型
+        try:
+            from modules.encoder_factory import EncoderFactory
+            encoder_options = EncoderFactory.get_available_encoders()
+        except ImportError:
+            # 如果編碼器工廠不可用，使用預設選項
+            encoder_options = ['bert', 'gpt', 't5', 'cnn']
+        
         encoder_combo = ttk.Combobox(encoder_row,
                                    textvariable=self.encoder_type,
-                                   values=['bert', 'roberta', 'distilbert'],
+                                   values=encoder_options,
                                    state='readonly',
                                    width=15)
-        encoder_combo.pack(side='left', padx=(5, 20))
+        encoder_combo.pack(side='left', padx=(5, 10))
+        
+        # 編碼器說明標籤
+        encoder_info_btn = ttk.Button(encoder_row, text="?", width=3,
+                                     command=self.show_encoder_info)
+        encoder_info_btn.pack(side='left', padx=(2, 8))
         
         ttk.Label(encoder_row, text="最大序列長度:").pack(side='left')
         self.max_length = tk.IntVar(value=512)
@@ -270,18 +282,27 @@ class MainApplication:
         
         ttk.Label(classifier_row, text="分類器:").pack(side='left')
         self.classifier_type = tk.StringVar(value='xgboost')
+        # 支援的分類器類型
+        classifier_options = ['xgboost', 'logistic_regression', 'random_forest', 'svm_linear', 'naive_bayes']
         classifier_combo = ttk.Combobox(classifier_row,
                                       textvariable=self.classifier_type,
-                                      values=['xgboost', 'logistic_regression', 'random_forest', 'svm_linear'],
+                                      values=classifier_options,
                                       state='readonly',
                                       width=18)
-        classifier_combo.pack(side='left', padx=(5, 20))
+        classifier_combo.pack(side='left', padx=(5, 10))
+        
+        # 分類器說明標籤
+        classifier_info_btn = ttk.Button(classifier_row, text="?", width=3,
+                                        command=self.show_classifier_info)
+        classifier_info_btn.pack(side='left', padx=(2, 8))
         
         ttk.Label(classifier_row, text="面向分類:").pack(side='left')
         self.aspect_classifier_type = tk.StringVar(value='lda')
+        # 支援的面向分類方法
+        aspect_options = ['default', 'lda', 'nmf', 'bertopic', 'clustering']
         aspect_combo = ttk.Combobox(classifier_row,
                                   textvariable=self.aspect_classifier_type,
-                                  values=['default', 'lda', 'nmf'],
+                                  values=aspect_options,
                                   state='readonly',
                                   width=15)
         aspect_combo.pack(side='left', padx=(5, 0))
@@ -318,6 +339,22 @@ class MainApplication:
                                     variable=self.enable_combinations)
         combo_check.pack(side='left')
         
+        # 智能權重學習選項
+        self.use_adaptive_weights = tk.BooleanVar(value=False)
+        adaptive_check = ttk.Checkbutton(combo_row, text="使用智能權重學習", 
+                                       variable=self.use_adaptive_weights,
+                                       command=self.on_adaptive_weights_changed)
+        adaptive_check.pack(side='left', padx=(20, 0))
+        
+        # 權重配置按鈕
+        self.weight_config_btn = ttk.Button(combo_row, text="權重配置", 
+                                          command=self.show_weight_config, 
+                                          state='disabled')
+        self.weight_config_btn.pack(side='left', padx=(10, 0))
+        
+        # 儲存學習到的權重
+        self.learned_weights = None
+        
         # 執行按鈕和進度條
         control_row = ttk.Frame(step4_frame)
         control_row.pack(fill='x')
@@ -347,6 +384,18 @@ class MainApplication:
         
         self.overall_status = ttk.Label(progress_row, text="準備就緒", foreground=COLORS['info'])
         self.overall_status.pack(side='left')
+        
+        # 重製按鈕
+        reset_row = ttk.Frame(control_frame)
+        reset_row.pack(fill='x', pady=(10, 0))
+        
+        self.reset_btn = ttk.Button(reset_row, text="🔄 重製程式", 
+                                   command=self.restart_application,
+                                   style='Accent.TButton')
+        self.reset_btn.pack(side='right')
+        
+        ttk.Label(reset_row, text="重新開始所有步驟，清除所有數據和結果", 
+                 font=('TkDefaultFont', 8), foreground='gray').pack(side='right', padx=(0, 10))
     
     def create_results_preview_table(self, parent):
         """創建結果預覽表格"""
@@ -425,7 +474,7 @@ class MainApplication:
                 
                 # 創建輸入參考（不儲存原始數據）
                 from utils.storage_manager import StorageManager
-                storage_manager = StorageManager(self.run_manager.get_run_dir())
+                storage_manager = StorageManager(self.run_manager.get_run_dir(self.encoder_type.get()))
                 
                 self.root.after(0, lambda: self.step1_status.config(text="正在創建輸入參考..."))
                 self.root.after(0, lambda: self.step1_progress.config(value=70))
@@ -519,7 +568,7 @@ class MainApplication:
                 
                 # 使用儲存管理器保存預處理數據
                 from utils.storage_manager import StorageManager
-                storage_manager = StorageManager(self.run_manager.get_run_dir())
+                storage_manager = StorageManager(self.run_manager.get_run_dir(self.encoder_type.get()))
                 processed_file = storage_manager.save_processed_data(
                     df, 'preprocessing', '01_preprocessed_data.csv',
                     metadata={'preprocessing_options': options}
@@ -554,7 +603,8 @@ class MainApplication:
         def run_vectorize():
             try:
                 import time
-                from modules.bert_encoder import BertEncoder
+                # ✅ 修復：使用編碼器工廠而不是硬編碼BERT
+                from modules.encoder_factory import EncoderFactory
                 
                 # 更新進度：開始處理
                 self.root.after(0, lambda: self.step3_progress.config(value=10))
@@ -563,16 +613,36 @@ class MainApplication:
                 df = self.working_data.copy()
                 self.root.after(0, lambda: self.step3_progress.config(value=20))
                 
-                self.root.after(0, lambda: self.step3_status.config(text="正在初始化編碼器..."))
+                # ✅ 修復：獲取選定的編碼器類型
+                selected_encoder_type = self.encoder_type.get()
+                self.root.after(0, lambda: self.step3_status.config(text=f"正在初始化{selected_encoder_type.upper()}編碼器..."))
                 
-                # 初始化編碼器
-                encoder = BertEncoder(
-                    output_dir=self.run_manager.get_run_dir(),
-                    progress_callback=None
-                )
+                # ✅ 修復：使用工廠創建選定的編碼器
+                def progress_callback(callback_type, message):
+                    if callback_type in ['status', 'progress']:
+                        self.root.after(0, lambda msg=message: self.step3_status.config(text=msg))
+                
+                encoder_config = {
+                    'max_length': self.max_length.get(),
+                    'batch_size': 32
+                }
+                
+                try:
+                    encoder = EncoderFactory.create_encoder(
+                        encoder_type=selected_encoder_type,
+                        config=encoder_config,
+                        progress_callback=progress_callback
+                    )
+                except Exception as encoder_error:
+                    # 如果選定的編碼器不可用，回退到BERT
+                    self.root.after(0, lambda: self.step3_status.config(text=f"⚠️ {selected_encoder_type.upper()}編碼器不可用，回退使用BERT..."))
+                    from modules.bert_encoder import BertEncoder
+                    encoder = BertEncoder(progress_callback=progress_callback)
+                    selected_encoder_type = 'bert'
+                
                 self.root.after(0, lambda: self.step3_progress.config(value=30))
                 
-                self.root.after(0, lambda: self.step3_status.config(text="正在進行文本編碼..."))
+                self.root.after(0, lambda: self.step3_status.config(text=f"正在進行{selected_encoder_type.upper()}文本編碼..."))
                 
                 # 進行向量化
                 texts = df['processed_text']
@@ -581,12 +651,17 @@ class MainApplication:
                 
                 # 使用儲存管理器保存向量化結果
                 from utils.storage_manager import StorageManager
-                storage_manager = StorageManager(self.run_manager.get_run_dir())
+                storage_manager = StorageManager(self.run_manager.get_run_dir(selected_encoder_type))
                 
-                # 保存嵌入向量
+                # ✅ 修復：保存嵌入向量時使用正確的編碼器類型
                 embeddings_file = storage_manager.save_embeddings(
-                    embeddings, 'bert',
-                    metadata={'encoder_model': 'bert-base-chinese', 'text_count': len(texts)}
+                    embeddings, selected_encoder_type,
+                    metadata={
+                        'encoder_type': selected_encoder_type, 
+                        'embedding_dim': encoder.get_embedding_dim(),
+                        'text_count': len(texts),
+                        'max_length': self.max_length.get()
+                    }
                 )
                 self.root.after(0, lambda: self.step3_progress.config(value=85))
                 
@@ -597,14 +672,18 @@ class MainApplication:
                 # 保存數據檔案路徑供步驟4使用
                 data_file = storage_manager.save_processed_data(
                     df, 'encoding', 'step3_vectorized_data.csv',
-                    metadata={'step': 'vectorization', 'embeddings_shape': embeddings.shape}
+                    metadata={
+                        'step': 'vectorization', 
+                        'encoder_type': selected_encoder_type,
+                        'embeddings_shape': embeddings.shape
+                    }
                 )
                 self.step3_data_file = data_file
                 self.step3_embeddings_file = embeddings_file
                 
                 self.root.after(0, lambda: self.step3_progress.config(value=100))
                 self.root.after(0, lambda: self.step3_status.config(
-                    text=f"✅ 向量處理完成 ({embeddings.shape[0]} 個向量, 維度: {embeddings.shape[1]})",
+                    text=f"✅ {selected_encoder_type.upper()}向量處理完成 ({embeddings.shape[0]} 個向量, 維度: {embeddings.shape[1]})",
                     foreground=COLORS['success']
                 ))
                 
@@ -612,7 +691,7 @@ class MainApplication:
                 self.root.after(0, lambda: self.step4_btn.config(state='normal'))
                 self.root.after(0, lambda: self.step4_status.config(text="準備就緒", foreground=COLORS['info']))
                 self.root.after(0, lambda: self.overall_progress.config(value=75))
-                self.root.after(0, lambda: self.overall_status.config(text="步驟3完成 - 向量處理完成"))
+                self.root.after(0, lambda: self.overall_status.config(text=f"步驟3完成 - {selected_encoder_type.upper()}向量處理完成"))
                 
             except Exception as e:
                 error_msg = str(e)
@@ -655,14 +734,28 @@ class MainApplication:
                 # 準備組合機制列表
                 attention_combinations = []
                 if self.enable_combinations.get():
-                    attention_combinations = [
-                        {'similarity': 0.5, 'self': 0.5},
-                        {'similarity': 0.5, 'keyword': 0.5},
-                        {'self': 0.5, 'keyword': 0.5},
-                        {'similarity': 0.33, 'self': 0.33, 'keyword': 0.34}
-                    ]
+                    # 檢查是否使用智能權重學習
+                    if hasattr(self, 'use_adaptive_weights') and self.use_adaptive_weights.get():
+                        # 如果已有學習到的最佳權重，使用它們
+                        if hasattr(self, 'learned_weights') and self.learned_weights:
+                            learned_combo = self.learned_weights.copy()
+                            learned_combo['_is_learned'] = True  # 標記為智能學習權重
+                            attention_combinations = [learned_combo]
+                        else:
+                            # 使用預設權重，稍後會被智能學習替代
+                            attention_combinations = [
+                                {'similarity': 0.33, 'self': 0.33, 'keyword': 0.34}
+                            ]
+                    else:
+                        # 使用固定權重組合
+                        attention_combinations = [
+                            {'similarity': 0.5, 'self': 0.5},
+                            {'similarity': 0.5, 'keyword': 0.5},
+                            {'self': 0.5, 'keyword': 0.5},
+                            {'similarity': 0.33, 'self': 0.33, 'keyword': 0.34}
+                        ]
                 
-                output_dir = self.run_manager.get_run_dir()
+                output_dir = self.run_manager.get_run_dir(self.encoder_type.get())
                 self.root.after(0, lambda: self.step4_progress.config(value=40))
                 
                 # 執行分析
@@ -931,12 +1024,38 @@ class MainApplication:
                 recall = result.get('test_recall', 0) * 100
                 train_time = result.get('training_time', 0)
                 
+                # 獲取宏平均指標
+                precision_macro = result.get('test_precision_macro', 0) * 100
+                recall_macro = result.get('test_recall_macro', 0) * 100
+                f1_macro = result.get('test_f1_macro', 0) * 100
+                
                 report.append(f"🔹 {display_name}")
                 report.append(f"   準確率: {accuracy:.4f}%")
-                report.append(f"   F1分數: {f1_score:.4f}%")
-                report.append(f"   精確率: {precision:.4f}%")
-                report.append(f"   召回率: {recall:.4f}%")
+                report.append(f"   F1分數 (加權): {f1_score:.4f}%")
+                report.append(f"   F1分數 (宏平均): {f1_macro:.4f}%")
+                report.append(f"   精確率 (加權): {precision:.4f}%")
+                report.append(f"   精確率 (宏平均): {precision_macro:.4f}%")
+                report.append(f"   召回率 (加權): {recall:.4f}%")
+                report.append(f"   召回率 (宏平均): {recall_macro:.4f}%")
                 report.append(f"   訓練時間: {train_time:.4f} 秒")
+                
+                # 如果是組合注意力，顯示權重配置
+                if 'combined' in mechanism.lower() or 'combination' in mechanism.lower():
+                    weights_info = result.get('attention_weights', {})
+                    if weights_info:
+                        report.append(f"   🎯 注意力權重配置:")
+                        for weight_name, weight_value in weights_info.items():
+                            if isinstance(weight_value, (int, float)):
+                                report.append(f"      {weight_name}: {weight_value:.4f}")
+                    
+                    # 檢查是否有智能學習的權重
+                    learned_weights = result.get('learned_weights')
+                    if learned_weights:
+                        report.append(f"   🧠 智能學習權重:")
+                        for weight_name, weight_value in learned_weights.items():
+                            if isinstance(weight_value, (int, float)):
+                                report.append(f"      {weight_name}: {weight_value:.4f}")
+                
                 report.append("")
             
             # 顯示報告
@@ -1383,13 +1502,152 @@ class MainApplication:
         """執行交叉驗證"""
         messagebox.showinfo("功能提示", "交叉驗證功能將在後續版本中實現")
     
+    def show_encoder_info(self):
+        """顯示編碼器資訊"""
+        info = """編碼器類型說明：
+
+🔤 BERT: 雙向編碼器，適合理解上下文
+• 特點：預訓練效果佳，準確率高
+• 適用：一般文本分析任務
+
+🤖 GPT: 生成式預訓練模型
+• 特點：強大的語言建模能力
+• 適用：文本生成和理解任務
+
+🔄 T5: Text-to-Text 轉換模型
+• 特點：統一的文本處理框架
+• 適用：多種NLP任務
+
+📊 CNN: 卷積神經網路
+• 特點：快速、輕量級
+• 適用：大規模文本分類
+
+🧠 ELMo: 深度雙向語言模型
+• 特點：上下文敏感的詞向量
+• 適用：需要詳細語言理解的任務
+
+🔄 RoBERTa: 強化版BERT
+• 特點：更好的預訓練策略
+• 適用：需要高準確率的任務
+
+⚡ DistilBERT: 輕量版BERT
+• 特點：速度快、資源消耗少
+• 適用：實時應用或資源受限環境"""
+        
+        messagebox.showinfo("編碼器說明", info)
+    
+    def show_classifier_info(self):
+        """顯示分類器資訊"""
+        info = """分類器類型說明：
+
+🚀 XGBoost: 極端梯度提升
+• 特點：高準確率、支援GPU加速
+• 適用：結構化數據分類
+
+📈 Logistic Regression: 邏輯回歸
+• 特點：簡單、可解釋性強
+• 適用：線性可分問題
+
+🌳 Random Forest: 隨機森林
+• 特點：防止過擬合、穩定性好
+• 適用：複雜特徵關係
+
+🎯 SVM Linear: 線性支援向量機
+• 特點：在高維空間表現良好
+• 適用：文本分類任務
+
+🎲 Naive Bayes: 樸素貝葉斯
+• 特點：快速、適合小數據集
+• 適用：文本分類的基準模型"""
+        
+        messagebox.showinfo("分類器說明", info)
+    
+    def on_adaptive_weights_changed(self):
+        """當智能權重學習選項改變時"""
+        if self.use_adaptive_weights.get():
+            self.weight_config_btn.config(state='normal')
+        else:
+            self.weight_config_btn.config(state='disabled')
+    
+    def show_weight_config(self):
+        """顯示權重配置窗口"""
+        from gui.weight_config_window import WeightConfigWindow
+        WeightConfigWindow(self.root, self)
+    
+    def restart_application(self):
+        """重製程式"""
+        import sys
+        import os
+        from tkinter import messagebox
+        
+        # 確認對話框
+        result = messagebox.askyesno(
+            "確認重製", 
+            "確定要重製程式嗎？\n\n這將會：\n• 關閉當前程式\n• 清除所有處理進度\n• 重新啟動程式\n• 回到初始狀態",
+            icon='warning'
+        )
+        
+        if result:
+            try:
+                # 顯示重啟訊息
+                self.overall_status.config(text="正在重製程式...", foreground=COLORS['warning'])
+                self.root.update()
+                
+                # 獲取當前程式路徑
+                if getattr(sys, 'frozen', False):
+                    # 如果是打包的執行檔
+                    program_path = sys.executable
+                    args = []
+                else:
+                    # 如果是Python腳本
+                    program_path = sys.executable
+                    main_script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'Part05_Main.py')
+                    if os.path.exists(main_script):
+                        args = [main_script]
+                    else:
+                        # 尋找主程式檔案
+                        possible_mains = ['Part05_Main.py', 'main.py', 'gui_main.py']
+                        main_script = None
+                        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                        
+                        for main_name in possible_mains:
+                            test_path = os.path.join(base_dir, main_name)
+                            if os.path.exists(test_path):
+                                main_script = test_path
+                                break
+                        
+                        if main_script:
+                            args = [main_script]
+                        else:
+                            # 如果找不到主程式，使用當前模組
+                            args = ['-m', 'gui.main_window']
+                
+                # 關閉當前視窗
+                self.root.quit()
+                self.root.destroy()
+                
+                # 啟動新程式
+                import subprocess
+                subprocess.Popen([program_path] + args)
+                
+                # 結束當前程式
+                sys.exit(0)
+                
+            except Exception as e:
+                # 如果重啟失敗，顯示錯誤訊息
+                messagebox.showerror(
+                    "重製失敗", 
+                    f"程式重製失敗：{str(e)}\n\n請手動關閉程式並重新啟動。"
+                )
+                self.overall_status.config(text="重製失敗", foreground=COLORS['error'])
+    
     def create_run_dir_label(self):
         """創建run目錄標籤"""
         self.run_dir_frame = ttk.Frame(self.root)
         self.run_dir_frame.pack(side='bottom', fill='x', padx=15, pady=(0, 10))
         
         self.run_dir_label = ttk.Label(self.run_dir_frame, 
-                                     text=f"當前輸出目錄: {self.run_manager.get_run_dir()}",
+                                     text=f"當前輸出目錄: {self.run_manager.get_run_dir('bert')}",
                                      font=('TkDefaultFont', 8))
         self.run_dir_label.pack(anchor='w')
 

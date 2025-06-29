@@ -431,6 +431,8 @@ class SentimentClassifier:
         }
         
         results['timing_info'] = timing_info
+        # 為了向後兼容，也直接設定 training_time 鍵
+        results['training_time'] = train_time
         
         # 保存預測結果詳細信息
         # 將編碼的標籤轉換回原始標籤名稱
@@ -649,6 +651,24 @@ class SentimentClassifier:
             y_test, test_pred, average='weighted'
         )
         
+        # 額外計算：也計算macro平均，用於比較
+        test_precision_macro, test_recall_macro, test_f1_macro, _ = precision_recall_fscore_support(
+            y_test, test_pred, average='macro'
+        )
+        
+        print(f"🔍 加權平均 vs 宏平均比較：")
+        print(f"   精確率 - 加權: {test_precision:.6f}, 宏: {test_precision_macro:.6f}")
+        print(f"   召回率 - 加權: {test_recall:.6f}, 宏: {test_recall_macro:.6f}")
+        print(f"   F1分數 - 加權: {test_f1:.6f}, 宏: {test_f1_macro:.6f}")
+        
+        # 解釋為什麼指標可能相同
+        if abs(test_accuracy - test_precision) < 0.001 and abs(test_accuracy - test_recall) < 0.001:
+            print(f"⚠️  注意：準確率、精確率、召回率非常接近，可能原因：")
+            print(f"   1. 數據集高度平衡")
+            print(f"   2. 模型性能極佳")
+            print(f"   3. 使用加權平均導致指標趨同")
+            print(f"   建議查看宏平均和各類別指標以獲得更詳細分析")
+        
         # 混淆矩陣
         confusion_mat = confusion_matrix(y_test, test_pred)
         
@@ -665,6 +685,35 @@ class SentimentClassifier:
             y_test, test_pred, target_names=class_names, output_dict=True
         )
         
+        # 調試輸出：詳細分析為什麼指標相同
+        print(f"🔍 指標調試：")
+        print(f"   測試準確率: {test_accuracy:.6f}")
+        print(f"   測試精確率: {test_precision:.6f}")
+        print(f"   測試召回率: {test_recall:.6f}")
+        print(f"   測試F1分數: {test_f1:.6f}")
+        
+        # 檢查類別分佈
+        unique_labels, counts = np.unique(y_test, return_counts=True)
+        print(f"🔍 測試集類別分佈: {dict(zip(unique_labels, counts))}")
+        
+        # 檢查混淆矩陣對角線
+        print(f"🔍 混淆矩陣:")
+        print(confusion_mat)
+        
+        # 計算每個類別的精確率和召回率
+        per_class_precision, per_class_recall, per_class_f1, support = precision_recall_fscore_support(
+            y_test, test_pred, average=None
+        )
+        print(f"🔍 各類別精確率: {per_class_precision}")
+        print(f"🔍 各類別召回率: {per_class_recall}")
+        print(f"🔍 各類別F1分數: {per_class_f1}")
+        print(f"🔍 各類別支持數: {support}")
+        
+        # 檢查是否所有預測都相同
+        unique_preds = np.unique(test_pred)
+        print(f"🔍 預測值種類: {unique_preds}")
+        print(f"🔍 預測準確率分佈: {np.bincount(test_pred) / len(test_pred)}")
+        
         return {
             'train_accuracy': float(train_accuracy),
             'test_accuracy': float(test_accuracy),
@@ -674,10 +723,19 @@ class SentimentClassifier:
             'test_recall': float(test_recall),
             'train_f1': float(train_f1),
             'test_f1': float(test_f1),
+            # 額外提供宏平均指標以供比較
+            'test_precision_macro': float(test_precision_macro),
+            'test_recall_macro': float(test_recall_macro),
+            'test_f1_macro': float(test_f1_macro),
             'confusion_matrix': confusion_mat.tolist(),
             'classification_report': classification_rep,
             'class_names': class_names.tolist() if hasattr(class_names, 'tolist') else list(class_names),
-            'model_type': self.model_type
+            'model_type': self.model_type,
+            # 每個類別的詳細指標
+            'per_class_precision': per_class_precision.tolist(),
+            'per_class_recall': per_class_recall.tolist(),
+            'per_class_f1': per_class_f1.tolist(),
+            'per_class_support': support.tolist()
         }
     
     def _compare_mechanisms(self, evaluation_results: Dict[str, Dict]) -> Dict[str, Any]:

@@ -31,12 +31,16 @@ class StorageManager:
             run_dir: run資料夾路徑
         """
         self.run_dir = Path(run_dir)
+        # 初始化基本子目錄（統一使用02_encoding）
         self.subdirs = {
             'preprocessing': self.run_dir / '01_preprocessing',
-            'encoding': self.run_dir / '02_bert_encoding',
+            'encoding': self.run_dir / '02_encoding',  # 統一編碼目錄
             'attention': self.run_dir / '03_attention_testing',
             'analysis': self.run_dir / '04_analysis'
         }
+        
+        # 編碼器特定的子目錄緩存
+        self._encoder_subdirs = {}
         
         # 創建所有子目錄
         self._ensure_directories()
@@ -50,7 +54,18 @@ class StorageManager:
         for subdir in self.subdirs.values():
             subdir.mkdir(parents=True, exist_ok=True)
         
+        # 確保編碼器特定目錄也存在
+        for subdir in self._encoder_subdirs.values():
+            subdir.mkdir(parents=True, exist_ok=True)
+        
         logger.info(f"📁 已確保run目錄結構存在: {self.run_dir}")
+    
+    def get_encoding_dir(self, encoder_type: str = 'bert') -> Path:
+        """獲取統一的編碼目錄"""
+        # 所有編碼器統一使用 02_encoding 目錄
+        encoding_dir = self.run_dir / '02_encoding'
+        encoding_dir.mkdir(parents=True, exist_ok=True)
+        return encoding_dir
     
     def _load_file_registry(self):
         """載入文件記錄"""
@@ -128,7 +143,9 @@ class StorageManager:
             str: 儲存的檔案路徑
         """
         filename = f"02_{encoder_type}_embeddings.npy"
-        output_path = self.subdirs['encoding'] / filename
+        # 使用編碼器特定的目錄
+        encoding_dir = self.get_encoding_dir(encoder_type)
+        output_path = encoding_dir / filename
         
         # 儲存特徵向量
         np.save(output_path, embeddings)
@@ -232,22 +249,33 @@ class StorageManager:
         """
         filename = f"02_{encoder_type}_embeddings.npy"
         
-        # 先檢查當前run目錄
-        current_path = self.subdirs['encoding'] / filename
+        # 檢查統一的編碼目錄
+        encoding_dir = self.get_encoding_dir(encoder_type)
+        current_path = encoding_dir / filename
         if current_path.exists():
             logger.info(f"🔍 發現當前run中的{encoder_type.upper()}特徵向量: {current_path}")
             return str(current_path)
         
-        # 檢查其他run目錄（如果需要的話）
+        # 檢查其他run目錄中的編碼檔案
         parent_dir = self.run_dir.parent
         if parent_dir.exists():
             for run_folder in parent_dir.glob('run_*'):
                 if run_folder.is_dir() and run_folder != self.run_dir:
-                    other_embedding = run_folder / '02_bert_encoding' / filename
-                    if other_embedding.exists():
-                        logger.info(f"🔍 在其他run中發現{encoder_type.upper()}特徵向量: {other_embedding}")
-                        # 可以選擇複製到當前run或直接使用
-                        return str(other_embedding)
+                    # 檢查新的統一目錄結構
+                    other_encoding_dir = run_folder / '02_encoding'
+                    if other_encoding_dir.exists():
+                        other_embedding = other_encoding_dir / filename
+                        if other_embedding.exists():
+                            logger.info(f"🔍 在其他run中發現{encoder_type.upper()}特徵向量: {other_embedding}")
+                            return str(other_embedding)
+                    
+                    # 向後兼容：檢查舊的BERT專用目錄
+                    old_bert_dir = run_folder / '02_bert_encoding'
+                    if old_bert_dir.exists():
+                        old_embedding = old_bert_dir / filename
+                        if old_embedding.exists():
+                            logger.info(f"🔍 在舊BERT目錄中發現{encoder_type.upper()}特徵向量: {old_embedding}")
+                            return str(old_embedding)
         
         return None
     

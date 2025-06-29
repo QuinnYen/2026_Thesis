@@ -127,11 +127,11 @@ class AttentionProcessor:
             if self.progress_callback:
                 self.progress_callback('status', f'✅ 使用文本欄位: {text_column}')
             
-            # 3. 初始化BERT編碼器和獲取特徵向量
-            print(f"\n🤖 步驟 3/{total_steps}: 處理BERT特徵向量...")
+            # 3. 初始化編碼器和獲取特徵向量
+            print(f"\n🤖 步驟 3/{total_steps}: 處理{self.encoder_type.upper()}特徵向量...")
             if self.progress_callback:
                 self.progress_callback('phase', {
-                    'phase_name': '處理BERT特徵向量',
+                    'phase_name': f'處理{self.encoder_type.upper()}特徵向量',
                     'current_phase': 3,
                     'total_phases': total_steps
                 })
@@ -230,41 +230,59 @@ class AttentionProcessor:
     
     def _get_embeddings(self, df: pd.DataFrame, text_column: str, encoder_type: str = 'bert') -> np.ndarray:
         """獲取或生成文本特徵向量，支援多種編碼器"""
-        # 檢查編碼目錄是否已存在特徵向量文件
+        # 使用儲存管理器檢查已存在的特徵向量
         embeddings_file = None
-        if self.output_dir:
-            # 確定run目錄
+        if self.storage_manager:
+            existing_path = self.storage_manager.check_existing_embeddings(encoder_type)
+            if existing_path:
+                embeddings_file = existing_path
+        elif self.output_dir:
+            # 舊版本兼容：手動檢查編碼目錄
             if any(subdir in self.output_dir for subdir in ["01_preprocessing", "02_bert_encoding", "02_encoding", "03_attention_testing", "04_analysis"]):
                 run_dir = os.path.dirname(self.output_dir)
             else:
                 run_dir = self.output_dir
             
-            # 支援新舊兩種目錄結構
-            # 新結構: 02_encoding/02_{encoder_type}_embeddings.npy
-            # 舊結構: 02_bert_encoding/02_bert_embeddings.npy
-            encoding_dirs = [
-                os.path.join(run_dir, "02_encoding"),        # 新的模組化架構
-                os.path.join(run_dir, "02_bert_encoding")    # 舊的BERT專用結構
-            ]
-            
-            for encoding_dir in encoding_dirs:
+            # 使用儲存管理器獲取編碼器特定目錄
+            try:
+                from ..config.paths import get_path_config
+                path_config = get_path_config()
+                encoding_dir_name = path_config.get_subdirectory_name("encoding", encoder_type)
+                encoding_dir = os.path.join(run_dir, encoding_dir_name)
+                
                 if os.path.exists(encoding_dir):
-                    # 嘗試不同的檔案命名模式
-                    possible_files = [
-                        f"02_{encoder_type}_embeddings.npy",  # 新的模組化命名
-                        "02_bert_embeddings.npy",             # 舊的BERT命名
-                        f"{encoder_type}_embeddings.npy",     # 簡化命名
-                        "embeddings.npy"                      # 通用命名
-                    ]
-                    
-                    for filename in possible_files:
-                        candidate_file = os.path.join(encoding_dir, filename)
-                        if os.path.exists(candidate_file):
-                            embeddings_file = candidate_file
+                    # 使用配置獲取正確的檔案模式
+                    embeddings_pattern = path_config.get_file_pattern("embeddings", encoder_type)
+                    candidate_file = os.path.join(encoding_dir, embeddings_pattern)
+                    if os.path.exists(candidate_file):
+                        embeddings_file = candidate_file
+                        logger.info(f"找到{encoder_type.upper()}特徵向量檔案: {candidate_file}")
+                        
+            except Exception as e:
+                logger.warning(f"使用配置檢查特徵向量時發生錯誤: {e}")
+                # 回退到舊的檢查方式
+                encoding_dirs = [
+                    os.path.join(run_dir, f"02_{encoder_type}_encoding"),
+                    os.path.join(run_dir, "02_bert_encoding")
+                ]
+                
+                for encoding_dir in encoding_dirs:
+                    if os.path.exists(encoding_dir):
+                        possible_files = [
+                            f"02_{encoder_type}_embeddings.npy",
+                            "02_bert_embeddings.npy",
+                            f"{encoder_type}_embeddings.npy",
+                            "embeddings.npy"
+                        ]
+                        
+                        for filename in possible_files:
+                            candidate_file = os.path.join(encoding_dir, filename)
+                            if os.path.exists(candidate_file):
+                                embeddings_file = candidate_file
+                                break
+                        
+                        if embeddings_file:
                             break
-                    
-                    if embeddings_file:
-                        break
             
         # 如果當前目錄沒有，搜索所有run目錄中的特徵向量文件
         existing_embeddings_file = None
@@ -273,17 +291,17 @@ class AttentionProcessor:
             
         if embeddings_file and os.path.exists(embeddings_file):
             print(f"   📂 發現已存在的 {encoder_type.upper()} 特徵向量文件，正在載入...")
-            logger.info(f"載入已存在的特徵向量: {embeddings_file}")
+            logger.info(f"載入已存在的{encoder_type.upper()}特徵向量: {embeddings_file}")
             embeddings = np.load(embeddings_file)
-            print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
-            logger.info(f"特徵向量形狀: {embeddings.shape}")
+            print(f"   ✅ {encoder_type.upper()}特徵向量載入完成 (形狀: {embeddings.shape})")
+            logger.info(f"{encoder_type.upper()}特徵向量形狀: {embeddings.shape}")
         elif existing_embeddings_file:
             print(f"   📂 發現已存在的 {encoder_type.upper()} 特徵向量文件，正在載入...")
             print(f"   📁 來源: {existing_embeddings_file}")
-            logger.info(f"載入已存在的特徵向量: {existing_embeddings_file}")
+            logger.info(f"載入已存在的{encoder_type.upper()}特徵向量: {existing_embeddings_file}")
             embeddings = np.load(existing_embeddings_file)
-            print(f"   ✅ 特徵向量載入完成 (形狀: {embeddings.shape})")
-            logger.info(f"特徵向量形狀: {embeddings.shape}")
+            print(f"   ✅ {encoder_type.upper()}特徵向量載入完成 (形狀: {embeddings.shape})")
+            logger.info(f"{encoder_type.upper()}特徵向量形狀: {embeddings.shape}")
             
             # 將找到的特徵向量複製到當前編碼目錄，以便後續使用
             if self.output_dir and embeddings_file:
@@ -291,10 +309,10 @@ class AttentionProcessor:
                     import shutil
                     os.makedirs(os.path.dirname(embeddings_file), exist_ok=True)
                     shutil.copy2(existing_embeddings_file, embeddings_file)
-                    print(f"   📋 已複製特徵向量到編碼目錄: {embeddings_file}")
-                    logger.info(f"已複製特徵向量到編碼目錄: {embeddings_file}")
+                    print(f"   📋 已複製{encoder_type.upper()}特徵向量到編碼目錄: {embeddings_file}")
+                    logger.info(f"已複製{encoder_type.upper()}特徵向量到編碼目錄: {embeddings_file}")
                 except Exception as e:
-                    logger.warning(f"複製特徵向量文件時發生錯誤: {str(e)}")
+                    logger.warning(f"複製{encoder_type.upper()}特徵向量文件時發生錯誤: {str(e)}")
         else:
             # 生成新的特徵向量（支援多種編碼器）
             print(f"   🔄 未發現已存在的特徵向量，開始生成新的 {encoder_type.upper()} 特徵向量...")
@@ -308,8 +326,8 @@ class AttentionProcessor:
             else:
                 # 對於其他編碼器類型，使用模組化架構
                 try:
-                    from .encoder_factory import EncoderFactory
-                    encoder = EncoderFactory.create_encoder(encoder_type, output_dir=self.output_dir)
+                    from .text_encoders import TextEncoderFactory
+                    encoder = TextEncoderFactory.create_encoder(encoder_type, output_dir=self.output_dir, progress_callback=self.progress_callback)
                 except Exception as e:
                     # 如果模組化架構不可用，回退到BERT
                     print(f"   ⚠️ {encoder_type.upper()} 編碼器不可用 ({e})，回退使用BERT")
@@ -319,6 +337,7 @@ class AttentionProcessor:
                     encoder = self.bert_encoder
                     # 更新編碼器類型以保持一致性
                     self.encoder_type = 'bert'
+                    encoder_type = 'bert'  # 更新區域變數
             
             embeddings = encoder.encode(df[text_column])
             print(f"   ✅ {encoder_type.upper()} 特徵向量生成完成 (形狀: {embeddings.shape})")
@@ -372,43 +391,107 @@ class AttentionProcessor:
                 run_dirs = [item for item in os.listdir(base_dir) if item.startswith('run_')]
                 logger.info(f"找到 {len(run_dirs)} 個run目錄: {run_dirs}")
                 
-                for item in run_dirs:
-                    run_dir = os.path.join(base_dir, item)
-                    if os.path.isdir(run_dir):
-                        logger.info(f"檢查run目錄: {run_dir}")
-                        # 檢查不同的編碼目錄結構
-                        encoding_dirs = [
-                            ('02_encoding', [
-                                f'02_{encoder_type}_embeddings.npy',
-                                f'{encoder_type}_embeddings.npy',
-                                'embeddings.npy'
-                            ]),
-                            ('02_bert_encoding', [
-                                f'02_{encoder_type}_embeddings.npy',  # 支援其他編碼器文件
-                                f'{encoder_type}_embeddings.npy',
-                                '02_bert_embeddings.npy',
-                                'bert_embeddings.npy'
-                            ])
-                        ]
-                        
-                        for dir_name, file_patterns in encoding_dirs:
-                            encoding_dir = os.path.join(run_dir, dir_name)
-                            logger.info(f"檢查編碼目錄: {encoding_dir} (存在: {os.path.exists(encoding_dir)})")
-                            if os.path.exists(encoding_dir):
-                                for pattern in file_patterns:
-                                    embeddings_file = os.path.join(encoding_dir, pattern)
+                # 使用路徑配置系統
+                try:
+                    from ..config.paths import get_path_config
+                    path_config = get_path_config()
+                    
+                    for item in run_dirs:
+                        run_dir = os.path.join(base_dir, item)
+                        if os.path.isdir(run_dir):
+                            logger.info(f"檢查run目錄: {run_dir}")
+                            
+                            # 使用統一的編碼目錄結構
+                            try:
+                                encoding_dir_name = path_config.get_subdirectory_name("encoding")
+                                encoding_dir = os.path.join(run_dir, encoding_dir_name)
+                                logger.info(f"檢查編碼目錄: {encoding_dir} (存在: {os.path.exists(encoding_dir)})")
+                                
+                                if os.path.exists(encoding_dir):
+                                    embeddings_pattern = path_config.get_file_pattern("embeddings", encoder_type)
+                                    embeddings_file = os.path.join(encoding_dir, embeddings_pattern)
                                     logger.info(f"檢查文件: {embeddings_file} (存在: {os.path.exists(embeddings_file)})")
+                                    
                                     if os.path.exists(embeddings_file):
-                                        # 檢查檔案是否對應正確的編碼器類型
-                                        logger.info(f"驗證文件: {embeddings_file}")
+                                        logger.info(f"驗證文件: {embeddings_file}, 編碼器類型: {encoder_type}")
                                         if self._validate_embeddings_file(embeddings_file, encoder_type):
-                                            # 獲取文件修改時間
                                             mtime = os.path.getmtime(embeddings_file)
                                             embeddings_files.append((embeddings_file, mtime))
                                             logger.info(f"✅ 找到並驗證 {encoder_type.upper()} 特徵向量: {embeddings_file}")
                                         else:
                                             logger.info(f"❌ 文件驗證失敗: {embeddings_file}")
-                                        break
+                                
+                            except Exception as e:
+                                logger.warning(f"使用配置檢查時發生錯誤: {e}，使用舊方法")
+                                # 回退到舊的檢查方式
+                                encoding_dirs = [
+                                    ('02_encoding', [
+                                        f'02_{encoder_type}_embeddings.npy',
+                                        f'{encoder_type}_embeddings.npy',
+                                        'embeddings.npy'
+                                    ]),
+                                    ('02_bert_encoding', [
+                                        f'02_{encoder_type}_embeddings.npy',
+                                        f'{encoder_type}_embeddings.npy',
+                                        '02_bert_embeddings.npy',
+                                        'bert_embeddings.npy'
+                                    ])
+                                ]
+                                
+                                for dir_name, file_patterns in encoding_dirs:
+                                    encoding_dir = os.path.join(run_dir, dir_name)
+                                    logger.info(f"檢查編碼目錄: {encoding_dir} (存在: {os.path.exists(encoding_dir)})")
+                                    if os.path.exists(encoding_dir):
+                                        for pattern in file_patterns:
+                                            embeddings_file = os.path.join(encoding_dir, pattern)
+                                            logger.info(f"檢查文件: {embeddings_file} (存在: {os.path.exists(embeddings_file)})")
+                                            if os.path.exists(embeddings_file):
+                                                logger.info(f"驗證文件: {embeddings_file}")
+                                                if self._validate_embeddings_file(embeddings_file, encoder_type):
+                                                    mtime = os.path.getmtime(embeddings_file)
+                                                    embeddings_files.append((embeddings_file, mtime))
+                                                    logger.info(f"✅ 找到並驗證 {encoder_type.upper()} 特徵向量: {embeddings_file}")
+                                                else:
+                                                    logger.info(f"❌ 文件驗證失敗: {embeddings_file}")
+                                                break
+                    
+                except ImportError as e:
+                    logger.warning(f"無法導入路徑配置模組: {e}，使用舊方法")
+                    # 完全回退到舊的檢查方式
+                    for item in run_dirs:
+                        run_dir = os.path.join(base_dir, item)
+                        if os.path.isdir(run_dir):
+                            logger.info(f"檢查run目錄: {run_dir}")
+                            encoding_dirs = [
+                                ('02_encoding', [
+                                    f'02_{encoder_type}_embeddings.npy',
+                                    f'{encoder_type}_embeddings.npy',
+                                    'embeddings.npy'
+                                ]),
+                                ('02_bert_encoding', [
+                                    f'02_{encoder_type}_embeddings.npy',
+                                    f'{encoder_type}_embeddings.npy',
+                                    '02_bert_embeddings.npy',
+                                    'bert_embeddings.npy'
+                                ])
+                            ]
+                            
+                            for dir_name, file_patterns in encoding_dirs:
+                                encoding_dir = os.path.join(run_dir, dir_name)
+                                logger.info(f"檢查編碼目錄: {encoding_dir} (存在: {os.path.exists(encoding_dir)})")
+                                if os.path.exists(encoding_dir):
+                                    for pattern in file_patterns:
+                                        embeddings_file = os.path.join(encoding_dir, pattern)
+                                        logger.info(f"檢查文件: {embeddings_file} (存在: {os.path.exists(embeddings_file)})")
+                                        if os.path.exists(embeddings_file):
+                                            logger.info(f"驗證文件: {embeddings_file}")
+                                            if self._validate_embeddings_file(embeddings_file, encoder_type):
+                                                mtime = os.path.getmtime(embeddings_file)
+                                                embeddings_files.append((embeddings_file, mtime))
+                                                logger.info(f"✅ 找到並驗證 {encoder_type.upper()} 特徵向量: {embeddings_file}")
+                                            else:
+                                                logger.info(f"❌ 文件驗證失敗: {embeddings_file}")
+                                            break
             
             # 如果找到文件，返回最新的
             if embeddings_files:

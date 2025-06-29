@@ -34,9 +34,12 @@ class RunManager:
         self.output_base = self.base_dir
         os.makedirs(self.output_base, exist_ok=True)
     
-    def get_run_dir(self) -> str:
+    def get_run_dir(self, encoder_type: str = 'bert') -> str:
         """
         獲取當前執行目錄，如果不存在則創建新的
+        
+        Args:
+            encoder_type: 編碼器類型，用於創建編碼器特定目錄
         
         Returns:
             str: 當前執行目錄的路徑
@@ -53,11 +56,16 @@ class RunManager:
             path_config = get_path_config()
             os.makedirs(run_dir, exist_ok=True)
             os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("preprocessing")), exist_ok=True)
-            os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("bert_encoding")), exist_ok=True)
+            
+            # 創建統一的編碼目錄
+            encoding_dir_name = path_config.get_subdirectory_name("encoding")
+            os.makedirs(os.path.join(run_dir, encoding_dir_name), exist_ok=True)
+            
             os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("attention_testing")), exist_ok=True)
             os.makedirs(os.path.join(run_dir, path_config.get_subdirectory_name("analysis")), exist_ok=True)
             
             logger.info(f"已創建新的執行目錄：{run_dir}")
+            logger.info(f"已創建統一編碼目錄：{encoding_dir_name}")
             
             # 保存當前執行目錄
             self._current_run_dir = run_dir
@@ -76,6 +84,11 @@ class RunManager:
         """獲取BERT編碼目錄"""
         path_config = get_path_config()
         return os.path.join(self.get_run_dir(), path_config.get_subdirectory_name("bert_encoding"))
+    
+    def get_encoding_dir(self, encoder_type: str = 'bert') -> str:
+        """獲取統一的編碼目錄"""
+        path_config = get_path_config()
+        return os.path.join(self.get_run_dir(encoder_type), path_config.get_subdirectory_name("encoding"))
     
     def get_attention_testing_dir(self) -> str:
         """獲取注意力測試目錄"""

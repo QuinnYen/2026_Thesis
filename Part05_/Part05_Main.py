@@ -616,8 +616,19 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                     save_results=False
                 )
                 
-                # 將組合結果添加到基本結果中
-                combination_results[combination_name] = combo_result['combined']
+                # 將組合結果添加到基本結果中，同時保存權重配置
+                combo_data = combo_result['combined'].copy()
+                
+                # 清理並保存權重配置
+                clean_weights = {k: v for k, v in combination.items() if not k.startswith('_')}
+                combo_data['attention_weights'] = clean_weights
+                
+                # 檢查是否為智能學習權重
+                if combination.get('_is_learned', False):
+                    combo_data['learned_weights'] = clean_weights
+                    combo_data['is_learned_weights'] = True
+                
+                combination_results[combination_name] = combo_data
                 # 為了統一格式，也添加到all_attention_types中
                 all_attention_types.append(combination_name)
             
