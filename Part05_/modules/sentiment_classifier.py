@@ -210,12 +210,26 @@ class SentimentClassifier:
         start_time = time.time()
         logger.info("開始準備分類特徵...")
         
-        # 檢查情感標籤欄位
+        # 檢查情感標籤欄位，如果沒有則根據review_stars生成
         if 'sentiment' not in metadata.columns:
-            raise ValueError("元數據中缺少 'sentiment' 欄位")
-        
-        # 提取情感標籤
-        sentiments = metadata['sentiment'].values
+            if 'review_stars' in metadata.columns:
+                logger.info("未找到 'sentiment' 欄位，根據 'review_stars' 生成情感標籤...")
+                # 根據評分生成情感標籤：1-2星=負面, 3星=中性, 4-5星=正面
+                def map_stars_to_sentiment(stars):
+                    if stars <= 2:
+                        return 'negative'
+                    elif stars == 3:
+                        return 'neutral'
+                    else:
+                        return 'positive'
+                
+                sentiments = metadata['review_stars'].apply(map_stars_to_sentiment).values
+                logger.info(f"生成的情感標籤分佈：{pd.Series(sentiments).value_counts().to_dict()}")
+            else:
+                raise ValueError("元數據中缺少 'sentiment' 欄位，且無法找到 'review_stars' 欄位來生成情感標籤")
+        else:
+            # 提取情感標籤
+            sentiments = metadata['sentiment'].values
         
         # 編碼標籤
         encoded_labels = self.label_encoder.fit_transform(sentiments)
@@ -579,11 +593,24 @@ class SentimentClassifier:
         
         # 過濾出有效的注意力機制
         valid_mechanisms = []
+        print(f"🔍 檢查注意力結果，總共 {len(attention_results)} 個項目:")
         for mechanism_name, mechanism_result in attention_results.items():
-            if mechanism_name != 'comparison' and 'aspect_vectors' in mechanism_result:
+            print(f"   - {mechanism_name}: {type(mechanism_result)}")
+            if isinstance(mechanism_result, dict):
+                print(f"     鍵: {list(mechanism_result.keys())}")
+            
+            if mechanism_name != 'comparison' and isinstance(mechanism_result, dict) and 'aspect_vectors' in mechanism_result:
                 valid_mechanisms.append((mechanism_name, mechanism_result))
+                print(f"   ✅ {mechanism_name} 有效，包含aspect_vectors")
+            else:
+                print(f"   ❌ {mechanism_name} 無效或缺少aspect_vectors")
         
         print(f"📊 開始評估 {len(valid_mechanisms)} 種注意力機制的分類性能...")
+        
+        # 如果沒有有效機制，提前返回
+        if len(valid_mechanisms) == 0:
+            print(f"⚠️  警告：沒有找到有效的注意力機制進行分類評估")
+            return {'comparison': {'error': '沒有有效的注意力機制結果'}}
         
         for mechanism_name, mechanism_result in tqdm(valid_mechanisms, desc="評估注意力機制"):
             print(f"   🔍 正在評估 {mechanism_name} 注意力機制...")
@@ -613,6 +640,15 @@ class SentimentClassifier:
             except Exception as e:
                 print(f"      ❌ 評估 {mechanism_name} 時發生錯誤: {str(e)}")
                 logger.error(f"評估 {mechanism_name} 時發生錯誤: {str(e)}")
+                
+                # 即使失敗也記錄錯誤信息
+                evaluation_results[mechanism_name] = {
+                    'error': str(e),
+                    'attention_mechanism': mechanism_name,
+                    'test_accuracy': 0.0,
+                    'test_f1': 0.0,
+                    'training_time': 0.0
+                }
                 continue
         
         # 比較不同注意力機制的性能
@@ -763,6 +799,11 @@ class SentimentClassifier:
         
         for mechanism, results in evaluation_results.items():
             if mechanism == 'comparison':
+                continue
+            
+            # 跳過錯誤的結果，但記錄它們
+            if 'error' in results:
+                print(f"   ⚠️  跳過失敗的機制: {mechanism} (錯誤: {results['error']})")
                 continue
             
             # 添加安全檢查，確保結果包含必要的鍵

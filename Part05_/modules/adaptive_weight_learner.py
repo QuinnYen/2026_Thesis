@@ -57,6 +57,57 @@ class BaseWeightLearner(ABC):
     def get_name(self) -> str:
         """返回學習器名稱"""
         pass
+    
+    def _print_learning_results(self, method_name: str, weights: Dict[str, float], score: float):
+        """在終端機顯著打印權重學習結果"""
+        if not weights:
+            print(f"\n⚠️  {method_name} 學習失敗，無有效權重")
+            return
+        
+        print("\n" + "🔥" * 50)
+        print("🧠 智能權重學習完成！")
+        print("🔥" * 50)
+        print(f"🎯 學習方法: {method_name}")
+        print(f"📈 學習分數: {score:.6f}")
+        print(f"⭐ 最佳權重配置:")
+        
+        # 計算權重統計
+        weights_list = list(weights.values())
+        total_weight = sum(weights_list)
+        
+        # 按權重大小排序顯示
+        sorted_weights = sorted(weights.items(), key=lambda x: x[1], reverse=True)
+        
+        for i, (mechanism, weight) in enumerate(sorted_weights):
+            percentage = (weight / total_weight) * 100 if total_weight > 0 else 0
+            rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else "🔸"
+            print(f"   {rank_emoji} {mechanism}: {weight:.6f} ({percentage:.2f}%)")
+        
+        # 顯示權重分布分析
+        if len(weights_list) > 1:
+            max_weight = max(weights_list)
+            min_weight = min(weights_list)
+            weight_range = max_weight - min_weight
+            dominant_mechanism = max(weights.items(), key=lambda x: x[1])
+            
+            print(f"\n📊 權重分布分析:")
+            print(f"   • 主導機制: {dominant_mechanism[0]} ({dominant_mechanism[1]*100:.2f}%)")
+            print(f"   • 權重範圍: {weight_range:.6f}")
+            print(f"   • 權重分布: {'均衡' if weight_range < 0.3 else '偏向' if weight_range < 0.6 else '極端偏向'}")
+        
+        # 顯示權重建議
+        print(f"\n💡 權重應用建議:")
+        if max(weights_list) > 0.7:
+            print(f"   • 系統偏向單一注意力機制，建議關注主導機制的性能")
+        elif max(weights_list) < 0.4:
+            print(f"   • 權重分布均衡，各機制協同工作效果較好")
+        else:
+            print(f"   • 存在明顯的主次關係，建議優化主導機制")
+        
+        print("🔥" * 50)
+        
+        # 記錄到日誌
+        logger.info(f"智能權重學習結果 - {method_name}: {weights}, 分數: {score:.6f}")
 
 class GridSearchWeightLearner(BaseWeightLearner):
     """網格搜索權重學習器"""
@@ -182,6 +233,9 @@ class GridSearchWeightLearner(BaseWeightLearner):
         
         logger.info(f"網格搜索完成，最佳權重: {best_weights}, 最佳分數: {best_score:.4f}")
         
+        # 在終端機顯著打印學習結果
+        self._print_learning_results("網格搜索 (Grid Search)", best_weights, best_score)
+        
         return best_weights
 
 class GeneticAlgorithmWeightLearner(BaseWeightLearner):
@@ -292,6 +346,9 @@ class GeneticAlgorithmWeightLearner(BaseWeightLearner):
         self.best_score = -result.fun  # 轉回正值
         
         logger.info(f"遺傳算法完成，最佳權重: {best_weights}, 最佳分數: {self.best_score:.4f}")
+        
+        # 在終端機顯著打印學習結果
+        self._print_learning_results("遺傳算法 (Genetic Algorithm)", best_weights, self.best_score)
         
         return best_weights
 
@@ -414,6 +471,9 @@ class BayesianOptimizationWeightLearner(BaseWeightLearner):
         
         logger.info(f"貝葉斯優化完成，最佳權重: {best_weights}, 最佳分數: {self.best_score:.4f}")
         
+        # 在終端機顯著打印學習結果
+        self._print_learning_results("貝葉斯優化 (Bayesian Optimization)", best_weights, self.best_score)
+        
         return best_weights
 
 class AdaptiveWeightLearner:
@@ -512,6 +572,18 @@ class AdaptiveWeightLearner:
             self._save_results(results, learner_name)
         
         logger.info(f"權重學習完成，耗時: {results['learning_time']:.2f}秒")
+        
+        # 如果有有效權重，在終端機顯示最終總結
+        if best_weights:
+            print("\n" + "⭐" * 60)
+            print("🎉 智能權重學習任務完成！")
+            print("⭐" * 60)
+            print(f"🏁 總耗時: {results['learning_time']:.2f} 秒")
+            print(f"🎯 最終採用權重:")
+            for mechanism, weight in best_weights.items():
+                print(f"   🔸 {mechanism}: {weight:.6f}")
+            print(f"📈 最終學習分數: {learner.best_score:.6f}")
+            print("⭐" * 60)
         
         return results
     

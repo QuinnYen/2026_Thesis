@@ -627,6 +627,35 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                 if combination.get('_is_learned', False):
                     combo_data['learned_weights'] = clean_weights
                     combo_data['is_learned_weights'] = True
+                    
+                    # 在終端機顯著打印智能學習到的權重
+                    print("\n" + "=" * 80)
+                    print("🧠 智能權重學習結果")
+                    print("=" * 80)
+                    print(f"📊 機制名稱: {combination_name}")
+                    print(f"🎯 學習方法: 智能動態權重學習")
+                    print(f"📈 學習到的最佳權重配置:")
+                    for mechanism, weight in clean_weights.items():
+                        print(f"   • {mechanism}: {weight:.6f} ({weight*100:.2f}%)")
+                    
+                    # 計算權重分布統計
+                    weights_list = list(clean_weights.values())
+                    max_weight = max(weights_list)
+                    min_weight = min(weights_list)
+                    weight_range = max_weight - min_weight
+                    
+                    print(f"\n📊 權重分布統計:")
+                    print(f"   • 最大權重: {max_weight:.6f}")
+                    print(f"   • 最小權重: {min_weight:.6f}")
+                    print(f"   • 權重範圍: {weight_range:.6f}")
+                    print(f"   • 權重總和: {sum(weights_list):.6f}")
+                    
+                    # 顯示主導機制
+                    dominant_mechanism = max(clean_weights.items(), key=lambda x: x[1])
+                    print(f"\n🏆 主導注意力機制: {dominant_mechanism[0]} ({dominant_mechanism[1]*100:.2f}%)")
+                    
+                    print("=" * 80)
+                    logger.info(f"智能學習權重 - {combination_name}: {clean_weights}")
                 
                 combination_results[combination_name] = combo_data
                 # 為了統一格式，也添加到all_attention_types中
@@ -1131,9 +1160,23 @@ def process_cross_validation_analysis(input_file: Optional[str] = None,
         logger.info(f"讀取數據: {input_file}")
         df = pd.read_csv(input_file)
         
-        # 檢查必要欄位
+        # 檢查必要欄位，如果沒有sentiment則嘗試根據review_stars生成
         if 'sentiment' not in df.columns:
-            raise ValueError("數據中缺少 'sentiment' 欄位")
+            if 'review_stars' in df.columns:
+                logger.info("未找到 'sentiment' 欄位，根據 'review_stars' 生成情感標籤...")
+                # 根據評分生成情感標籤：1-2星=負面, 3星=中性, 4-5星=正面
+                def map_stars_to_sentiment(stars):
+                    if stars <= 2:
+                        return 'negative'
+                    elif stars == 3:
+                        return 'neutral'
+                    else:
+                        return 'positive'
+                
+                df['sentiment'] = df['review_stars'].apply(map_stars_to_sentiment)
+                logger.info(f"生成的情感標籤分佈：{df['sentiment'].value_counts().to_dict()}")
+            else:
+                raise ValueError("數據中缺少 'sentiment' 欄位，且無法找到 'review_stars' 欄位來生成情感標籤")
         
         text_column = None
         for col in ['processed_text', 'clean_text', 'text', 'review']:

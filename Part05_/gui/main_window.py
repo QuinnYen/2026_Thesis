@@ -902,25 +902,52 @@ class MainApplication:
             
             print(f"🔍 GUI除錯：最終classification_results的鍵: {list(classification_results.keys())}")
             
-            # 顯示結果
-            for mechanism, result in classification_results.items():
-                accuracy = result.get('test_accuracy', 0) * 100
-                f1_score = result.get('test_f1', 0) * 100
-                train_time = result.get('training_time', 0)
-                
-                # 格式化機制名稱
-                display_name = self._format_mechanism_name(mechanism)
-                
+            # 檢查是否有分類結果
+            if not classification_results:
+                print(f"⚠️  GUI除錯：沒有找到分類結果，可能分析仍在進行中")
+                # 顯示等待訊息
                 self.results_tree.insert('', 'end', values=(
-                    display_name,
-                    f"{accuracy:.4f}%",
-                    f"{f1_score:.4f}%",
-                    f"{train_time:.4f}s"
+                    "正在分析中...",
+                    "待計算",
+                    "待計算", 
+                    "待計算"
                 ))
+                
+                # 嘗試從attention_analysis獲取進度信息
+                attention_analysis = results.get('attention_analysis', {})
+                if attention_analysis:
+                    print(f"🔍 GUI除錯：attention_analysis的鍵: {list(attention_analysis.keys())}")
+                    
+                    # 如果有注意力分析結果，顯示一些基本信息
+                    for mechanism, analysis_result in attention_analysis.items():
+                        if isinstance(analysis_result, dict):
+                            display_name = self._format_mechanism_name(mechanism)
+                            self.results_tree.insert('', 'end', values=(
+                                display_name,
+                                "分析中...",
+                                "分析中...",
+                                "分析中..."
+                            ))
+            else:
+                # 顯示結果
+                for mechanism, result in classification_results.items():
+                    accuracy = result.get('test_accuracy', 0) * 100
+                    f1_score = result.get('test_f1', 0) * 100
+                    train_time = result.get('training_time', 0)
+                    
+                    # 格式化機制名稱
+                    display_name = self._format_mechanism_name(mechanism)
+                    
+                    self.results_tree.insert('', 'end', values=(
+                        display_name,
+                        f"{accuracy:.4f}%",
+                        f"{f1_score:.4f}%",
+                        f"{train_time:.4f}s"
+                    ))
             
             # 獲取摘要信息
             summary = results.get('summary', {})
-            best_mechanism = summary.get('best_attention_mechanism', 'N/A')
+            best_mechanism = summary.get('best_attention_mechanism', None)
             best_accuracy = summary.get('best_classification_accuracy', 0) * 100
             
             # 保存結果供其他頁面使用
@@ -936,7 +963,10 @@ class MainApplication:
             self._update_detailed_results(results)
             
             # 顯示完成訊息到終端
-            print(f"✅ 分析完成！最佳機制: {self._format_mechanism_name(best_mechanism)} ({best_accuracy:.4f}%) | 總耗時: {total_time:.4f}秒")
+            if best_mechanism is not None:
+                print(f"✅ 分析完成！最佳機制: {self._format_mechanism_name(best_mechanism)} ({best_accuracy:.4f}%) | 總耗時: {total_time:.4f}秒")
+            else:
+                print(f"✅ 分析完成！正在處理結果... | 總耗時: {total_time:.4f}秒")
             
         except Exception as e:
             error_msg = f"結果更新失敗: {str(e)}"
@@ -949,6 +979,14 @@ class MainApplication:
     
     def _format_mechanism_name(self, mechanism):
         """格式化注意力機制名稱為中文"""
+        # 處理None值
+        if mechanism is None:
+            return "未知機制"
+        
+        # 確保mechanism是字符串
+        if not isinstance(mechanism, str):
+            mechanism = str(mechanism)
+        
         # 基本機制名稱映射
         name_mapping = {
             'no': '無注意力',
@@ -1040,21 +1078,32 @@ class MainApplication:
                 report.append(f"   訓練時間: {train_time:.4f} 秒")
                 
                 # 如果是組合注意力，顯示權重配置
-                if 'combined' in mechanism.lower() or 'combination' in mechanism.lower():
+                if 'combined' in mechanism.lower() or 'combination' in mechanism.lower() or '組合' in mechanism:
                     weights_info = result.get('attention_weights', {})
-                    if weights_info:
+                    learned_weights = result.get('learned_weights')
+                    is_learned = result.get('is_learned_weights', False)
+                    
+                    if learned_weights or is_learned:
+                        # 優先顯示智能學習的權重
+                        weights_to_show = learned_weights or weights_info
+                        report.append(f"   🧠 智能學習權重 (自動優化):")
+                        
+                        if weights_to_show:
+                            # 按權重大小排序
+                            sorted_weights = sorted(weights_to_show.items(), key=lambda x: x[1], reverse=True)
+                            total_weight = sum(weights_to_show.values())
+                            
+                            for i, (weight_name, weight_value) in enumerate(sorted_weights):
+                                if isinstance(weight_value, (int, float)):
+                                    percentage = (weight_value / total_weight) * 100 if total_weight > 0 else 0
+                                    rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else "🔸"
+                                    report.append(f"      {rank_emoji} {weight_name}: {weight_value:.6f} ({percentage:.2f}%)")
+                    elif weights_info:
+                        # 顯示固定權重配置
                         report.append(f"   🎯 注意力權重配置:")
                         for weight_name, weight_value in weights_info.items():
                             if isinstance(weight_value, (int, float)):
-                                report.append(f"      {weight_name}: {weight_value:.4f}")
-                    
-                    # 檢查是否有智能學習的權重
-                    learned_weights = result.get('learned_weights')
-                    if learned_weights:
-                        report.append(f"   🧠 智能學習權重:")
-                        for weight_name, weight_value in learned_weights.items():
-                            if isinstance(weight_value, (int, float)):
-                                report.append(f"      {weight_name}: {weight_value:.4f}")
+                                report.append(f"      🔸 {weight_name}: {weight_value:.4f}")
                 
                 report.append("")
             

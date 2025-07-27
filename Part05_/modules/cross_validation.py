@@ -220,8 +220,24 @@ class CrossValidationEvaluator:
         """
         print(f"\n🎯 開始注意力機制交叉驗證評估")
         
+        # 檢查情感標籤欄位，如果沒有則根據review_stars生成
         if 'sentiment' not in metadata.columns:
-            raise ValueError("元數據中缺少 'sentiment' 欄位")
+            if 'review_stars' in metadata.columns:
+                print("未找到 'sentiment' 欄位，根據 'review_stars' 生成情感標籤...")
+                # 根據評分生成情感標籤：1-2星=負面, 3星=中性, 4-5星=正面
+                def map_stars_to_sentiment(stars):
+                    if stars <= 2:
+                        return 'negative'
+                    elif stars == 3:
+                        return 'neutral'
+                    else:
+                        return 'positive'
+                
+                metadata = metadata.copy()
+                metadata['sentiment'] = metadata['review_stars'].apply(map_stars_to_sentiment)
+                print(f"生成的情感標籤分佈：{metadata['sentiment'].value_counts().to_dict()}")
+            else:
+                raise ValueError("元數據中缺少 'sentiment' 欄位，且無法找到 'review_stars' 欄位來生成情感標籤")
         
         # 編碼標籤
         if label_encoder is None:
