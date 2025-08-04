@@ -215,7 +215,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         print(f"   • 注意力機制: {', '.join(attention_types)}")
         
         logger.info(f"開始完整的注意力機制分析和分類評估...")
-        logger.info(f"測試的注意力機制: {', '.join(attention_types)}")
+        logger.debug(f"測試的注意力機制: {', '.join(attention_types)}")
         
         # 讀取元數據
         df = pd.read_csv(input_file)
@@ -251,8 +251,8 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
             # 載入已存在的編碼器嵌入向量
             original_embeddings = np.load(embeddings_file)
             print(f"   ✅ 已載入 {encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
-            print(f"   📁 來源檔案: {embeddings_file}")
-            logger.info(f"載入 {encoder_type.upper()} 嵌入向量: {original_embeddings.shape}")
+            logger.debug(f"載入 {encoder_type.upper()} 嵌入向量: {original_embeddings.shape}")
+            logger.debug(f"來源檔案: {embeddings_file}")
         
         if original_embeddings is None:
             # 如果沒有找到，重新生成（向後相容）
@@ -285,7 +285,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
             if text_column:
                 original_embeddings = encoder.encode(df[text_column])
                 print(f"   ✅ {encoder_type.upper()} 嵌入向量生成完成，形狀: {original_embeddings.shape}")
-                logger.info(f"生成的 {encoder_type.upper()} 嵌入向量形狀: {original_embeddings.shape}")
+                logger.debug(f"生成的 {encoder_type.upper()} 嵌入向量形狀: {original_embeddings.shape}")
             else:
                 raise ValueError("無法找到文本欄位來生成嵌入向量")
         
@@ -623,39 +623,6 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                 clean_weights = {k: v for k, v in combination.items() if not k.startswith('_')}
                 combo_data['attention_weights'] = clean_weights
                 
-                # 檢查是否為智能學習權重
-                if combination.get('_is_learned', False):
-                    combo_data['learned_weights'] = clean_weights
-                    combo_data['is_learned_weights'] = True
-                    
-                    # 在終端機顯著打印智能學習到的權重
-                    print("\n" + "=" * 80)
-                    print("🧠 智能權重學習結果")
-                    print("=" * 80)
-                    print(f"📊 機制名稱: {combination_name}")
-                    print(f"🎯 學習方法: 智能動態權重學習")
-                    print(f"📈 學習到的最佳權重配置:")
-                    for mechanism, weight in clean_weights.items():
-                        print(f"   • {mechanism}: {weight:.6f} ({weight*100:.2f}%)")
-                    
-                    # 計算權重分布統計
-                    weights_list = list(clean_weights.values())
-                    max_weight = max(weights_list)
-                    min_weight = min(weights_list)
-                    weight_range = max_weight - min_weight
-                    
-                    print(f"\n📊 權重分布統計:")
-                    print(f"   • 最大權重: {max_weight:.6f}")
-                    print(f"   • 最小權重: {min_weight:.6f}")
-                    print(f"   • 權重範圍: {weight_range:.6f}")
-                    print(f"   • 權重總和: {sum(weights_list):.6f}")
-                    
-                    # 顯示主導機制
-                    dominant_mechanism = max(clean_weights.items(), key=lambda x: x[1])
-                    print(f"\n🏆 主導注意力機制: {dominant_mechanism[0]} ({dominant_mechanism[1]*100:.2f}%)")
-                    
-                    print("=" * 80)
-                    logger.info(f"智能學習權重 - {combination_name}: {clean_weights}")
                 
                 combination_results[combination_name] = combo_data
                 # 為了統一格式，也添加到all_attention_types中
@@ -720,7 +687,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
             if text_column:
                 original_embeddings = encoder.encode(df[text_column])
                 print(f"   ✅ {encoder_type.upper()} 嵌入向量生成完成，形狀: {original_embeddings.shape}")
-                logger.info(f"生成的 {encoder_type.upper()} 嵌入向量形狀: {original_embeddings.shape}")
+                logger.debug(f"生成的 {encoder_type.upper()} 嵌入向量形狀: {original_embeddings.shape}")
             else:
                 raise ValueError("無法找到文本欄位來生成嵌入向量")
         

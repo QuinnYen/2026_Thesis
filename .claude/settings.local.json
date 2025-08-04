@@ -8,7 +8,8 @@
       "Bash(rg:*)",
       "Bash(grep:*)",
       "Bash(rm:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(sed:*)"
     ],
     "deny": []
   }

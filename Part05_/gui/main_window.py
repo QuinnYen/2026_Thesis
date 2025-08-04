@@ -56,16 +56,20 @@ class MainApplication:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=15, pady=15)
         
-        # 創建三個分頁
-        self.create_attention_analysis_tab()  # 新的第一頁：注意力分析
-        self.create_comparison_analysis_tab()  # 結果分析
-        self.create_cross_validation_tab()      # 交叉驗證
+        # 創建四個分頁
+        self.create_attention_analysis_tab()  # 第一頁：數據處理分析
+        self.create_comparison_analysis_tab()  # 第二頁：結果分析
+        self.create_model_config_tab()         # 第三頁：模型配置
+        self.create_cross_validation_tab()     # 第四頁：交叉驗證
         
         # 添加當前run目錄標籤
         self.create_run_dir_label()
         
         # 最大化視窗
         self.root.after(100, self.maximize_window)
+        
+        # 初始化配置顯示
+        self.root.after(200, self._update_config_display)
     
     def get_database_dir(self):
         """取得資料庫目錄路徑"""
@@ -93,8 +97,21 @@ class MainApplication:
         frame1 = ttk.Frame(self.notebook)
         self.notebook.add(frame1, text=" 數據處理分析 ")
         
-        # 主要容器
-        main_frame = ttk.Frame(frame1)
+        # 創建滾動視窗容器
+        canvas = tk.Canvas(frame1)
+        scrollbar = ttk.Scrollbar(frame1, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # 主要內容容器
+        main_frame = ttk.Frame(scrollable_frame)
         main_frame.pack(fill='both', expand=True, padx=15, pady=10)
         
         # 標題
@@ -103,6 +120,22 @@ class MainApplication:
         
         # 建立分步驟處理區域
         self.create_step_sections(main_frame)
+        
+        # 佈局滾動組件
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # 綁定滑鼠滾輪事件
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        # 綁定滑鼠滾輪到畫布和所有子組件
+        def bind_to_mousewheel(widget):
+            widget.bind("<MouseWheel>", _on_mousewheel)
+            for child in widget.winfo_children():
+                bind_to_mousewheel(child)
+        
+        bind_to_mousewheel(frame1)
     
     def create_step_sections(self, parent):
         """建立分步驟處理區域"""
@@ -123,80 +156,76 @@ class MainApplication:
     
     def create_step1_data_import(self, parent):
         """步驟1: 數據導入"""
-        step1_frame = ttk.LabelFrame(parent, text="步驟 1: 數據導入", padding=10)
-        step1_frame.pack(fill='x', pady=(0, 10))
+        step1_frame = ttk.LabelFrame(parent, text="步驟 1: 數據導入", padding=8)
+        step1_frame.pack(fill='x', pady=(0, 8))
         
-        # 配置區域
-        config_row = ttk.Frame(step1_frame)
-        config_row.pack(fill='x', pady=(0, 10))
+        # 配置區域 - 合併成兩行以節省空間
+        config_row1 = ttk.Frame(step1_frame)
+        config_row1.pack(fill='x', pady=(0, 5))
         
-        # 數據集類型
-        ttk.Label(config_row, text="數據集類型:").pack(side='left')
+        # 第一行：數據集類型和檔案選擇
+        ttk.Label(config_row1, text="數據集:").pack(side='left')
         self.dataset_type = tk.StringVar()
-        dataset_combo = ttk.Combobox(config_row, 
+        dataset_combo = ttk.Combobox(config_row1, 
                                    textvariable=self.dataset_type,
                                    values=[DATASETS[ds]['name'] for ds in DATASETS],
                                    state='readonly',
-                                   width=20)
-        dataset_combo.pack(side='left', padx=(5, 20))
+                                   width=15)
+        dataset_combo.pack(side='left', padx=(5, 15))
         dataset_combo.bind('<<ComboboxSelected>>', self.on_dataset_selected)
         
-        # 檔案選擇
-        ttk.Label(config_row, text="數據檔案:").pack(side='left')
+        ttk.Label(config_row1, text="數據檔案:").pack(side='left')
         self.file_path_var = tk.StringVar()
-        file_entry = ttk.Entry(config_row, textvariable=self.file_path_var, width=35)
+        file_entry = ttk.Entry(config_row1, textvariable=self.file_path_var, width=30)
         file_entry.pack(side='left', padx=(5, 5), fill='x', expand=True)
         
-        self.browse_btn = ttk.Button(config_row, text="瀏覽", command=self.browse_file, state='disabled')
+        self.browse_btn = ttk.Button(config_row1, text="瀏覽", command=self.browse_file, state='disabled')
         self.browse_btn.pack(side='left', padx=(5, 0))
         
-        # 抽樣設定
-        sampling_row = ttk.Frame(step1_frame)
-        sampling_row.pack(fill='x', pady=(0, 10))
+        # 第二行：抽樣設定和執行控制
+        config_row2 = ttk.Frame(step1_frame)
+        config_row2.pack(fill='x', pady=(0, 5))
         
         self.enable_sampling = tk.BooleanVar(value=False)
-        sampling_check = ttk.Checkbutton(sampling_row, 
-                                       text="啟用數據抽樣 (推薦大數據集)",
+        sampling_check = ttk.Checkbutton(config_row2, 
+                                       text="啟用抽樣",
                                        variable=self.enable_sampling)
         sampling_check.pack(side='left')
         
-        ttk.Label(sampling_row, text="抽樣數量:").pack(side='left', padx=(20, 5))
+        ttk.Label(config_row2, text="數量:").pack(side='left', padx=(10, 5))
         self.sample_size = tk.IntVar(value=1000)
-        sample_spin = ttk.Spinbox(sampling_row, 
+        sample_spin = ttk.Spinbox(config_row2, 
                                 from_=100, to=10000, increment=100,
                                 textvariable=self.sample_size,
                                 width=8)
-        sample_spin.pack(side='left')
+        sample_spin.pack(side='left', padx=(0, 15))
         
         # 執行按鈕和進度條
-        control_row = ttk.Frame(step1_frame)
-        control_row.pack(fill='x')
-        
-        self.step1_btn = ttk.Button(control_row, text="執行數據導入", 
+        self.step1_btn = ttk.Button(config_row2, text="執行數據導入", 
                                   command=self.run_step1_data_import)
-        self.step1_btn.pack(side='left')
+        self.step1_btn.pack(side='left', padx=(0, 10))
         
-        self.step1_progress = ttk.Progressbar(control_row, length=200, mode='determinate')
-        self.step1_progress.pack(side='left', padx=(10, 10))
+        self.step1_progress = ttk.Progressbar(config_row2, length=150, mode='determinate')
+        self.step1_progress.pack(side='left', padx=(0, 10))
         
-        self.step1_status = ttk.Label(control_row, text="等待執行", foreground=COLORS['info'])
+        self.step1_status = ttk.Label(config_row2, text="等待執行", foreground=COLORS['info'])
         self.step1_status.pack(side='left')
     
     def create_step2_preprocessing(self, parent):
         """步驟2: 數據預處理"""
-        step2_frame = ttk.LabelFrame(parent, text="步驟 2: 數據預處理", padding=10)
-        step2_frame.pack(fill='x', pady=(0, 10))
+        step2_frame = ttk.LabelFrame(parent, text="步驟 2: 數據預處理", padding=8)
+        step2_frame.pack(fill='x', pady=(0, 8))
         
-        # 預處理選項
+        # 預處理選項和執行控制合併成一行
         options_row = ttk.Frame(step2_frame)
-        options_row.pack(fill='x', pady=(0, 10))
+        options_row.pack(fill='x')
         
-        ttk.Label(options_row, text="預處理選項:").pack(side='left')
+        ttk.Label(options_row, text="選項:").pack(side='left')
         
         self.preprocess_options = {}
         options = [
-            ('clean_text', '文本清理'),
-            ('remove_stopwords', '移除停用詞'),
+            ('clean_text', '清理'),
+            ('remove_stopwords', '停用詞'),
             ('lemmatization', '詞形還原'),
             ('handle_negation', '否定處理')
         ]
@@ -205,33 +234,30 @@ class MainApplication:
             var = tk.BooleanVar(value=True)
             self.preprocess_options[key] = var
             check = ttk.Checkbutton(options_row, text=label, variable=var)
-            check.pack(side='left', padx=(5, 10))
+            check.pack(side='left', padx=(5, 8))
         
-        # 執行按鈕和進度條
-        control_row = ttk.Frame(step2_frame)
-        control_row.pack(fill='x')
-        
-        self.step2_btn = ttk.Button(control_row, text="執行數據預處理", 
+        # 執行按鈕和進度條在同一行
+        self.step2_btn = ttk.Button(options_row, text="執行預處理", 
                                   command=self.run_step2_preprocessing, state='disabled')
-        self.step2_btn.pack(side='left')
+        self.step2_btn.pack(side='left', padx=(15, 10))
         
-        self.step2_progress = ttk.Progressbar(control_row, length=200, mode='determinate')
-        self.step2_progress.pack(side='left', padx=(10, 10))
+        self.step2_progress = ttk.Progressbar(options_row, length=120, mode='determinate')
+        self.step2_progress.pack(side='left', padx=(0, 10))
         
-        self.step2_status = ttk.Label(control_row, text="等待上一步完成", foreground=COLORS['info'])
+        self.step2_status = ttk.Label(options_row, text="等待上一步完成", foreground=COLORS['info'])
         self.step2_status.pack(side='left')
     
     def create_step3_vectorization(self, parent):
         """步驟3: 數據向量處理"""
-        step3_frame = ttk.LabelFrame(parent, text="步驟 3: 數據向量處理", padding=10)
-        step3_frame.pack(fill='x', pady=(0, 10))
+        step3_frame = ttk.LabelFrame(parent, text="步驟 3: 數據向量處理", padding=8)
+        step3_frame.pack(fill='x', pady=(0, 8))
         
-        # 編碼器選擇
+        # 編碼器選擇和執行控制合併成一行
         encoder_row = ttk.Frame(step3_frame)
-        encoder_row.pack(fill='x', pady=(0, 10))
+        encoder_row.pack(fill='x')
         
-        ttk.Label(encoder_row, text="編碼器類型:").pack(side='left')
-        # ✅ 修復：動態獲取編碼器工廠中支援的編碼器類型
+        ttk.Label(encoder_row, text="編碼器:").pack(side='left')
+        # ✅ 動態獲取編碼器工廠中支援的編碼器類型
         try:
             from modules.encoder_factory import EncoderFactory
             encoder_options = EncoderFactory.get_available_encoders()
@@ -243,42 +269,40 @@ class MainApplication:
                                    textvariable=self.encoder_type,
                                    values=encoder_options,
                                    state='readonly',
-                                   width=15)
-        encoder_combo.pack(side='left', padx=(5, 10))
+                                   width=12)
+        encoder_combo.pack(side='left', padx=(5, 8))
+        encoder_combo.bind('<<ComboboxSelected>>', lambda e: self._on_config_changed())
         
         # 編碼器說明標籤
         encoder_info_btn = ttk.Button(encoder_row, text="?", width=3,
                                      command=self.show_encoder_info)
-        encoder_info_btn.pack(side='left', padx=(2, 8))
+        encoder_info_btn.pack(side='left', padx=(0, 8))
         
-        ttk.Label(encoder_row, text="最大序列長度:").pack(side='left')
+        ttk.Label(encoder_row, text="序列長度:").pack(side='left')
         self.max_length = tk.IntVar(value=512)
         length_spin = ttk.Spinbox(encoder_row, from_=128, to=512, increment=64,
-                                textvariable=self.max_length, width=8)
-        length_spin.pack(side='left', padx=(5, 0))
+                                textvariable=self.max_length, width=6)
+        length_spin.pack(side='left', padx=(5, 15))
         
-        # 執行按鈕和進度條
-        control_row = ttk.Frame(step3_frame)
-        control_row.pack(fill='x')
-        
-        self.step3_btn = ttk.Button(control_row, text="執行向量處理", 
+        # 執行按鈕和進度條在同一行
+        self.step3_btn = ttk.Button(encoder_row, text="執行向量處理", 
                                   command=self.run_step3_vectorization, state='disabled')
-        self.step3_btn.pack(side='left')
+        self.step3_btn.pack(side='left', padx=(0, 10))
         
-        self.step3_progress = ttk.Progressbar(control_row, length=200, mode='determinate')
-        self.step3_progress.pack(side='left', padx=(10, 10))
+        self.step3_progress = ttk.Progressbar(encoder_row, length=120, mode='determinate')
+        self.step3_progress.pack(side='left', padx=(0, 10))
         
-        self.step3_status = ttk.Label(control_row, text="等待上一步完成", foreground=COLORS['info'])
+        self.step3_status = ttk.Label(encoder_row, text="等待上一步完成", foreground=COLORS['info'])
         self.step3_status.pack(side='left')
     
     def create_step4_analysis(self, parent):
         """步驟4: 注意力機制+面向+分類器"""
-        step4_frame = ttk.LabelFrame(parent, text="步驟 4: 注意力機制分析", padding=10)
-        step4_frame.pack(fill='x', pady=(0, 10))
+        step4_frame = ttk.LabelFrame(parent, text="步驟 4: 注意力機制分析", padding=8)
+        step4_frame.pack(fill='x', pady=(0, 8))
         
-        # 分類器和面向選擇
+        # 第一行：分類器和面向選擇
         classifier_row = ttk.Frame(step4_frame)
-        classifier_row.pack(fill='x', pady=(0, 10))
+        classifier_row.pack(fill='x', pady=(0, 5))
         
         ttk.Label(classifier_row, text="分類器:").pack(side='left')
         self.classifier_type = tk.StringVar(value='xgboost')
@@ -288,13 +312,14 @@ class MainApplication:
                                       textvariable=self.classifier_type,
                                       values=classifier_options,
                                       state='readonly',
-                                      width=18)
-        classifier_combo.pack(side='left', padx=(5, 10))
+                                      width=15)
+        classifier_combo.pack(side='left', padx=(5, 8))
+        classifier_combo.bind('<<ComboboxSelected>>', lambda e: self._on_config_changed())
         
         # 分類器說明標籤
         classifier_info_btn = ttk.Button(classifier_row, text="?", width=3,
                                         command=self.show_classifier_info)
-        classifier_info_btn.pack(side='left', padx=(2, 8))
+        classifier_info_btn.pack(side='left', padx=(0, 8))
         
         ttk.Label(classifier_row, text="面向分類:").pack(side='left')
         self.aspect_classifier_type = tk.StringVar(value='lda')
@@ -304,98 +329,94 @@ class MainApplication:
                                   textvariable=self.aspect_classifier_type,
                                   values=aspect_options,
                                   state='readonly',
-                                  width=15)
+                                  width=12)
         aspect_combo.pack(side='left', padx=(5, 0))
+        aspect_combo.bind('<<ComboboxSelected>>', lambda e: self._on_config_changed())
         
-        # 注意力機制選擇
+        # 第二行：注意力機制選擇（緊湊佈局）
         attention_row = ttk.Frame(step4_frame)
-        attention_row.pack(fill='x', pady=(0, 10))
+        attention_row.pack(fill='x', pady=(0, 5))
         
-        ttk.Label(attention_row, text="注意力機制:").pack(anchor='w')
-        
-        attention_options_frame = ttk.Frame(step4_frame)
-        attention_options_frame.pack(fill='x', pady=(0, 10))
+        ttk.Label(attention_row, text="注意力:").pack(side='left')
         
         self.attention_options = {}
         attention_types = [
-            ('no', '無注意力'),
-            ('similarity', '相似度注意力'),
-            ('keyword', '關鍵詞注意力'),
-            ('self', '自注意力')
+            ('no', '無'),
+            ('similarity', '相似度'),
+            ('keyword', '關鍵詞'),
+            ('self', '自注意力'),
+            ('dynamic', 'GNF動態')
         ]
         
         for key, label in attention_types:
-            var = tk.BooleanVar(value=True)
+            # 只有前四個傳統機制預設啟用，動態機制預設不啟用
+            default_value = key != 'dynamic'
+            var = tk.BooleanVar(value=default_value)
             self.attention_options[key] = var
-            check = ttk.Checkbutton(attention_options_frame, text=label, variable=var)
-            check.pack(side='left', padx=(0, 15))
+            check = ttk.Checkbutton(attention_row, text=label, variable=var,
+                                   command=self._on_config_changed)
+            check.pack(side='left', padx=(5, 8))
         
-        # 組合注意力選項
+        # 第三行：組合選項和智能權重學習
         combo_row = ttk.Frame(step4_frame)
-        combo_row.pack(fill='x', pady=(0, 10))
+        combo_row.pack(fill='x', pady=(0, 5))
         
         self.enable_combinations = tk.BooleanVar(value=True)
-        combo_check = ttk.Checkbutton(combo_row, text="啟用注意力機制組合", 
-                                    variable=self.enable_combinations)
+        combo_check = ttk.Checkbutton(combo_row, text="啟用組合", 
+                                    variable=self.enable_combinations,
+                                    command=self._on_config_changed)
         combo_check.pack(side='left')
         
         # 智能權重學習選項
         self.use_adaptive_weights = tk.BooleanVar(value=False)
-        adaptive_check = ttk.Checkbutton(combo_row, text="使用智能權重學習", 
+        adaptive_check = ttk.Checkbutton(combo_row, text="智能權重學習", 
                                        variable=self.use_adaptive_weights,
                                        command=self.on_adaptive_weights_changed)
-        adaptive_check.pack(side='left', padx=(20, 0))
+        adaptive_check.pack(side='left', padx=(15, 10))
         
         # 權重配置按鈕
         self.weight_config_btn = ttk.Button(combo_row, text="權重配置", 
                                           command=self.show_weight_config, 
                                           state='disabled')
-        self.weight_config_btn.pack(side='left', padx=(10, 0))
+        self.weight_config_btn.pack(side='left', padx=(0, 10))
         
         # 儲存學習到的權重
         self.learned_weights = None
         
-        # 執行按鈕和進度條
+        # 第四行：執行控制
         control_row = ttk.Frame(step4_frame)
         control_row.pack(fill='x')
         
         self.step4_btn = ttk.Button(control_row, text="執行注意力分析", 
                                   command=self.run_step4_analysis, state='disabled')
-        self.step4_btn.pack(side='left')
+        self.step4_btn.pack(side='left', padx=(0, 10))
         
-        self.step4_progress = ttk.Progressbar(control_row, length=200, mode='determinate')
-        self.step4_progress.pack(side='left', padx=(10, 10))
+        self.step4_progress = ttk.Progressbar(control_row, length=150, mode='determinate')
+        self.step4_progress.pack(side='left', padx=(0, 10))
         
         self.step4_status = ttk.Label(control_row, text="等待上一步完成", foreground=COLORS['info'])
         self.step4_status.pack(side='left')
     
     def create_execution_control(self, parent):
         """總體執行控制區域"""
-        control_frame = ttk.LabelFrame(parent, text="總體進度", padding=10)
-        control_frame.pack(fill='x', pady=(10, 0))
+        control_frame = ttk.LabelFrame(parent, text="總體進度", padding=8)
+        control_frame.pack(fill='x', pady=(8, 0))
         
-        # 總體進度條
+        # 總體進度條和重製按鈕合併成一行
         progress_row = ttk.Frame(control_frame)
         progress_row.pack(fill='x')
         
         ttk.Label(progress_row, text="總體進度:").pack(side='left')
-        self.overall_progress = ttk.Progressbar(progress_row, length=400, mode='determinate')
-        self.overall_progress.pack(side='left', padx=(10, 10), fill='x', expand=True)
+        self.overall_progress = ttk.Progressbar(progress_row, length=250, mode='determinate')
+        self.overall_progress.pack(side='left', padx=(5, 10))
         
         self.overall_status = ttk.Label(progress_row, text="準備就緒", foreground=COLORS['info'])
-        self.overall_status.pack(side='left')
+        self.overall_status.pack(side='left', padx=(0, 15))
         
-        # 重製按鈕
-        reset_row = ttk.Frame(control_frame)
-        reset_row.pack(fill='x', pady=(10, 0))
-        
-        self.reset_btn = ttk.Button(reset_row, text="🔄 重製程式", 
-                                   command=self.restart_application,
-                                   style='Accent.TButton')
+        # 重製按鈕在同一行
+        self.reset_btn = ttk.Button(progress_row, text="🔄 重製", 
+                                   command=self.restart_application)
         self.reset_btn.pack(side='right')
-        
-        ttk.Label(reset_row, text="重新開始所有步驟，清除所有數據和結果", 
-                 font=('TkDefaultFont', 8), foreground='gray').pack(side='right', padx=(0, 10))
     
     def create_results_preview_table(self, parent):
         """創建結果預覽表格"""
@@ -733,7 +754,9 @@ class MainApplication:
                 
                 # 準備組合機制列表
                 attention_combinations = []
-                if self.enable_combinations.get():
+                has_dynamic = 'dynamic' in attention_types
+                
+                if self.enable_combinations.get() and not has_dynamic:
                     # 檢查是否使用智能權重學習
                     if hasattr(self, 'use_adaptive_weights') and self.use_adaptive_weights.get():
                         # 如果已有學習到的最佳權重，使用它們
@@ -741,11 +764,13 @@ class MainApplication:
                             learned_combo = self.learned_weights.copy()
                             learned_combo['_is_learned'] = True  # 標記為智能學習權重
                             attention_combinations = [learned_combo]
+                            print("🧠 使用智能學習的注意力權重:", learned_combo)
                         else:
                             # 使用預設權重，稍後會被智能學習替代
                             attention_combinations = [
                                 {'similarity': 0.33, 'self': 0.33, 'keyword': 0.34}
                             ]
+                            print("🧠 使用智能權重學習預設配置")
                     else:
                         # 使用固定權重組合
                         attention_combinations = [
@@ -754,6 +779,10 @@ class MainApplication:
                             {'self': 0.5, 'keyword': 0.5},
                             {'similarity': 0.33, 'self': 0.33, 'keyword': 0.34}
                         ]
+                        print("🔧 使用固定權重組合配置")
+                elif has_dynamic:
+                    # 當選擇動態注意力時，顯示提示信息
+                    print("🎯 檢測到GNF動態權重注意力，將使用神經網路自適應權重調整")
                 
                 output_dir = self.run_manager.get_run_dir(self.encoder_type.get())
                 self.root.after(0, lambda: self.step4_progress.config(value=40))
@@ -959,8 +988,6 @@ class MainApplication:
             # 自動切換到第二頁顯示結果
             self.notebook.select(1)  # 切換到第二頁（索引為1）
             
-            # 更新第二頁的詳細結果
-            self._update_detailed_results(results)
             
             # 顯示完成訊息到終端
             if best_mechanism is not None:
@@ -993,7 +1020,9 @@ class MainApplication:
             'similarity': '相似度注意力',
             'keyword': '關鍵詞注意力', 
             'self': '自注意力',
-            'combined': '組合注意力'
+            'combined': '組合注意力',
+            'dynamic': 'GNF動態權重',
+            'dynamic_combined': 'GNF動態權重'
         }
         
         # 如果是基本機制名稱，直接映射
@@ -1011,108 +1040,209 @@ class MainApplication:
         # 其他情況直接返回原名稱
         return mechanism
     
-    def _update_detailed_results(self, results):
-        """更新第二頁的詳細結果顯示"""
+    def _on_config_changed(self):
+        """當配置變更時的回調函數"""
+        # 延遲更新以避免過於頻繁的刷新
+        if hasattr(self, '_config_update_timer'):
+            self.root.after_cancel(self._config_update_timer)
+        self._config_update_timer = self.root.after(500, self._update_config_display)
+    
+    def _update_config_display(self):
+        """更新當前模型配置顯示"""
         try:
-            print(f"🔍 GUI除錯：開始更新詳細結果...")
-            
             # 清空文字區域
-            self.analysis_text.delete('1.0', tk.END)
+            self.config_text.delete('1.0', tk.END)
             
-            # 獲取結果數據
-            classification_evaluation = results.get('classification_evaluation', {})
+            config_info = []
+            config_info.append("🔧 當前模型配置")
+            config_info.append("=" * 50)
+            config_info.append("")
             
-            # 從 classification_evaluation 中過濾出機制結果（排除 'comparison' 鍵）
-            classification_results = {}
-            for key, value in classification_evaluation.items():
-                if key != 'comparison' and isinstance(value, dict):
-                    classification_results[key] = value
+            # 1. 注意力機制配置
+            config_info.append("🎯 注意力機制設定")
+            config_info.append("-" * 25)
             
-            # 如果沒有找到，嘗試舊格式
-            if not classification_results:
-                classification_results = results.get('classification_results', {})
-            summary = results.get('summary', {})
+            # 獲取當前選擇的注意力機制
+            selected_mechanisms = []
+            for mechanism, var in self.attention_options.items():
+                if var.get():
+                    selected_mechanisms.append(self._format_mechanism_name(mechanism))
             
-            # 構建詳細報告
-            report = []
-            report.append("=" * 60)
-            report.append("情感分析 - 注意力機制比較分析報告")
-            report.append("=" * 60)
-            report.append("")
+            if selected_mechanisms:
+                config_info.append(f"已選擇機制: {', '.join(selected_mechanisms)}")
+            else:
+                config_info.append("已選擇機制: 無")
             
-            # 摘要資訊
-            if summary:
-                report.append("📊 分析摘要")
-                report.append("-" * 30)
-                best_mechanism = summary.get('best_attention_mechanism', 'N/A')
-                best_accuracy = summary.get('best_classification_accuracy', 0) * 100
-                report.append(f"最佳注意力機制: {self._format_mechanism_name(best_mechanism)}")
-                report.append(f"最佳準確率: {best_accuracy:.4f}%")
-                report.append("")
-            
-            # 詳細結果
-            report.append("📈 各機制詳細表現")
-            report.append("-" * 30)
-            
-            for mechanism, result in classification_results.items():
-                display_name = self._format_mechanism_name(mechanism)
-                accuracy = result.get('test_accuracy', 0) * 100
-                f1_score = result.get('test_f1', 0) * 100
-                precision = result.get('test_precision', 0) * 100
-                recall = result.get('test_recall', 0) * 100
-                train_time = result.get('training_time', 0)
+            # 組合注意力權重配置
+            if self.enable_combinations.get():
+                config_info.append("組合模式: 已啟用")
+                config_info.append("權重配置:")
                 
-                # 獲取宏平均指標
-                precision_macro = result.get('test_precision_macro', 0) * 100
-                recall_macro = result.get('test_recall_macro', 0) * 100
-                f1_macro = result.get('test_f1_macro', 0) * 100
+                # 檢查是否使用動態融合
+                dynamic_selected = any(mechanism == 'dynamic' for mechanism, var in self.attention_options.items() if var.get())
                 
-                report.append(f"🔹 {display_name}")
-                report.append(f"   準確率: {accuracy:.4f}%")
-                report.append(f"   F1分數 (加權): {f1_score:.4f}%")
-                report.append(f"   F1分數 (宏平均): {f1_macro:.4f}%")
-                report.append(f"   精確率 (加權): {precision:.4f}%")
-                report.append(f"   精確率 (宏平均): {precision_macro:.4f}%")
-                report.append(f"   召回率 (加權): {recall:.4f}%")
-                report.append(f"   召回率 (宏平均): {recall_macro:.4f}%")
-                report.append(f"   訓練時間: {train_time:.4f} 秒")
-                
-                # 如果是組合注意力，顯示權重配置
-                if 'combined' in mechanism.lower() or 'combination' in mechanism.lower() or '組合' in mechanism:
-                    weights_info = result.get('attention_weights', {})
-                    learned_weights = result.get('learned_weights')
-                    is_learned = result.get('is_learned_weights', False)
+                if dynamic_selected:
+                    config_info.append("  • 類型: 門控動態融合")
+                    config_info.append("  • 權重: 神經網路自適應調整")
+                    config_info.append("  • 特徵: 根據文本內容動態計算")
+                    config_info.append("  • 機制: similarity, keyword, self")
+                else:
+                    # 檢查是否啟用智能權重學習
+                    adaptive_enabled = hasattr(self, 'use_adaptive_weights') and self.use_adaptive_weights.get()
                     
-                    if learned_weights or is_learned:
-                        # 優先顯示智能學習的權重
-                        weights_to_show = learned_weights or weights_info
-                        report.append(f"   🧠 智能學習權重 (自動優化):")
+                    if adaptive_enabled:
+                        config_info.append("  • 類型: 智能權重學習")
+                        config_info.append("  • 特徵: 自動尋找最佳權重組合")
                         
-                        if weights_to_show:
-                            # 按權重大小排序
-                            sorted_weights = sorted(weights_to_show.items(), key=lambda x: x[1], reverse=True)
-                            total_weight = sum(weights_to_show.values())
-                            
-                            for i, (weight_name, weight_value) in enumerate(sorted_weights):
-                                if isinstance(weight_value, (int, float)):
-                                    percentage = (weight_value / total_weight) * 100 if total_weight > 0 else 0
-                                    rank_emoji = ["🥇", "🥈", "🥉"][i] if i < 3 else "🔸"
-                                    report.append(f"      {rank_emoji} {weight_name}: {weight_value:.6f} ({percentage:.2f}%)")
-                    elif weights_info:
-                        # 顯示固定權重配置
-                        report.append(f"   🎯 注意力權重配置:")
-                        for weight_name, weight_value in weights_info.items():
-                            if isinstance(weight_value, (int, float)):
-                                report.append(f"      🔸 {weight_name}: {weight_value:.4f}")
-                
-                report.append("")
+                        # 顯示當前學習到的權重
+                        if hasattr(self, 'learned_weights') and self.learned_weights:
+                            config_info.append("  • 當前權重:")
+                            for mechanism, weight in self.learned_weights.items():
+                                if not mechanism.startswith('_'):
+                                    mech_name = self._format_mechanism_name(mechanism)
+                                    config_info.append(f"    - {mech_name}: {weight:.3f}")
+                        else:
+                            config_info.append("  • 狀態: 等待權重配置")
+                    else:
+                        # 顯示固定權重組合
+                        config_info.append("  • 類型: 固定權重組合")
+                        combinations = [
+                            "similarity + self (各50%)",
+                            "similarity + keyword (各50%)", 
+                            "self + keyword (各50%)",
+                            "三機制均衡 (各33.3%)"
+                        ]
+                        for combo in combinations:
+                            config_info.append(f"  • {combo}")
+            else:
+                config_info.append("組合模式: 已停用")
             
-            # 顯示報告
-            self.analysis_text.insert('1.0', '\n'.join(report))
+            config_info.append("")
+            
+            # 2. 分類器配置
+            config_info.append("🤖 分類器設定")
+            config_info.append("-" * 20)
+            
+            # 獲取當前選擇的分類器
+            selected_classifier = self.classifier_type.get() if hasattr(self, 'classifier_type') else None
+            
+            if selected_classifier:
+                classifier_names = {
+                    'logistic_regression': '邏輯迴歸 (Logistic Regression)',
+                    'random_forest': '隨機森林 (Random Forest)', 
+                    'svm_linear': '支持向量機 (SVM Linear)',
+                    'xgboost': 'XGBoost 梯度提升',
+                    'naive_bayes': '樸素貝葉斯 (Naive Bayes)'
+                }
+                display_name = classifier_names.get(selected_classifier, selected_classifier)
+                config_info.append(f"當前分類器: {display_name}")
+                
+                # 分類器特性說明
+                classifier_features = {
+                    'logistic_regression': "線性模型，訓練快，適合基準測試",
+                    'random_forest': "集成學習，抗過擬合，特徵重要性分析",
+                    'svm_linear': "線性支持向量機，適合高維數據",
+                    'xgboost': "梯度提升樹，高準確率，支援GPU加速",
+                    'naive_bayes': "機率模型，假設特徵獨立，適合文本分類"
+                }
+                feature = classifier_features.get(selected_classifier, "")
+                if feature:
+                    config_info.append(f"特性: {feature}")
+            else:
+                config_info.append("當前分類器: 未選擇")
+            
+            config_info.append("")
+            
+            # 3. 編碼器配置
+            config_info.append("📝 文本編碼器")
+            config_info.append("-" * 20)
+            
+            # 獲取當前選擇的編碼器
+            selected_encoder = self.encoder_type.get() if hasattr(self, 'encoder_type') else None
+            
+            if selected_encoder:
+                encoder_names = {
+                    'bert': 'BERT (Bidirectional Encoder)',
+                    'gpt': 'GPT (Generative Pre-trained Transformer)',
+                    't5': 'T5 (Text-to-Text Transfer Transformer)',
+                    'cnn': 'CNN (Convolutional Neural Network)',
+                    'elmo': 'ELMo (Contextualized Word Embeddings)',
+                    'word2vec': 'Word2Vec (Static Word Embeddings)',
+                    'fasttext': 'FastText (Subword Information)',
+                    'tfidf': 'TF-IDF (Term Frequency)'
+                }
+                display_name = encoder_names.get(selected_encoder, selected_encoder)
+                config_info.append(f"當前編碼器: {display_name}")
+                
+                # 編碼器特性
+                encoder_features = {
+                    'bert': "雙向Transformer，上下文感知，預訓練模型",
+                    'gpt': "單向Transformer，生成式模型，大型語言模型",
+                    't5': "編碼-解碼Transformer，文本到文本框架",
+                    'cnn': "卷積神經網路，局部特徵提取，訓練快速",
+                    'elmo': "雙向LSTM，動態詞嵌入，多層特徵",
+                    'word2vec': "靜態詞向量，訓練快，記憶體效率高",
+                    'fasttext': "子詞信息，處理未知詞，多語言支援",
+                    'tfidf': "統計特徵，稀疏向量，傳統NLP方法"
+                }
+                feature = encoder_features.get(selected_encoder, "")
+                if feature:
+                    config_info.append(f"特性: {feature}")
+            else:
+                config_info.append("當前編碼器: 未選擇")
+            
+            config_info.append("")
+            
+            # 4. 系統資源配置
+            config_info.append("⚙️ 系統資源")
+            config_info.append("-" * 20)
+            
+            # 檢測GPU/CPU資源
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    gpu_name = torch.cuda.get_device_name(0)
+                    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+                    config_info.append(f"GPU: {gpu_name}")
+                    config_info.append(f"顯存: {gpu_memory:.1f}GB")
+                    config_info.append("加速: GPU加速已啟用")
+                else:
+                    config_info.append("計算設備: CPU")
+                    config_info.append("加速: 無GPU加速")
+            except:
+                config_info.append("計算設備: CPU (PyTorch未安裝)")
+            
+            config_info.append("")
+            
+            # 5. 配置總結
+            config_info.append("📊 配置總結")
+            config_info.append("-" * 20)
+            
+            total_mechanisms = len(selected_mechanisms)
+            has_combinations = self.enable_combinations.get()
+            has_dynamic = any(mechanism == 'dynamic' for mechanism, var in self.attention_options.items() if var.get())
+            has_adaptive = hasattr(self, 'use_adaptive_weights') and self.use_adaptive_weights.get()
+            
+            config_info.append(f"測試機制數量: {total_mechanisms}")
+            if has_combinations:
+                if has_dynamic:
+                    config_info.append("融合方式: 門控動態融合")
+                elif has_adaptive:
+                    config_info.append("融合方式: 智能權重學習")
+                else:
+                    config_info.append("融合方式: 固定權重組合")
+            else:
+                config_info.append("融合方式: 單機制測試")
+            
+            config_info.append(f"分類器: {selected_classifier or '未選擇'}")
+            config_info.append(f"編碼器: {selected_encoder or '未選擇'}")
+            
+            # 顯示配置信息
+            self.config_text.insert('1.0', '\n'.join(config_info))
             
         except Exception as e:
-            self.analysis_text.delete('1.0', tk.END)
-            self.analysis_text.insert('1.0', f"詳細結果顯示錯誤: {str(e)}")
+            self.config_text.delete('1.0', tk.END)
+            self.config_text.insert('1.0', f"配置顯示錯誤: {str(e)}")
     
     def create_comparison_analysis_tab(self):
         """第二分頁：比對分析（含結果預覽）"""
@@ -1133,7 +1263,7 @@ class MainApplication:
         
         # 說明
         info_label = ttk.Label(top_frame, 
-                             text="在第一頁完成分析後，詳細結果將顯示在這裡",
+                             text="顯示當前選擇的注意力機制權重配置和分類器設定",
                              foreground='gray')
         info_label.pack(pady=(0, 10))
         
@@ -1144,13 +1274,6 @@ class MainApplication:
         # 結果表格  
         self.create_results_preview_table(results_frame)
         
-        # 詳細結果顯示區域
-        details_frame = ttk.LabelFrame(top_frame, text="詳細分析結果", padding=10)
-        details_frame.pack(fill='both', expand=True)
-        
-        self.analysis_text = scrolledtext.ScrolledText(details_frame, height=8, width=80)
-        self.analysis_text.pack(fill='both', expand=True)
-        self.analysis_text.insert('1.0', "等待分析結果...")
         
         # 下半部分：原始數據與預測比對
         bottom_frame = ttk.Frame(main_paned)
@@ -1485,8 +1608,41 @@ class MainApplication:
         except Exception as e:
             messagebox.showerror("錯誤", f"快速更新失敗：{str(e)}")
     
+    def create_model_config_tab(self):
+        """第三分頁：模型配置顯示"""
+        frame = ttk.Frame(self.notebook)
+        self.notebook.add(frame, text=" 模型配置 ")
+        
+        # 主要容器
+        main_frame = ttk.Frame(frame)
+        main_frame.pack(fill='both', expand=True, padx=15, pady=10)
+        
+        # 標題
+        title_label = ttk.Label(main_frame, text="當前模型配置", font=FONTS['title'])
+        title_label.pack(pady=(0, 15))
+        
+        # 配置顯示區域 - 全頁顯示
+        config_frame = ttk.LabelFrame(main_frame, text="詳細配置信息", padding=15)
+        config_frame.pack(fill='both', expand=True)
+        
+        # 使用ScrolledText來顯示配置信息
+        self.config_text = scrolledtext.ScrolledText(config_frame, 
+                                                   height=30, 
+                                                   width=100,
+                                                   font=('Consolas', 10))
+        self.config_text.pack(fill='both', expand=True)
+        self.config_text.insert('1.0', "等待配置信息...")
+        
+        # 刷新按鈕
+        refresh_frame = ttk.Frame(main_frame)
+        refresh_frame.pack(fill='x', pady=(10, 0))
+        
+        refresh_btn = ttk.Button(refresh_frame, text="🔄 刷新配置", 
+                               command=self._update_config_display)
+        refresh_btn.pack(side='right')
+    
     def create_cross_validation_tab(self):
-        """第三分頁：交叉驗證（保留原有功能）"""
+        """第四分頁：交叉驗證（保留原有功能）"""
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text=" 交叉驗證 ")
         
@@ -1617,11 +1773,105 @@ class MainApplication:
             self.weight_config_btn.config(state='normal')
         else:
             self.weight_config_btn.config(state='disabled')
+        # 觸發配置更新
+        self._on_config_changed()
     
     def show_weight_config(self):
         """顯示權重配置窗口"""
-        from gui.weight_config_window import WeightConfigWindow
-        WeightConfigWindow(self.root, self)
+        try:
+            from gui.weight_config_window import WeightConfigWindow
+            WeightConfigWindow(self.root, self)
+        except ImportError:
+            # 如果權重配置窗口不存在，創建一個簡單的對話框
+            self._show_simple_weight_config()
+    
+    def _show_simple_weight_config(self):
+        """顯示簡單的權重配置對話框"""
+        import tkinter.simpledialog as simpledialog
+        
+        # 創建權重配置對話框
+        config_window = tk.Toplevel(self.root)
+        config_window.title("注意力機制權重配置")
+        config_window.geometry("400x300")
+        config_window.resizable(False, False)
+        
+        # 使窗口置中
+        config_window.transient(self.root)
+        config_window.grab_set()
+        
+        main_frame = ttk.Frame(config_window, padding=15)
+        main_frame.pack(fill='both', expand=True)
+        
+        # 標題
+        title_label = ttk.Label(main_frame, text="注意力機制權重配置", font=FONTS['subtitle'])
+        title_label.pack(pady=(0, 15))
+        
+        # 權重設定
+        weights_frame = ttk.LabelFrame(main_frame, text="權重設定", padding=10)
+        weights_frame.pack(fill='x', pady=(0, 15))
+        
+        # 權重變數
+        self.temp_weights = {}
+        weight_vars = {}
+        
+        mechanisms = [
+            ('similarity', '相似度注意力'),
+            ('keyword', '關鍵詞注意力'),
+            ('self', '自注意力')
+        ]
+        
+        for i, (key, label) in enumerate(mechanisms):
+            row = ttk.Frame(weights_frame)
+            row.pack(fill='x', pady=5)
+            
+            ttk.Label(row, text=f"{label}:", width=15).pack(side='left')
+            
+            var = tk.DoubleVar(value=0.33)
+            weight_vars[key] = var
+            
+            scale = ttk.Scale(row, from_=0.0, to=1.0, variable=var, orient='horizontal')
+            scale.pack(side='left', fill='x', expand=True, padx=(5, 5))
+            
+            value_label = ttk.Label(row, text="0.33", width=6)
+            value_label.pack(side='right')
+            
+            # 更新數值顯示
+            def update_label(val, label=value_label, var=var):
+                label.config(text=f"{var.get():.3f}")
+            
+            var.trace_add('write', lambda *args, var=var, label=value_label: update_label(None, label, var))
+        
+        # 正規化按鈕
+        def normalize_weights():
+            total = sum(var.get() for var in weight_vars.values())
+            if total > 0:
+                for var in weight_vars.values():
+                    var.set(var.get() / total)
+        
+        normalize_btn = ttk.Button(weights_frame, text="正規化權重", command=normalize_weights)
+        normalize_btn.pack(pady=(10, 0))
+        
+        # 按鈕區域
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(fill='x')
+        
+        def save_weights():
+            # 儲存權重配置
+            weights = {key: var.get() for key, var in weight_vars.items()}
+            total = sum(weights.values())
+            if total > 0:
+                # 正規化
+                weights = {key: val/total for key, val in weights.items()}
+            self.learned_weights = weights
+            config_window.destroy()
+            messagebox.showinfo("成功", f"權重配置已儲存：\n{weights}")
+        
+        def cancel():
+            config_window.destroy()
+        
+        ttk.Button(button_frame, text="儲存", command=save_weights).pack(side='right', padx=(5, 0))
+        ttk.Button(button_frame, text="取消", command=cancel).pack(side='right')
+    
     
     def restart_application(self):
         """重製程式"""

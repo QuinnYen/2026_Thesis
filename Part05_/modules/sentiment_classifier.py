@@ -44,13 +44,13 @@ class SentimentClassifier:
         
         # 自動偵測GPU/CPU環境
         self.device_info = self._detect_compute_environment()
-        logger.info(f"計算環境: {self.device_info['description']}")
+        logger.debug(f"計算環境: {self.device_info['description']}")
         
         # 支持的模型類型 - 優化配置
         self.available_models = self._init_models()
         
         logger.info("情感分類器已初始化")
-        logger.info(f"可用分類器: {list(self.available_models.keys())}")
+        logger.debug(f"可用分類器: {list(self.available_models.keys())}")
     
     def _detect_compute_environment(self) -> Dict[str, Any]:
         """自動偵測計算環境（GPU/CPU）"""
@@ -72,9 +72,9 @@ class SentimentClassifier:
                 device_info['gpu_name'] = torch.cuda.get_device_name(0)
                 device_info['gpu_memory'] = torch.cuda.get_device_properties(0).total_memory / 1024**3  # GB
                 device_info['description'] = f"GPU: {device_info['gpu_name']} ({device_info['gpu_memory']:.1f}GB)"
-                logger.info(f"檢測到GPU: {device_info['gpu_name']}")
+                logger.debug(f"檢測到GPU: {device_info['gpu_name']}")
             else:
-                logger.info("未檢測到CUDA GPU，使用CPU模式")
+                logger.debug("未檢測到CUDA GPU，使用CPU模式")
                 
         except Exception as e:
             logger.warning(f"GPU檢測過程中發生錯誤: {str(e)}")
@@ -110,16 +110,16 @@ class SentimentClassifier:
             
             # 檢查XGBoost版本並記錄
             xgb_version = xgb.__version__
-            logger.info(f"檢測到XGBoost版本: {xgb_version}")
+            logger.debug(f"檢測到XGBoost版本: {xgb_version}")
             
             # 檢查是否為2.0.0+版本（使用新參數）
             xgb_major_version = int(xgb_version.split('.')[0])
             is_new_xgb = xgb_major_version >= 2
             
             if is_new_xgb:
-                logger.info("使用XGBoost 2.0.0+新版本參數配置")
+                logger.debug("使用XGBoost 2.0.0+新版本參數配置")
             else:
-                logger.info("使用XGBoost 1.x版本參數配置")
+                logger.debug("使用XGBoost 1.x版本參數配置")
             
             # GPU加速配置 - 根據版本和GPU可用性配置參數
             if self.device_info['has_gpu']:
@@ -136,7 +136,7 @@ class SentimentClassifier:
                         'random_state': 42,
                         'n_jobs': -1
                     }
-                    logger.info("XGBoost配置為GPU模式 (v2.0+: device='cuda', tree_method='hist')")
+                    logger.debug("XGBoost配置為GPU模式 (v2.0+: device='cuda', tree_method='hist')")
                 else:
                     # XGBoost 1.x GPU配置 - 使用舊參數
                     xgb_params = {
@@ -150,9 +150,9 @@ class SentimentClassifier:
                         'random_state': 42,
                         'n_jobs': -1
                     }
-                    logger.info("XGBoost配置為GPU模式 (v1.x: gpu_id=0, tree_method='gpu_hist')")
+                    logger.debug("XGBoost配置為GPU模式 (v1.x: gpu_id=0, tree_method='gpu_hist')")
                 
-                logger.info("🚀 GPU加速已啟用 - BERT和XGBoost都將使用GPU加速")
+                logger.info("🚀 GPU加速已啟用")
             else:
                 # CPU配置（兩個版本都一樣）
                 xgb_params = {
