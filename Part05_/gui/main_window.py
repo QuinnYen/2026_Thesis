@@ -756,7 +756,12 @@ class MainApplication:
                 attention_combinations = []
                 has_dynamic = 'dynamic' in attention_types
                 
-                if self.enable_combinations.get() and not has_dynamic:
+                # 自動化邏輯：如果選擇了動態注意力，自動啟用組合分析以比較GNF學習權重
+                if has_dynamic:
+                    print("🎯 檢測到GNF動態權重注意力，將自動執行權重學習和組合比較")
+                    # 動態注意力時，將組合分析留空，讓主程式自動處理
+                    attention_combinations = []
+                elif self.enable_combinations.get():
                     # 檢查是否使用智能權重學習
                     if hasattr(self, 'use_adaptive_weights') and self.use_adaptive_weights.get():
                         # 如果已有學習到的最佳權重，使用它們
@@ -967,6 +972,11 @@ class MainApplication:
                     # 格式化機制名稱
                     display_name = self._format_mechanism_name(mechanism)
                     
+                    # 為所有結果添加權重信息
+                    weights_str = self._get_weights_display(results, mechanism, result)
+                    if weights_str and not any(char in display_name for char in ['[', '(']):
+                        display_name += f" [{weights_str}]"
+                    
                     self.results_tree.insert('', 'end', values=(
                         display_name,
                         f"{accuracy:.4f}%",
@@ -989,6 +999,9 @@ class MainApplication:
             self.notebook.select(1)  # 切換到第二頁（索引為1）
             
             
+            # 檢查並顯示GNF學習權重比較結果
+            self._display_gnf_comparison(results, classification_results)
+            
             # 顯示完成訊息到終端
             if best_mechanism is not None:
                 print(f"✅ 分析完成！最佳機制: {self._format_mechanism_name(best_mechanism)} ({best_accuracy:.4f}%) | 總耗時: {total_time:.4f}秒")
@@ -1004,6 +1017,162 @@ class MainApplication:
             error_handler.handle_error(e, "GUI結果更新時發生錯誤")
     
     
+    def _display_gnf_comparison(self, results, classification_results):
+        """顯示GNF學習權重與基準權重的比較結果"""
+        try:
+            if not classification_results:
+                return
+                
+            # 查找GNF權重和平均權重結果
+            gnf_results = []
+            avg_results = []
+            
+            for mechanism, result in classification_results.items():
+                if mechanism.startswith('GNF權重：'):
+                    gnf_results.append((mechanism, result))
+                elif mechanism.startswith('平均權重：'):
+                    avg_results.append((mechanism, result))
+            
+            if gnf_results and avg_results:
+                print(f"\n🎯 GNF權重 vs 平均權重效果比較:")
+                
+                # 按配置類型進行比較
+                config_types = {}
+                
+                # 分組GNF結果
+                for gnf_name, gnf_data in gnf_results:
+                    config_name = gnf_name.replace('GNF權重：', '')
+                    config_types[config_name] = {'gnf': (gnf_name, gnf_data)}
+                
+                # 添加對應的平均權重結果
+                for avg_name, avg_data in avg_results:
+                    config_name = avg_name.replace('平均權重：', '')
+                    if config_name in config_types:
+                        config_types[config_name]['avg'] = (avg_name, avg_data)
+                
+                # 進行比較
+                improvements = []
+                for config_name, data in config_types.items():
+                    if 'gnf' in data and 'avg' in data:
+                        gnf_name, gnf_data = data['gnf']
+                        avg_name, avg_data = data['avg']
+                        
+                        gnf_accuracy = gnf_data.get('test_accuracy', 0) * 100
+                        avg_accuracy = avg_data.get('test_accuracy', 0) * 100
+                        improvement = gnf_accuracy - avg_accuracy
+                        improvements.append(improvement)
+                        
+                        comparison_symbol = "📈" if improvement > 0 else "📉" if improvement < 0 else "➡️"
+                        print(f"   {config_name}:")
+                        print(f"     🧠 GNF: {gnf_accuracy:.4f}% vs 📊 平均: {avg_accuracy:.4f}% ({comparison_symbol} {improvement:+.4f}%)")
+                
+                # 總體統計
+                if improvements:
+                    avg_improvement = sum(improvements) / len(improvements)
+                    positive_count = sum(1 for imp in improvements if imp > 0)
+                    total_count = len(improvements)
+                    
+                    print(f"\n   📈 總結:")
+                    print(f"     • GNF權重在 {positive_count}/{total_count} 個配置中表現更好")
+                    print(f"     • 平均提升: {avg_improvement:+.4f}%")
+                    
+        except Exception as e:
+            print(f"顯示GNF比較時發生錯誤: {str(e)}")
+
+    def _get_weights_display(self, results, mechanism, result):
+        """統一獲取權重顯示字符串"""
+        try:
+            # 1. 檢查是否有預定義的權重顯示（來自組合分析）
+            if '_weights_display' in result:
+                return result['_weights_display']
+            
+            # 2. 動態注意力機制
+            if mechanism == 'dynamic':
+                dynamic_weights = self._extract_dynamic_weights(results, mechanism)
+                if dynamic_weights:
+                    return ", ".join([f"{k}:{v:.3f}" for k, v in dynamic_weights.items()])
+            
+            # 3. 基本單一機制的固定權重
+            basic_weights = {
+                'no': 'no: 1.0',
+                'similarity': 'similarity: 1.0', 
+                'keyword': 'keyword: 1.0',
+                'self': 'self: 1.0'
+            }
+            
+            if mechanism in basic_weights:
+                return basic_weights[mechanism]
+            
+            # 4. 組合機制權重
+            combo_weights = self._extract_combination_weights(results, mechanism)
+            if combo_weights:
+                return ", ".join([f"{k}:{v:.3f}" for k, v in combo_weights.items()])
+            
+            # 5. 從結果數據中提取權重信息
+            if isinstance(result, dict):
+                if 'attention_weights' in result:
+                    weights = result['attention_weights']
+                    return ", ".join([f"{k}:{v:.3f}" for k, v in weights.items()])
+                
+                # 檢查注意力數據
+                attention_data = result.get('attention_data', {})
+                if 'weights' in attention_data:
+                    weights = attention_data['weights']
+                    return ", ".join([f"{k}:{v:.3f}" for k, v in weights.items()])
+            
+            return None
+            
+        except Exception as e:
+            print(f"獲取權重顯示時發生錯誤: {str(e)}")
+            return None
+
+    def _extract_combination_weights(self, results, mechanism):
+        """從結果中提取組合權重信息"""
+        try:
+            # 檢查組合分析結果
+            combination_analysis = results.get('combination_analysis', {})
+            mechanism_result = combination_analysis.get(mechanism, {})
+            
+            # 查找權重信息
+            attention_data = mechanism_result.get('attention_data', {})
+            if isinstance(attention_data, dict) and 'weights' in attention_data:
+                return attention_data['weights']
+                
+            # 也檢查是否直接在mechanism_result中
+            if 'weights' in mechanism_result:
+                return mechanism_result['weights']
+                
+            return None
+        except Exception as e:
+            print(f"提取組合權重時發生錯誤: {str(e)}")
+            return None
+
+    def _extract_dynamic_weights(self, results, mechanism):
+        """從結果中提取動態權重信息"""
+        try:
+            # 檢查注意力分析結果
+            attention_analysis = results.get('attention_analysis', {})
+            mechanism_result = attention_analysis.get(mechanism, {})
+            
+            # 查找動態權重
+            attention_data = mechanism_result.get('attention_data', {})
+            if isinstance(attention_data, dict) and 'dynamic_weights' in attention_data:
+                return attention_data['dynamic_weights']
+                
+            # 也檢查是否直接在mechanism_result中
+            if 'dynamic_weights' in mechanism_result:
+                return mechanism_result['dynamic_weights']
+                
+            # 檢查是否在topic_indices中
+            topic_indices = attention_data.get('topic_indices', {})
+            if isinstance(topic_indices, dict) and 'dynamic_weights' in topic_indices:
+                return topic_indices['dynamic_weights']
+                
+            return None
+        except Exception as e:
+            print(f"提取動態權重時發生錯誤: {str(e)}")
+            return None
+
     def _format_mechanism_name(self, mechanism):
         """格式化注意力機制名稱為中文"""
         # 處理None值

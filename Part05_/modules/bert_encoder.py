@@ -60,7 +60,9 @@ class BertEncoder:
         batch_size = 32
         total_batches = (len(texts) + batch_size - 1) // batch_size
         
-        logger.info(f"開始BERT編碼，共 {len(texts)} 條文本，分 {total_batches} 個批次處理")
+        # 簡化輸出 - 只在批次較多時顯示進度
+        if total_batches > 10:
+            print(f"   編碼 {len(texts)} 條文本 (共 {total_batches} 批次)")
         
         # 通知開始編碼
         if self.progress_callback:
@@ -114,7 +116,7 @@ class BertEncoder:
                     embeddings.append(batch_embeddings)
         
         embeddings = np.vstack(embeddings)
-        logger.info(f"BERT編碼完成，生成 {embeddings.shape[0]} x {embeddings.shape[1]} 的特徵矩陣")
+        # 移除詳細日誌，在主程式中已有輸出
         
         # 通知保存階段
         if self.progress_callback:

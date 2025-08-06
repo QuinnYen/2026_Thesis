@@ -75,9 +75,7 @@ class AttentionProcessor:
         """
         try:
             start_time = datetime.now()
-            logger.info("="*60)
-            logger.info("開始注意力機制分析流程")
-            logger.info("="*60)
+            print("🔄 開始注意力機制分析流程")
             
             # 設定默認的注意力機制類型
             if attention_types is None:

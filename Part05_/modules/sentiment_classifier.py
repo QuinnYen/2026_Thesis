@@ -194,14 +194,16 @@ class SentimentClassifier:
         return GaussianNB()
     
     def prepare_features(self, aspect_vectors: Dict, metadata: pd.DataFrame, 
-                        original_embeddings: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
+                        original_embeddings: np.ndarray = None, 
+                        fused_features: np.ndarray = None) -> Tuple[np.ndarray, np.ndarray]:
         """
-        準備分類特徵
+        準備分類特徵，支援融合特徵和原始特徵
         
         Args:
             aspect_vectors: 面向特徵向量字典
             metadata: 包含真實標籤的元數據
-            original_embeddings: 原始BERT嵌入向量（修正：新增此參數）
+            original_embeddings: 原始BERT嵌入向量
+            fused_features: 融合後的特徵向量（新架構）
             
         Returns:
             features: 特徵矩陣
@@ -210,107 +212,123 @@ class SentimentClassifier:
         start_time = time.time()
         logger.info("開始準備分類特徵...")
         
-        # 檢查情感標籤欄位，如果沒有則根據review_stars生成
-        if 'sentiment' not in metadata.columns:
+        # 優先使用數值化情感標籤
+        if 'sentiment_numeric' in metadata.columns:
+            logger.info("使用數值化情感標籤 (sentiment_numeric)")
+            sentiments = metadata['sentiment_numeric'].values
+            # 數值化標籤已經是編碼形式，直接使用
+            encoded_labels = sentiments.astype(int)
+            # 設定標籤編碼器的類別（0:負面, 1:中性, 2:正面）
+            self.label_encoder.classes_ = np.array([0, 1, 2])
+        elif 'sentiment' not in metadata.columns:
             if 'review_stars' in metadata.columns:
-                logger.info("未找到 'sentiment' 欄位，根據 'review_stars' 生成情感標籤...")
-                # 根據評分生成情感標籤：1-2星=負面, 3星=中性, 4-5星=正面
-                def map_stars_to_sentiment(stars):
+                logger.info("未找到 'sentiment' 欄位，根據 'review_stars' 生成數值化情感標籤...")
+                # 根據評分生成數值化情感標籤：1-2星=0(負面), 3星=1(中性), 4-5星=2(正面)
+                def map_stars_to_numeric(stars):
                     if stars <= 2:
-                        return 'negative'
+                        return 0  # 負面
                     elif stars == 3:
-                        return 'neutral'
+                        return 1  # 中性
                     else:
-                        return 'positive'
+                        return 2  # 正面
                 
-                sentiments = metadata['review_stars'].apply(map_stars_to_sentiment).values
-                logger.info(f"生成的情感標籤分佈：{pd.Series(sentiments).value_counts().to_dict()}")
+                sentiments = metadata['review_stars'].apply(map_stars_to_numeric).values
+                encoded_labels = sentiments.astype(int)
+                self.label_encoder.classes_ = np.array([0, 1, 2])
+                logger.info(f"生成的數值化情感標籤分佈：{pd.Series(sentiments).value_counts().to_dict()}")
             else:
-                raise ValueError("元數據中缺少 'sentiment' 欄位，且無法找到 'review_stars' 欄位來生成情感標籤")
+                raise ValueError("元數據中缺少 'sentiment_numeric'、'sentiment' 和 'review_stars' 欄位")
         else:
-            # 提取情感標籤
+            # 提取情感標籤並轉換為數值
             sentiments = metadata['sentiment'].values
+            # 編碼標籤
+            encoded_labels = self.label_encoder.fit_transform(sentiments)
         
-        # 編碼標籤
-        encoded_labels = self.label_encoder.fit_transform(sentiments)
-        
-        # 修正：獲取編碼器嵌入向量（支援多種編碼器）
-        if original_embeddings is None:
-            # 嘗試載入編碼器嵌入向量
-            if self.output_dir:
-                # 使用通用的檔案檢測邏輯
-                try:
-                    from .attention_processor import AttentionProcessor
-                    temp_processor = AttentionProcessor(output_dir=self.output_dir, encoder_type=self.encoder_type)
-                    embeddings_file = temp_processor._find_existing_embeddings(self.encoder_type)
-                    
-                    if embeddings_file and os.path.exists(embeddings_file):
-                        original_embeddings = np.load(embeddings_file)
-                        logger.info(f"已載入 {self.encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
-                        logger.info(f"檔案來源: {embeddings_file}")
-                    else:
-                        raise ValueError(f"無法找到 {self.encoder_type.upper()} 嵌入向量文件。請提供 original_embeddings 參數或確保 {self.encoder_type.upper()} 特徵向量文件存在。")
-                except Exception as e:
-                    raise ValueError(f"載入 {self.encoder_type.upper()} 嵌入向量時發生錯誤: {e}。請提供 original_embeddings 參數。")
-            else:
-                raise ValueError(f"無法找到 {self.encoder_type.upper()} 嵌入向量。請提供 original_embeddings 參數。")
-        
-        # 確保嵌入向量數量與元數據匹配
-        if len(original_embeddings) != len(metadata):
-            raise ValueError(f"嵌入向量數量 ({len(original_embeddings)}) 與元數據數量 ({len(metadata)}) 不匹配")
-        
-        # 修正：使用原始BERT嵌入向量作為主要特徵
-        features = original_embeddings.copy()
-        
-        # 修正：計算與面向向量的相似度作為額外特徵
-        aspect_names = sorted(aspect_vectors.keys())
-        similarity_features = []
-        
-        logger.info(f"計算每個文檔與 {len(aspect_names)} 個面向向量的相似度...")
-        
-        # 檢查維度相容性
-        first_embedding = original_embeddings[0]
-        first_aspect_vector = aspect_vectors[aspect_names[0]]
-        
-        if first_embedding.shape[0] != first_aspect_vector.shape[0]:
-            error_msg = f"維度不匹配: 文檔嵌入向量維度 {first_embedding.shape[0]}, 面向向量維度 {first_aspect_vector.shape[0]}"
-            logger.error(error_msg)
-            logger.error(f"這通常是由於注意力分析和分類評估使用了不同的編碼器造成的")
-            logger.error(f"當前編碼器類型: {self.encoder_type.upper()}")
+        # 處理特徵：優先使用融合特徵，否則使用原始特徵
+        if fused_features is not None:
+            logger.info("使用融合特徵進行分類")
+            features = fused_features.copy()
             
-            # 嘗試修復：如果面向向量維度是1024而文檔向量是768，說明面向向量來自不同編碼器
-            if first_aspect_vector.shape[0] == 1024 and first_embedding.shape[0] == 768:
-                logger.warning("檢測到面向向量來自1024維編碼器（可能是GPT/T5），但文檔向量是768維（BERT）")
-                logger.warning("建議重新運行完整的流水線以確保編碼器一致性")
-            elif first_aspect_vector.shape[0] == 768 and first_embedding.shape[0] == 1024:
-                logger.warning("檢測到面向向量來自768維編碼器（BERT），但文檔向量是1024維（可能是GPT/T5）")
-                logger.warning("建議重新運行完整的流水線以確保編碼器一致性")
+            # 確保融合特徵數量與元數據匹配
+            if len(features) != len(metadata):
+                raise ValueError(f"融合特徵數量 ({len(features)}) 與元數據數量 ({len(metadata)}) 不匹配")
             
-            raise ValueError(f"{error_msg}。請確保注意力分析和分類評估使用相同的編碼器類型。")
-        
-        for i, embedding in enumerate(original_embeddings):
-            doc_similarities = []
-            for aspect_name in aspect_names:
-                aspect_vector = aspect_vectors[aspect_name]
-                # 計算餘弦相似度
-                similarity = np.dot(embedding, aspect_vector) / (
-                    np.linalg.norm(embedding) * np.linalg.norm(aspect_vector) + 1e-8
-                )
-                doc_similarities.append(similarity)
-            similarity_features.append(doc_similarities)
-        
-        similarity_features = np.array(similarity_features)
-        
-        # 組合原始特徵和相似度特徵
-        features = np.concatenate([original_embeddings, similarity_features], axis=1)
+            logger.info(f"融合特徵形狀: {features.shape}")
+        else:
+            # 使用原始嵌入向量
+            if original_embeddings is None:
+                # 嘗試載入編碼器嵌入向量
+                if self.output_dir:
+                    # 使用通用的檔案檢測邏輯
+                    try:
+                        from .attention_processor import AttentionProcessor
+                        temp_processor = AttentionProcessor(output_dir=self.output_dir, encoder_type=self.encoder_type)
+                        embeddings_file = temp_processor._find_existing_embeddings(self.encoder_type)
+                        
+                        if embeddings_file and os.path.exists(embeddings_file):
+                            original_embeddings = np.load(embeddings_file)
+                            logger.info(f"已載入 {self.encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
+                            logger.info(f"檔案來源: {embeddings_file}")
+                        else:
+                            raise ValueError(f"無法找到 {self.encoder_type.upper()} 嵌入向量文件。請提供 original_embeddings 參數或確保 {self.encoder_type.upper()} 特徵向量文件存在。")
+                    except Exception as e:
+                        raise ValueError(f"載入 {self.encoder_type.upper()} 嵌入向量時發生錯誤: {e}。請提供 original_embeddings 參數。")
+                else:
+                    raise ValueError(f"無法找到 {self.encoder_type.upper()} 嵌入向量。請提供 original_embeddings 參數。")
+            
+            # 確保嵌入向量數量與元數據匹配
+            if len(original_embeddings) != len(metadata):
+                raise ValueError(f"嵌入向量數量 ({len(original_embeddings)}) 與元數據數量 ({len(metadata)}) 不匹配")
+            # 修正：使用原始BERT嵌入向量作為主要特徵
+            features = original_embeddings.copy()
+            
+            # 修正：計算與面向向量的相似度作為額外特徵
+            aspect_names = sorted(aspect_vectors.keys())
+            similarity_features = []
+            
+            logger.info(f"計算每個文檔與 {len(aspect_names)} 個面向向量的相似度...")
+            
+            # 檢查維度相容性
+            first_embedding = original_embeddings[0]
+            first_aspect_vector = aspect_vectors[aspect_names[0]]
+            
+            if first_embedding.shape[0] != first_aspect_vector.shape[0]:
+                error_msg = f"維度不匹配: 文檔嵌入向量維度 {first_embedding.shape[0]}, 面向向量維度 {first_aspect_vector.shape[0]}"
+                logger.error(error_msg)
+                logger.error(f"這通常是由於注意力分析和分類評估使用了不同的編碼器造成的")
+                logger.error(f"當前編碼器類型: {self.encoder_type.upper()}")
+                
+                # 嘗試修復：如果面向向量維度是1024而文檔向量是768，說明面向向量來自不同編碼器
+                if first_aspect_vector.shape[0] == 1024 and first_embedding.shape[0] == 768:
+                    logger.warning("檢測到面向向量來自1024維編碼器（可能是GPT/T5），但文檔向量是768維（BERT）")
+                    logger.warning("建議重新運行完整的流水線以確保編碼器一致性")
+                elif first_aspect_vector.shape[0] == 768 and first_embedding.shape[0] == 1024:
+                    logger.warning("檢測到面向向量來自768維編碼器（BERT），但文檔向量是1024維（可能是GPT/T5）")
+                    logger.warning("建議重新運行完整的流水線以確保編碼器一致性")
+                
+                raise ValueError(f"{error_msg}。請確保注意力分析和分類評估使用相同的編碼器類型。")
+            
+            for i, embedding in enumerate(original_embeddings):
+                doc_similarities = []
+                for aspect_name in aspect_names:
+                    aspect_vector = aspect_vectors[aspect_name]
+                    # 計算餘弦相似度
+                    similarity = np.dot(embedding, aspect_vector) / (
+                        np.linalg.norm(embedding) * np.linalg.norm(aspect_vector) + 1e-8
+                    )
+                    doc_similarities.append(similarity)
+                similarity_features.append(doc_similarities)
+            
+            similarity_features = np.array(similarity_features)
+            
+            # 組合原始特徵和相似度特徵
+            features = np.concatenate([original_embeddings, similarity_features], axis=1)
         
         prepare_time = time.time() - start_time
-        logger.info(f"特徵準備完成，耗時: {prepare_time:.2f} 秒")
-        logger.info(f"準備了 {features.shape[0]} 個樣本，{features.shape[1]} 維特徵")
-        logger.info(f"  - 原始BERT特徵: {original_embeddings.shape[1]} 維")
-        logger.info(f"  - 面向相似度特徵: {similarity_features.shape[1]} 維")
-        logger.info(f"使用的面向: {aspect_names}")
-        logger.info(f"標籤分布: {dict(zip(*np.unique(sentiments, return_counts=True)))}")
+        
+        # 只顯示關鍵信息
+        feature_type = "融合特徵" if fused_features is not None else f"{self.encoder_type.upper()}+相似度特徵"
+        logger.debug(f"特徵準備完成 - {features.shape[0]}樣本 x {features.shape[1]}維 ({feature_type}, {prepare_time:.1f}s)")
         
         self.feature_vectors = features
         self.labels = encoded_labels
@@ -342,8 +360,7 @@ class SentimentClassifier:
             raise ValueError(f"不支援的模型類型: {model_type}。可用的模型: {available_models}")
         
         start_time = time.time()
-        logger.info(f"開始訓練 {model_type} 模型...")
-        logger.info(f"計算環境: {self.device_info['description']}")
+        logger.debug(f"開始訓練 {model_type} 模型 ({self.device_info['description']})")
         
         # 分割訓練和測試集
         split_start = time.time()
@@ -359,8 +376,7 @@ class SentimentClassifier:
             data_test = None
         
         split_time = time.time() - split_start
-        logger.info(f"數據分割完成，耗時: {split_time:.2f} 秒")
-        logger.info(f"訓練集大小: {X_train.shape[0]}, 測試集大小: {X_test.shape[0]}")
+        logger.debug(f"數據分割完成 - 訓練:{X_train.shape[0]} 測試:{X_test.shape[0]} ({split_time:.1f}s)")
         
         # 選擇模型
         self.model = self.available_models[model_type]
@@ -368,65 +384,39 @@ class SentimentClassifier:
         
         # 訓練模型
         train_start = time.time()
-        logger.info(f"開始訓練模型...")
         
-        # 針對XGBoost顯示特殊訊息和設備配置
-        if model_type == 'xgboost':
-            if self.device_info['has_gpu']:
-                logger.info("🚀 使用GPU加速XGBoost訓練...")
-                # 智能設備管理 - 確保數據在正確設備上
-                try:
-                    import torch
-                    if torch.cuda.is_available():
-                        # 將numpy數組轉換為GPU張量再轉回numpy（確保數據格式正確）
-                        logger.info("正在優化數據格式以支援GPU加速...")
-                        X_train_gpu = torch.tensor(X_train, dtype=torch.float32).cuda()
-                        X_test_gpu = torch.tensor(X_test, dtype=torch.float32).cuda()
-                        X_train = X_train_gpu.cpu().numpy()
-                        X_test = X_test_gpu.cpu().numpy()
-                        logger.info("✅ 數據已優化為GPU兼容格式")
-                except Exception as device_error:
-                    logger.warning(f"設備優化失敗，使用原始數據: {device_error}")
+        # 針對XGBoost的GPU配置（簡化輸出）
+        if model_type == 'xgboost' and self.device_info['has_gpu']:
+            try:
+                # 確保XGBoost使用GPU配置
+                import xgboost as xgb
+                xgb_version = xgb.__version__
+                xgb_major_version = int(xgb_version.split('.')[0])
                 
-                # 確保XGBoost使用GPU配置（不覆蓋初始化時的設置）
-                try:
-                    # 檢查XGBoost版本
-                    import xgboost as xgb
-                    xgb_version = xgb.__version__
-                    xgb_major_version = int(xgb_version.split('.')[0])
-                    
-                    if xgb_major_version >= 2:
-                        # XGBoost 2.0+ 確認GPU設置
-                        current_device = getattr(self.model, 'device', None)
-                        if current_device != 'cuda':
-                            self.model.set_params(device='cuda')
-                        logger.info("XGBoost 2.0+: 確認GPU模式已啟用 (device='cuda')")
-                    else:
-                        # XGBoost 1.x 確認GPU設置
-                        current_tree_method = getattr(self.model, 'tree_method', None)
-                        if current_tree_method != 'gpu_hist':
-                            self.model.set_params(tree_method='gpu_hist', gpu_id=0)
-                        logger.info("XGBoost 1.x: 確認GPU模式已啟用 (tree_method='gpu_hist')")
-                except Exception as e:
-                    logger.warning(f"XGBoost GPU配置確認失敗，將使用初始化設置: {e}")
-            else:
-                logger.info("使用CPU多核心XGBoost訓練...")
+                if xgb_major_version >= 2:
+                    current_device = getattr(self.model, 'device', None)
+                    if current_device != 'cuda':
+                        self.model.set_params(device='cuda')
+                else:
+                    current_tree_method = getattr(self.model, 'tree_method', None)
+                    if current_tree_method != 'gpu_hist':
+                        self.model.set_params(tree_method='gpu_hist', gpu_id=0)
+                
+                logger.debug(f"XGBoost使用GPU加速")
+            except Exception as e:
+                logger.debug(f"XGBoost GPU配置警告: {e}")
         
         self.model.fit(X_train, y_train)
-        
         train_time = time.time() - train_start
-        logger.info(f"模型訓練完成，耗時: {train_time:.2f} 秒")
         
         # 預測
         predict_start = time.time()
-        logger.info("開始預測...")
-        
         train_pred = self.model.predict(X_train)
         test_pred = self.model.predict(X_test)
         test_pred_proba = self.model.predict_proba(X_test)
-        
         predict_time = time.time() - predict_start
-        logger.info(f"預測完成，耗時: {predict_time:.2f} 秒")
+        
+        logger.debug(f"模型訓練+預測完成 ({train_time:.1f}s + {predict_time:.1f}s)")
         
         # 計算評估指標
         results = self._calculate_metrics(
@@ -490,14 +480,8 @@ class SentimentClassifier:
         if self.output_dir:
             self._save_model()
         
-        # 輸出時間統計
-        logger.info(f"🕐 模型訓練完整統計:")
-        logger.info(f"   • 總耗時: {total_time:.2f} 秒")
-        logger.info(f"   • 數據分割: {split_time:.2f} 秒")
-        logger.info(f"   • 模型訓練: {train_time:.2f} 秒")
-        logger.info(f"   • 預測時間: {predict_time:.2f} 秒")
-        logger.info(f"   • 測試準確率: {results['test_accuracy']:.4f}")
-        logger.info(f"   • 計算環境: {self.device_info['description']}")
+        # 簡化的統計輸出
+        logger.debug(f"訓練統計 - 總耗時:{total_time:.1f}s 準確率:{results['test_accuracy']:.4f} (分割:{split_time:.1f}s 訓練:{train_time:.1f}s 預測:{predict_time:.1f}s)")
         
         return results
     

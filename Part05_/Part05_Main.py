@@ -20,6 +20,9 @@ sys.path.insert(0, CURRENT_DIR)
 # 匯入路徑配置
 from config.paths import get_base_output_dir, setup_custom_output_dir
 
+# 匯入日誌配置
+from config.logging_config import setup_logging, print_step, print_result, print_info, print_warning
+
 # 匯入錯誤處理工具
 from utils.error_handler import handle_error, handle_warning, handle_info, with_error_handling
 
@@ -34,11 +37,8 @@ from modules.text_encoders import TextEncoderFactory
 from modules.classification_methods import ClassificationMethodFactory
 from modules.cross_validation import CrossValidationEvaluator
 
-# 配置日誌
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+# 配置日誌 - 使用最安靜的設定
+setup_logging('QUIET')  # 只顯示錯誤和關鍵結果
 logger = logging.getLogger(__name__)
 
 # 注意：移除了全域RunManager，每個處理器會創建自己的RunManager實例
@@ -69,7 +69,7 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
             raise FileNotFoundError(f"找不到輸入文件：{input_file}")
         
         # 讀取預處理後的數據
-        logger.info(f"讀取數據: {input_file}")
+        print_step(f"讀取數據: {os.path.basename(input_file)}")
         df = pd.read_csv(input_file)
         
         # 檢查必要的欄位，按優先順序排列
@@ -85,12 +85,12 @@ def process_bert_encoding(input_file: Optional[str] = None, output_dir: Optional
             raise ValueError(f"在輸入文件中找不到文本欄位（優先順序：processed_text > clean_text > text > review）。可用的欄位有：{available_columns}")
         
         # 對文本進行編碼
-        logger.info(f"開始BERT編碼...使用欄位：{text_column}")
+        print_step(f"BERT編碼 ({len(df)} 條文本，使用欄位：{text_column})")
         embeddings = encoder.encode(df[text_column])
         
         # 注意：embed.encode() 方法已經自動保存了特徵向量，無需再次保存
         
-        logger.info(f"處理完成！結果保存在: {encoder.output_dir}")
+        print_result(f"BERT編碼完成，輸出維度: {embeddings.shape}")
         return encoder.output_dir
         
     except Exception as e:
@@ -194,9 +194,7 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         except Exception as gpu_error:
             handle_warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}", "GPU檢測")
         
-        print("\n" + "="*80)
-        print("🚀 開始執行完整的注意力機制分析和分類評估")
-        print("="*80)
+        print_step("開始完整分析")
         
         # 初始化注意力處理器
         processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
@@ -209,20 +207,11 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         if attention_types is None:
             attention_types = ['no', 'similarity', 'keyword', 'self', 'combined']
         
-        print(f"\n📋 分析配置:")
-        print(f"   • 輸入文件: {input_file}")
-        print(f"   • 輸出目錄: {output_dir}")
-        print(f"   • 注意力機制: {', '.join(attention_types)}")
-        
-        logger.info(f"開始完整的注意力機制分析和分類評估...")
-        logger.debug(f"測試的注意力機制: {', '.join(attention_types)}")
-        
         # 讀取元數據
         df = pd.read_csv(input_file)
         
         # 第一階段：執行注意力分析
-        print(f"\n🔬 階段 1/3: 注意力機制分析")
-        print("-" * 50)
+        print_step("階段 1/3: 注意力機制分析", is_substep=True)
         attention_results = processor.process_with_attention(
             input_file=input_file,
             attention_types=attention_types,
@@ -232,13 +221,10 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         )
         
         # 第二階段：執行分類評估
-        print(f"\n🎯 階段 2/3: 分類性能評估")
-        print("-" * 50)
-        logger.info("開始執行分類評估...")
+        print_step("階段 2/3: 分類性能評估", is_substep=True)
         classifier = SentimentClassifier(output_dir=output_dir, encoder_type=encoder_type)
         
         # 修正：獲取或載入編碼器嵌入向量（支援多種編碼器）
-        print(f"   🔍 載入編碼器嵌入向量用於分類評估...")
         original_embeddings = None
         
         # 使用通用的檔案檢測邏輯
@@ -250,14 +236,10 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
         if embeddings_file and os.path.exists(embeddings_file):
             # 載入已存在的編碼器嵌入向量
             original_embeddings = np.load(embeddings_file)
-            print(f"   ✅ 已載入 {encoder_type.upper()} 嵌入向量，形狀: {original_embeddings.shape}")
-            logger.debug(f"載入 {encoder_type.upper()} 嵌入向量: {original_embeddings.shape}")
-            logger.debug(f"來源檔案: {embeddings_file}")
         
         if original_embeddings is None:
             # 如果沒有找到，重新生成（向後相容）
-            print(f"   🔄 未找到 {encoder_type.upper()} 嵌入向量文件，開始重新生成...")
-            logger.info(f"未找到 {encoder_type.upper()} 嵌入向量，開始重新生成...")
+            print_step(f"生成 {encoder_type.upper()} 嵌入向量", is_substep=True)
             
             # 根據編碼器類型選擇合適的編碼器
             if encoder_type == 'bert':
@@ -448,6 +430,63 @@ def compare_attention_mechanisms(input_file: Optional[str] = None,
         handle_error(e, "注意力機制比較", show_traceback=True)
         raise
 
+def _extract_gnf_weights(analysis_results: Dict) -> Dict:
+    """從分析結果中提取GNF學習的權重
+    
+    Args:
+        analysis_results: 注意力分析結果字典
+        
+    Returns:
+        Dict: 提取的權重字典，如果提取失敗則返回None
+    """
+    try:
+        # 檢查是否有dynamic注意力的結果
+        dynamic_result = analysis_results.get('dynamic')
+        if not dynamic_result:
+            logger.warning("未找到dynamic注意力機制的結果")
+            return None
+            
+        # 查找動態權重信息
+        attention_data = dynamic_result.get('attention_data', {})
+        
+        # 檢查多個可能的位置
+        dynamic_weights = None
+        
+        # 位置1：直接在attention_data中
+        if 'dynamic_weights' in attention_data:
+            dynamic_weights = attention_data['dynamic_weights']
+        
+        # 位置2：在topic_indices中（如果是包裝格式）
+        elif 'topic_indices' in attention_data:
+            topic_indices = attention_data['topic_indices']
+            if isinstance(topic_indices, dict) and 'dynamic_weights' in topic_indices:
+                dynamic_weights = topic_indices['dynamic_weights']
+        
+        # 位置3：直接在dynamic_result中
+        elif 'dynamic_weights' in dynamic_result:
+            dynamic_weights = dynamic_result['dynamic_weights']
+            
+        if dynamic_weights and isinstance(dynamic_weights, dict):
+            # 過濾掉非權重的鍵
+            filtered_weights = {k: v for k, v in dynamic_weights.items() 
+                              if k in ['similarity', 'keyword', 'self'] and isinstance(v, (int, float))}
+            
+            if filtered_weights:
+                # 確保權重總和為1
+                total = sum(filtered_weights.values())
+                if total > 0:
+                    normalized_weights = {k: v/total for k, v in filtered_weights.items()}
+                    logger.info(f"成功提取並歸一化GNF權重: {normalized_weights}")
+                    return normalized_weights
+                    
+        logger.warning("無法從dynamic注意力結果中提取有效權重")
+        return None
+        
+    except Exception as e:
+        logger.error(f"提取GNF權重時發生錯誤: {str(e)}")
+        return None
+
+
 def _generate_combination_name(combination_weights: Dict, index: int) -> str:
     """生成有意義的組合注意力名稱
     
@@ -458,6 +497,13 @@ def _generate_combination_name(combination_weights: Dict, index: int) -> str:
     Returns:
         str: 有意義的組合名稱，如 "相似度+自注意力組合"
     """
+    # 檢查是否有預定義的名稱
+    if '_name' in combination_weights:
+        return combination_weights['_name']
+    
+    # 檢查來源類型
+    source = combination_weights.get('_source', 'unknown')
+    
     # 中文名稱映射
     name_mapping = {
         'similarity': '相似度',
@@ -469,6 +515,8 @@ def _generate_combination_name(combination_weights: Dict, index: int) -> str:
     # 找出非零權重的注意力機制
     active_mechanisms = []
     for mechanism, weight in combination_weights.items():
+        if mechanism.startswith('_'):  # 跳過元數據鍵
+            continue
         if weight > 0:
             chinese_name = name_mapping.get(mechanism, mechanism)
             active_mechanisms.append(chinese_name)
@@ -519,9 +567,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         except Exception as gpu_error:
             handle_warning(f"GPU環境檢測失敗，繼續使用CPU: {str(gpu_error)}", "GPU檢測")
         
-        print("\n" + "="*80)
-        print("🚀 開始執行多重注意力機制組合分析")
-        print("="*80)
+        print("\n🚀 開始執行多重注意力機制組合分析")
         
         # 初始化注意力處理器
         processor = AttentionProcessor(output_dir=output_dir, encoder_type=encoder_type)
@@ -541,11 +587,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
         # 組合所有要測試的注意力機制
         all_attention_types = attention_types.copy()
         
-        print(f"\n📋 分析配置:")
-        print(f"   • 輸入文件: {input_file}")
-        print(f"   • 輸出目錄: {output_dir}")
-        print(f"   • 基本注意力機制: {', '.join(attention_types)}")
-        print(f"   • 組合配置數量: {len(attention_combinations)}")
+        print_step(f"配置: {len(attention_types)} 種注意力機制, {len(attention_combinations)} 種組合", is_substep=True)
         
         # 讀取元數據
         df = pd.read_csv(input_file)
@@ -596,6 +638,100 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                 save_results=False
             )
         
+        # 自動權重學習階段：從 GNF 動態注意力中提取學習權重
+        gnf_learned_weights = None
+        if 'dynamic' in attention_types and basic_results:
+            print(f"\n🧠 自動權重學習階段：提取GNF學習權重")
+            print("-" * 50)
+            
+            gnf_learned_weights = _extract_gnf_weights(basic_results)
+            if gnf_learned_weights:
+                print(f"   ✅ 成功提取GNF學習權重: {gnf_learned_weights}")
+                
+                # 如果沒有預定義的組合，自動創建基於GNF權重的組合
+                if not attention_combinations:
+                    attention_combinations = []
+                
+                # 創建完整的組合分析配置（平均權重 + GNF權重）
+                attention_combinations = []
+                
+                # 定義所有組合配置的基本結構
+                base_combinations = [
+                    # 單一機制
+                    {'similarity': 1.0, 'name_suffix': '相似度'},
+                    {'keyword': 1.0, 'name_suffix': '關鍵詞'},
+                    {'self': 1.0, 'name_suffix': '自注意力'},
+                    
+                    # 雙重組合
+                    {'similarity': 0.5, 'keyword': 0.5, 'name_suffix': '相似度+關鍵詞'},
+                    {'similarity': 0.5, 'self': 0.5, 'name_suffix': '相似度+自注意力'},
+                    {'keyword': 0.5, 'self': 0.5, 'name_suffix': '關鍵詞+自注意力'},
+                    
+                    # 三重組合
+                    {'similarity': 0.33, 'keyword': 0.34, 'self': 0.33, 'name_suffix': '相似度+關鍵詞+自注意力'}
+                ]
+                
+                # 1. 平均權重組合
+                print(f"   📊 創建平均權重組合...")
+                # 添加無注意力基準
+                attention_combinations.append({
+                    'no': 1.0,
+                    '_source': 'baseline_avg',
+                    '_name': '平均權重：無注意力',
+                    '_weights_display': 'no: 1.0'
+                })
+                
+                for combo in base_combinations:
+                    avg_combo = combo.copy()
+                    name_suffix = avg_combo.pop('name_suffix')
+                    avg_combo['_source'] = 'baseline_avg'
+                    avg_combo['_name'] = f'平均權重：{name_suffix}'
+                    
+                    # 創建權重顯示字符串
+                    weight_parts = []
+                    for mechanism in ['similarity', 'keyword', 'self']:
+                        if mechanism in avg_combo and avg_combo[mechanism] > 0:
+                            weight_parts.append(f"{mechanism}: {avg_combo[mechanism]:.2f}")
+                    avg_combo['_weights_display'] = ', '.join(weight_parts)
+                    
+                    attention_combinations.append(avg_combo)
+                
+                # 2. GNF權重組合
+                print(f"   🧠 創建GNF權重組合...")
+                for combo in base_combinations:
+                    gnf_combo = {}
+                    name_suffix = combo.pop('name_suffix')
+                    
+                    # 使用GNF學習的權重按比例分配
+                    total_base = sum(v for k, v in combo.items() if k != 'name_suffix')
+                    weight_parts = []
+                    
+                    for mechanism in ['similarity', 'keyword', 'self']:
+                        if mechanism in combo and combo[mechanism] > 0:
+                            # 按比例使用GNF學習的權重
+                            base_ratio = combo[mechanism] / total_base
+                            gnf_weight = gnf_learned_weights.get(mechanism, 0) * base_ratio
+                            
+                            if gnf_weight > 0:
+                                gnf_combo[mechanism] = gnf_weight
+                                weight_parts.append(f"{mechanism}: {gnf_weight:.3f}")
+                    
+                    # 重新歸一化GNF權重
+                    total_gnf = sum(gnf_combo.values())
+                    if total_gnf > 0:
+                        for k in gnf_combo:
+                            gnf_combo[k] = gnf_combo[k] / total_gnf
+                    
+                    gnf_combo['_source'] = 'gnf_learned'
+                    gnf_combo['_name'] = f'GNF權重：{name_suffix}'
+                    gnf_combo['_weights_display'] = ', '.join(weight_parts)
+                    
+                    attention_combinations.append(gnf_combo)
+                
+                print(f"   📊 將測試 {len(attention_combinations)} 種權重配置（包含GNF學習權重和基準權重）")
+            else:
+                print(f"   ⚠️ 無法提取GNF學習權重，將使用預設組合配置")
+        
         # 第二階段：執行組合注意力分析
         if attention_combinations:
             print(f"\n🔗 階段 2/3: 組合注意力機制分析")
@@ -609,6 +745,7 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                 print(f"      組合名稱: {combination_name}")
                 
                 # 執行單個組合分析
+                print(f"      🔧 使用權重配置: {combination}")
                 combo_result = processor.process_with_attention(
                     input_file=input_file,
                     attention_types=['combined'],
@@ -616,8 +753,38 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                     save_results=False
                 )
                 
+                # 調試信息：檢查combo_result的結構
+                logger.debug(f"組合分析結果鍵: {list(combo_result.keys())}")
+                for key, value in combo_result.items():
+                    if isinstance(value, dict):
+                        logger.debug(f"  {key}: {list(value.keys())}")
+                    else:
+                        logger.debug(f"  {key}: {type(value)}")
+                
                 # 將組合結果添加到基本結果中，同時保存權重配置
-                combo_data = combo_result['combined'].copy()
+                # 檢查combo_result的結構並提取組合結果
+                combo_data = None
+                
+                # 嘗試多種可能的鍵名
+                possible_keys = ['combined', 'combination', combination_name]
+                for key in possible_keys:
+                    if key in combo_result:
+                        combo_data = combo_result[key].copy()
+                        break
+                
+                # 如果仍然沒有找到，檢查是否有其他鍵
+                if combo_data is None:
+                    available_keys = list(combo_result.keys())
+                    # 過濾掉元數據鍵
+                    analysis_keys = [k for k in available_keys if k not in ['processing_info', 'comparison']]
+                    
+                    if analysis_keys:
+                        # 使用第一個可用的分析結果鍵
+                        combo_data = combo_result[analysis_keys[0]].copy()
+                        logger.warning(f"未找到 'combined' 鍵，使用 '{analysis_keys[0]}' 代替")
+                    else:
+                        logger.error(f"無法從組合結果中找到有效的分析數據，可用鍵: {available_keys}")
+                        continue
                 
                 # 清理並保存權重配置
                 clean_weights = {k: v for k, v in combination.items() if not k.startswith('_')}
@@ -630,6 +797,13 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
             
             # 合併基本結果和組合結果
             final_attention_results = basic_results.copy()
+            
+            # 如果有GNF學習權重的組合分析，移除基本結果中的dynamic以避免重複
+            has_gnf_combination = any('GNF學習權重' in name for name in combination_results.keys())
+            if has_gnf_combination and 'dynamic' in final_attention_results:
+                print(f"   🔄 檢測到GNF學習權重組合分析，移除基本dynamic結果以避免重複")
+                del final_attention_results['dynamic']
+            
             final_attention_results.update(combination_results)
         else:
             final_attention_results = basic_results

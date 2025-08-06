@@ -14,6 +14,31 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 def main():
     """GUI主程式入口點"""
     try:
+        # 設置簡化的日誌輸出
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+        from config.logging_config import setup_logging
+        
+        # 檢查命令行參數來決定日誌等級
+        log_level = 'QUIET'  # 預設為安靜輸出
+        if len(sys.argv) > 1:
+            if sys.argv[1] == '--verbose':
+                log_level = 'VERBOSE'
+            elif sys.argv[1] == '--normal':
+                log_level = 'NORMAL'
+            elif sys.argv[1] == '--debug':
+                log_level = 'DEBUG'
+            elif sys.argv[1] == '--silent':
+                log_level = 'SILENT'
+                # 啟用超簡化模式
+                from config.simple_output import enable_silent_mode
+                enable_silent_mode()
+        
+        setup_logging(log_level)
+        if log_level != 'SILENT':
+            print(f"🔧 日誌等級: {log_level}")
+        
         # 導入主應用程序
         from gui.main_window import MainApplication
         

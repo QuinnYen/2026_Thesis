@@ -75,15 +75,40 @@ class AttentionMechanism:
         weights, topic_indices = self.compute_attention(embeddings, metadata, **kwargs)
         
         # 計算面向向量
-        topics = list(topic_indices.keys())
+        # 過濾掉非主題的特殊鍵
+        excluded_keys = {'dynamic_weights', 'is_dynamic', 'topic_indices'}
+        if isinstance(topic_indices, dict) and 'topic_indices' in topic_indices:
+            # 如果是包裝格式，提取實際的主題索引
+            actual_topic_indices = topic_indices['topic_indices']
+            topics = list(actual_topic_indices.keys())
+            topic_indices_data = actual_topic_indices
+        else:
+            # 直接格式，過濾特殊鍵
+            topics = [k for k in topic_indices.keys() if k not in excluded_keys]
+            topic_indices_data = topic_indices
+            
         aspect_vectors = {}
         
         for topic_idx, topic in enumerate(topics):
             # 獲取該主題的文檔索引
-            doc_indices = topic_indices[topic]
+            doc_indices = topic_indices_data[topic]
             
             if not doc_indices:
                 self.logger.warning(f"主題 {topic} 沒有文檔，將使用零向量")
+                aspect_vectors[topic] = np.zeros(embeddings.shape[1])
+                continue
+            
+            # 確保索引是整數列表
+            if isinstance(doc_indices, np.ndarray):
+                doc_indices = doc_indices.astype(int).tolist()
+            elif not isinstance(doc_indices, list):
+                doc_indices = list(doc_indices)
+                
+            # 驗證索引是否為整數類型
+            doc_indices = [int(idx) for idx in doc_indices if isinstance(idx, (int, np.integer))]
+            
+            if not doc_indices:
+                self.logger.warning(f"主題 {topic} 沒有有效的文檔索引，將使用零向量")
                 aspect_vectors[topic] = np.zeros(embeddings.shape[1])
                 continue
             
@@ -147,7 +172,31 @@ class AttentionMechanism:
             
             # 獲取該面向的嵌入向量索引
             doc_indices = topic_docs.index.tolist()
-            topic_embeddings = embeddings[doc_indices]
+            
+            # 確保索引是整數列表並且有效
+            if isinstance(doc_indices, np.ndarray):
+                doc_indices = doc_indices.astype(int).tolist()
+            elif not isinstance(doc_indices, list):
+                doc_indices = list(doc_indices)
+                
+            # 驗證索引是否為整數類型並且在有效範圍內
+            valid_doc_indices = []
+            for idx in doc_indices:
+                try:
+                    idx_int = int(idx)
+                    if 0 <= idx_int < len(embeddings):
+                        valid_doc_indices.append(idx_int)
+                    else:
+                        self.logger.warning(f"索引 {idx_int} 超出範圍 [0, {len(embeddings)-1}]")
+                except (ValueError, TypeError):
+                    self.logger.warning(f"無效的索引類型: {type(idx)} - {idx}")
+                    
+            if not valid_doc_indices:
+                self.logger.debug(f"面向 '{topic}' 沒有有效的文檔索引")
+                topic_coherence_dict[topic] = 0.0
+                continue
+                
+            topic_embeddings = embeddings[valid_doc_indices]
             aspect_vector = aspect_vectors[topic]
             
             # 計算該面向的內聚度
@@ -169,7 +218,7 @@ class AttentionMechanism:
         if doc_count > 0:
             coherence /= doc_count
             
-        self.logger.info(f"\n總體內聚度: {coherence:.4f}")
+        # 移除詳細輸出
         
         # 計算面向分離度
         separation = 0.0
@@ -206,7 +255,7 @@ class AttentionMechanism:
         if pair_count > 0:
             separation /= pair_count
             
-        self.logger.info(f"總體分離度: {separation:.4f}")
+        # 移除詳細輸出
             
         # 計算每個面向的平均分離度
         aspect_avg_separation = {}
@@ -222,7 +271,7 @@ class AttentionMechanism:
         separation_weight = self.config.get('separation_weight', 0.5)
         combined_score = coherence_weight * coherence + separation_weight * separation
         
-        self.logger.info(f"\n綜合得分: {combined_score:.4f} (內聚度權重: {coherence_weight}, 分離度權重: {separation_weight})")
+        # 移除詳細輸出
             
         # 返回評估指標
         metrics = {
@@ -258,17 +307,20 @@ class NoAttention(AttentionMechanism):
     
     def compute_attention(self, embeddings: np.ndarray, metadata: pd.DataFrame, **kwargs) -> Tuple[np.ndarray, Dict]:
         """計算均等權重（相當於平均）"""
-        # 獲取所有主題
-        if 'sentiment' in metadata.columns:
+        # 獲取所有主題，優先使用數值化情感標籤
+        if 'sentiment_numeric' in metadata.columns:
+            topics = sorted(metadata['sentiment_numeric'].unique())
+            topic_column = 'sentiment_numeric'
+        elif 'sentiment' in metadata.columns:
             topics = metadata['sentiment'].unique()
             topic_column = 'sentiment'
         elif 'main_topic' in metadata.columns:
             topics = metadata['main_topic'].unique()
             topic_column = 'main_topic'
         else:
-            # 創建假設的情感標籤
-            topics = ['positive', 'negative', 'neutral']
-            topic_column = 'sentiment'
+            # 創建假設的數值情感標籤：0:負面、1:中性、2:正面
+            topics = [0, 1, 2]
+            topic_column = 'sentiment_numeric'
         
         # 創建權重矩陣（所有權重相等）
         weights = np.zeros((len(topics), len(embeddings)))
@@ -277,7 +329,8 @@ class NoAttention(AttentionMechanism):
         for topic_idx, topic in enumerate(topics):
             if topic_column in metadata.columns:
                 # 獲取該主題的文檔索引
-                doc_indices = metadata.index[metadata[topic_column] == topic].tolist()
+                raw_indices = metadata.index[metadata[topic_column] == topic]
+                doc_indices = [int(idx) for idx in raw_indices.tolist()]
             else:
                 # 如果沒有標籤，平均分配
                 doc_indices = list(range(topic_idx * len(embeddings) // len(topics),
@@ -307,17 +360,20 @@ class SimilarityAttention(AttentionMechanism):
     
     def compute_attention(self, embeddings: np.ndarray, metadata: pd.DataFrame, **kwargs) -> Tuple[np.ndarray, Dict]:
         """計算基於相似度的注意力權重"""
-        # 獲取所有主題
-        if 'sentiment' in metadata.columns:
+        # 獲取所有主題，優先使用數值化情感標籤
+        if 'sentiment_numeric' in metadata.columns:
+            topics = sorted(metadata['sentiment_numeric'].unique())
+            topic_column = 'sentiment_numeric'
+        elif 'sentiment' in metadata.columns:
             topics = metadata['sentiment'].unique()
             topic_column = 'sentiment'
         elif 'main_topic' in metadata.columns:
             topics = metadata['main_topic'].unique()
             topic_column = 'main_topic'
         else:
-            # 創建假設的情感標籤
-            topics = ['positive', 'negative', 'neutral']
-            topic_column = 'sentiment'
+            # 創建假設的數值情感標籤：0:負面、1:中性、2:正面
+            topics = [0, 1, 2]
+            topic_column = 'sentiment_numeric'
         
         # 創建權重矩陣
         weights = np.zeros((len(topics), len(embeddings)))
@@ -326,7 +382,8 @@ class SimilarityAttention(AttentionMechanism):
         for topic_idx, topic in enumerate(topics):
             if topic_column in metadata.columns:
                 # 獲取該主題的文檔索引
-                doc_indices = metadata.index[metadata[topic_column] == topic].tolist()
+                raw_indices = metadata.index[metadata[topic_column] == topic]
+                doc_indices = [int(idx) for idx in raw_indices.tolist()]
             else:
                 # 如果沒有標籤，平均分配
                 doc_indices = list(range(topic_idx * len(embeddings) // len(topics),
@@ -411,24 +468,36 @@ class KeywordGuidedAttention(AttentionMechanism):
                     self.logger.warning(f"無法從 {topics_path} 加載主題關鍵詞: {str(e)}")
         
         if topic_keywords is None:
-            # 使用預設關鍵詞
+            # 使用預設關鍵詞，支援數值化標籤
             topic_keywords = {
-                'positive': ['good', 'great', 'excellent', 'amazing', 'wonderful', '好', '棒', '優秀'],
-                'negative': ['bad', 'terrible', 'awful', 'horrible', 'worst', '壞', '糟糕', '可怕'],
-                'neutral': ['okay', 'average', 'normal', 'fine', '還可以', '普通', '一般']
+                0: ['bad', 'terrible', 'awful', 'horrible', 'worst', 'hate', 'disappointing', 'poor', '壞', '糟糕', '可怕'],  # 負面
+                1: ['okay', 'average', 'normal', 'fine', 'neutral', 'acceptable', '還可以', '普通', '一般'],  # 中性
+                2: ['good', 'great', 'excellent', 'amazing', 'wonderful', 'love', 'best', 'perfect', '好', '棒', '優秀'],  # 正面
+                # 同時支援文字標籤以向後兼容
+                'negative': ['bad', 'terrible', 'awful', 'horrible', 'worst', 'hate', 'disappointing', 'poor', '壞', '糟糕', '可怕'],
+                'neutral': ['okay', 'average', 'normal', 'fine', 'neutral', 'acceptable', '還可以', '普通', '一般'],
+                'positive': ['good', 'great', 'excellent', 'amazing', 'wonderful', 'love', 'best', 'perfect', '好', '棒', '優秀']
             }
-            self.logger.info("使用預設關鍵詞進行注意力計算")
+            # 移除詳細輸出
         
-        # 獲取所有主題
-        if 'sentiment' in metadata.columns:
+        # 獲取所有主題，優先使用數值化情感標籤
+        if 'sentiment_numeric' in metadata.columns:
+            topics = sorted(metadata['sentiment_numeric'].unique())
+            topic_column = 'sentiment_numeric'
+        elif 'sentiment' in metadata.columns:
             topics = metadata['sentiment'].unique()
             topic_column = 'sentiment'
         elif 'main_topic' in metadata.columns:
             topics = metadata['main_topic'].unique()
             topic_column = 'main_topic'
         else:
-            topics = list(topic_keywords.keys())
-            topic_column = 'sentiment'
+            # 如果使用關鍵詞但沒有標籤，優先使用數值化標籤
+            if topic_keywords and any(isinstance(k, (int, str)) and str(k).isdigit() for k in topic_keywords.keys()):
+                topics = [0, 1, 2]  # 數值化情感標籤
+                topic_column = 'sentiment_numeric'
+            else:
+                topics = list(topic_keywords.keys())
+                topic_column = 'sentiment'
         
         # 創建權重矩陣
         weights = np.zeros((len(topics), len(embeddings)))
@@ -450,7 +519,8 @@ class KeywordGuidedAttention(AttentionMechanism):
         
         for topic_idx, topic in enumerate(topics):
             if topic_column in metadata.columns:
-                doc_indices = metadata.index[metadata[topic_column] == topic].tolist()
+                raw_indices = metadata.index[metadata[topic_column] == topic]
+                doc_indices = [int(idx) for idx in raw_indices.tolist()]
             else:
                 doc_indices = list(range(topic_idx * len(embeddings) // len(topics),
                                        (topic_idx + 1) * len(embeddings) // len(topics)))
@@ -531,16 +601,20 @@ class SelfAttention(AttentionMechanism):
     
     def compute_attention(self, embeddings: np.ndarray, metadata: pd.DataFrame, **kwargs) -> Tuple[np.ndarray, Dict]:
         """計算自注意力權重"""
-        # 獲取所有主題
-        if 'sentiment' in metadata.columns:
+        # 獲取所有主題，優先使用數值化情感標籤
+        if 'sentiment_numeric' in metadata.columns:
+            topics = sorted(metadata['sentiment_numeric'].unique())
+            topic_column = 'sentiment_numeric'
+        elif 'sentiment' in metadata.columns:
             topics = metadata['sentiment'].unique()
             topic_column = 'sentiment'
         elif 'main_topic' in metadata.columns:
             topics = metadata['main_topic'].unique()
             topic_column = 'main_topic'
         else:
-            topics = ['positive', 'negative', 'neutral']
-            topic_column = 'sentiment'
+            # 創建假設的數值情感標籤：0:負面、1:中性、2:正面
+            topics = [0, 1, 2]
+            topic_column = 'sentiment_numeric'
         
         # 創建權重矩陣
         weights = np.zeros((len(topics), len(embeddings)))
@@ -548,7 +622,8 @@ class SelfAttention(AttentionMechanism):
         
         for topic_idx, topic in enumerate(topics):
             if topic_column in metadata.columns:
-                doc_indices = metadata.index[metadata[topic_column] == topic].tolist()
+                raw_indices = metadata.index[metadata[topic_column] == topic]
+                doc_indices = [int(idx) for idx in raw_indices.tolist()]
             else:
                 doc_indices = list(range(topic_idx * len(embeddings) // len(topics),
                                        (topic_idx + 1) * len(embeddings) // len(topics)))
@@ -687,20 +762,15 @@ class DynamicCombinedAttention(AttentionMechanism):
         self.fusion_network = None
         # 設備選擇和管理
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.logger.info(f"🔧 DynamicCombinedAttention 使用設備: {self.device}")
-        self.mechanism_names = ['similarity', 'keyword', 'self']
-        
-        # 優化GPU記憶體使用
+        # 簡化輸出：只在需要時顯示設備資訊
         if self.device.type == 'cuda':
+            print(f"🔧 GNF動態注意力使用GPU: {torch.cuda.get_device_name()}")
             torch.cuda.empty_cache()
-            self.logger.info(f"   GPU記憶體已清理: {torch.cuda.get_device_name()}")
-            self.logger.info(f"   可用GPU記憶體: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f}GB")
+        self.mechanism_names = ['similarity', 'keyword', 'self']
         
     def _initialize_fusion_network(self, input_dim: int):
         """初始化融合網路"""
         if self.fusion_network is None:
-            self.logger.info(f"   🔧 初始化GatedFusionNetwork (輸入維度: {input_dim}, 設備: {self.device})")
-            
             try:
                 self.fusion_network = GatedFusionNetwork(
                     input_dim=input_dim,
@@ -710,13 +780,6 @@ class DynamicCombinedAttention(AttentionMechanism):
                 
                 # 設置為評估模式以獲得一致的結果
                 self.fusion_network.eval()
-                
-                self.logger.info(f"   ✅ GatedFusionNetwork 已成功初始化並移至 {self.device}")
-                
-                # GPU記憶體檢查
-                if self.device.type == 'cuda':
-                    allocated = torch.cuda.memory_allocated() / 1024**2
-                    self.logger.info(f"   GPU記憶體使用: {allocated:.1f}MB")
                     
             except Exception as e:
                 self.logger.error(f"   ❌ GatedFusionNetwork 初始化失敗: {str(e)}")
@@ -790,12 +853,8 @@ class DynamicCombinedAttention(AttentionMechanism):
     
     def compute_attention(self, embeddings: np.ndarray, metadata: pd.DataFrame, **kwargs) -> Tuple[np.ndarray, Dict]:
         """計算動態組合注意力權重"""
-        self.logger.info(f"🎯 開始動態注意力計算 (嵌入向量形狀: {embeddings.shape})")
-        
-        # 記錄初始GPU記憶體使用情況
-        if self.device.type == 'cuda':
-            initial_memory = torch.cuda.memory_allocated() / 1024**2
-            self.logger.debug(f"   初始GPU記憶體: {initial_memory:.1f}MB")
+        # 簡化：只顯示關鍵信息
+        print(f"🎯 計算動態注意力權重 ({embeddings.shape[0]} 條文本)")
         
         try:
             # 初始化融合網路
@@ -841,31 +900,15 @@ class DynamicCombinedAttention(AttentionMechanism):
             # 對每個樣本的權重取平均
             weights_dict[mechanism_name] = float(np.mean(dynamic_weights_np[:, i]))
         
-        # 記錄最終GPU記憶體使用情況
-        if self.device.type == 'cuda':
-            final_memory = torch.cuda.memory_allocated() / 1024**2
-            memory_diff = final_memory - initial_memory
-            self.logger.debug(f"   最終GPU記憶體: {final_memory:.1f}MB (差異: {memory_diff:+.1f}MB)")
+        # 保存學習到的權重供後續組合分析使用
+        self.learned_weights = weights_dict.copy()
+        self.weights_learned = True
         
-        # 添加詳細的調試日誌
-        self.logger.info(f"🔍 GatedFusionNetwork 動態權重詳細資訊:")
-        self.logger.info(f"   動態權重張量形狀: {dynamic_weights_np.shape}")
-        self.logger.info(f"   平均後的權重字典: {weights_dict}")
+        # 簡化：移除GPU記憶體監控輸出
         
-        # 檢查權重是否有效
-        total_weight = sum(weights_dict.values())
-        min_weight = min(weights_dict.values())
-        max_weight = max(weights_dict.values())
-        self.logger.info(f"   權重統計 - 總和: {total_weight:.6f}, 最小值: {min_weight:.6f}, 最大值: {max_weight:.6f}")
-        
-        # 顯示前3個樣本的權重（如果有多個樣本）
-        if dynamic_weights_np.shape[0] > 1:
-            for sample_idx in range(min(3, dynamic_weights_np.shape[0])):
-                sample_weights = {mechanism: dynamic_weights_np[sample_idx, i] 
-                                for i, mechanism in enumerate(self.mechanism_names)}
-                self.logger.debug(f"   樣本 {sample_idx} 權重: {sample_weights}")
-        
-        self.logger.info(f"✅ 動態權重計算完成")
+        # 簡化輸出：只顯示最終權重
+        weights_str = ", ".join([f"{k}:{v:.3f}" for k, v in weights_dict.items()])
+        print(f"   學習權重: {weights_str}")
         
         # 使用動態權重計算注意力
         weights, indices = self._compute_weighted_attention(embeddings, metadata, weights_dict, **kwargs)
@@ -886,24 +929,14 @@ class DynamicCombinedAttention(AttentionMechanism):
     def _compute_weighted_attention(self, embeddings: np.ndarray, metadata: pd.DataFrame, 
                                    weights_dict: Dict[str, float], **kwargs) -> Tuple[np.ndarray, Dict]:
         """使用權重計算注意力（與原CombinedAttention相同的邏輯）"""
-        # 添加調試日誌
-        self.logger.info(f"🔍 _compute_weighted_attention 輸入權重: {weights_dict}")
-        
-        # 只保留權重不為0的注意力機制
-        # 使用更合理的閾值，因為浮點數精度問題可能導致小的正數被誤判為0
+        # 只保留權重不為0的注意力機制，過濾掉元數據鍵
         min_threshold = 1e-6
-        active_weights = {k: v for k, v in weights_dict.items() if v > min_threshold}
-        
-        self.logger.info(f"   過濾閾值: {min_threshold}")
-        self.logger.info(f"   過濾後的有效權重: {active_weights}")
+        active_weights = {k: v for k, v in weights_dict.items() 
+                         if not k.startswith('_') and isinstance(v, (int, float)) and v > min_threshold}
         
         if not active_weights:
-            self.logger.warning("⚠️  沒有指定任何有效的注意力權重，使用均等權重")
-            self.logger.warning(f"   原始權重字典: {weights_dict}")
-            self.logger.warning(f"   所有權重值都 <= 0，將回退到 NoAttention")
+            print("⚠️  權重無效，回退到均等權重")
             return NoAttention(self.config).compute_attention(embeddings, metadata, **kwargs)
-        
-        self.logger.info(f"✅ 使用有效權重進行動態注意力計算: {active_weights}")
         
         # 初始化權重矩陣和結果
         weights = None
@@ -943,8 +976,9 @@ class CombinedAttention(AttentionMechanism):
         # 獲取組合權重
         weights_dict = kwargs.get('weights', {})
         
-        # 只保留權重不為0的注意力機制
-        active_weights = {k: v for k, v in weights_dict.items() if v > 0}
+        # 只保留權重不為0的注意力機制，過濾掉元數據鍵
+        active_weights = {k: v for k, v in weights_dict.items() 
+                         if not k.startswith('_') and isinstance(v, (int, float)) and v > 0}
         
         if not active_weights:
             self.logger.warning("沒有指定任何有效的注意力權重，使用均等權重")
