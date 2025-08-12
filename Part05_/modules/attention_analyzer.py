@@ -324,7 +324,12 @@ class AttentionAnalyzer:
         elif isinstance(obj, np.floating):
             return float(obj)
         elif isinstance(obj, dict):
-            return {key: self._make_serializable(value) for key, value in obj.items()}
+            # 確保字典的鍵值也是可序列化的
+            return {
+                str(key) if isinstance(key, (np.integer, np.floating)) else key: 
+                self._make_serializable(value) 
+                for key, value in obj.items()
+            }
         elif isinstance(obj, list):
             return [self._make_serializable(item) for item in obj]
         elif isinstance(obj, torch.Tensor):

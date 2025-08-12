@@ -857,7 +857,7 @@ class MainApplication:
             handle_error(full_error, f"GUI步驟{step_num}", show_traceback=True)
         except Exception as e:
             # 如果錯誤處理器本身有問題，使用基本輸出
-            print(f"🚨 GUI步驟{step_num}錯誤: {error_msg}")
+            # 錯誤處理，移除除錯輸出
             print(f"錯誤追蹤:")
             traceback.print_exc()
         
@@ -911,34 +911,25 @@ class MainApplication:
     def _update_analysis_results(self, results, total_time):
         """更新分析結果到表格"""
         try:
-            print(f"🔍 GUI除錯：開始更新分析結果...")
-            print(f"🔍 GUI除錯：results的鍵: {list(results.keys())}")
-            
             # 清空表格
             for item in self.results_tree.get_children():
                 self.results_tree.delete(item)
             
             # 獲取分類結果
             classification_evaluation = results.get('classification_evaluation', {})
-            print(f"🔍 GUI除錯：classification_evaluation的鍵: {list(classification_evaluation.keys())}")
             
             # 從 classification_evaluation 中過濾出機制結果（排除 'comparison' 鍵）
             classification_results = {}
             for key, value in classification_evaluation.items():
                 if key != 'comparison' and isinstance(value, dict):
                     classification_results[key] = value
-                    print(f"🔍 GUI除錯：找到機制結果: {key}")
             
             # 如果沒有找到，嘗試舊格式
             if not classification_results:
                 classification_results = results.get('classification_results', {})
-                print(f"🔍 GUI除錯：使用舊格式，classification_results的鍵: {list(classification_results.keys())}")
-            
-            print(f"🔍 GUI除錯：最終classification_results的鍵: {list(classification_results.keys())}")
             
             # 檢查是否有分類結果
             if not classification_results:
-                print(f"⚠️  GUI除錯：沒有找到分類結果，可能分析仍在進行中")
                 # 顯示等待訊息
                 self.results_tree.insert('', 'end', values=(
                     "正在分析中...",
@@ -950,7 +941,6 @@ class MainApplication:
                 # 嘗試從attention_analysis獲取進度信息
                 attention_analysis = results.get('attention_analysis', {})
                 if attention_analysis:
-                    print(f"🔍 GUI除錯：attention_analysis的鍵: {list(attention_analysis.keys())}")
                     
                     # 如果有注意力分析結果，顯示一些基本信息
                     for mechanism, analysis_result in attention_analysis.items():
@@ -1539,45 +1529,45 @@ class MainApplication:
     def update_comparison_report(self):
         """更新比對報告"""
         try:
-            print(f"🔍 GUI除錯：開始更新比對報告...")
+
             
             if not hasattr(self, 'analysis_results') or not self.analysis_results:
-                print(f"🔍 GUI除錯：沒有分析結果")
+
                 messagebox.showwarning("警告", "尚無分析結果，請先完成分析")
                 return
             
             selected_mechanism = self.selected_mechanism.get()
-            print(f"🔍 GUI除錯：選擇的機制: {selected_mechanism}")
+
             if not selected_mechanism:
                 messagebox.showwarning("警告", "請選擇要比對的注意力機制")
                 return
             
             # 獲取對應機制的分析結果
             classification_evaluation = self.analysis_results.get('classification_evaluation', {})
-            print(f"🔍 GUI除錯：classification_evaluation的鍵: {list(classification_evaluation.keys())}")
+
             
             # 從 classification_evaluation 中過濾出機制結果（排除 'comparison' 鍵）
             classification_results = {}
             for key, value in classification_evaluation.items():
                 if key != 'comparison' and isinstance(value, dict):
                     classification_results[key] = value
-                    print(f"🔍 GUI除錯：找到機制結果: {key}")
+
             
             # 如果沒有找到，嘗試舊格式
             if not classification_results:
                 classification_results = self.analysis_results.get('classification_results', {})
-                print(f"🔍 GUI除錯：使用舊格式，classification_results的鍵: {list(classification_results.keys())}")
+
             
-            print(f"🔍 GUI除錯：比對報告中的classification_results鍵: {list(classification_results.keys())}")
+
             
             # 找到選擇的機制結果
             mechanism_result = None
             for mechanism, result in classification_results.items():
                 formatted_name = self._format_mechanism_name(mechanism)
-                print(f"🔍 GUI除錯：檢查機制 {mechanism} -> {formatted_name}")
+
                 if formatted_name == selected_mechanism:
                     mechanism_result = result
-                    print(f"🔍 GUI除錯：找到匹配的機制結果")
+
                     break
             
             if not mechanism_result:

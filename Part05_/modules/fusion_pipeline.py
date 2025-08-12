@@ -17,6 +17,7 @@ from .text_preprocessor import TextPreprocessor
 from .attention_fusion_network import AttentionFusionProcessor
 from .sentiment_classifier import SentimentClassifier
 from .run_manager import RunManager
+from .analysis_report_generator import AnalysisReportGenerator
 
 # 匯入錯誤處理工具
 import sys
@@ -50,6 +51,7 @@ class FusionPipeline:
         # 初始化管理組件
         self.run_manager = RunManager(output_dir) if output_dir else None
         self.storage_manager = StorageManager(output_dir) if output_dir else None
+        self.report_generator = AnalysisReportGenerator(output_dir)
         
         logger.info("融合流程管線已初始化")
         logger.info(f"編碼器類型: {encoder_type.upper()}")
@@ -221,11 +223,13 @@ class FusionPipeline:
                 'preprocessing_results': {
                     'original_shape': input_data.shape,
                     'processed_shape': processed_data.shape,
-                    'sentiment_encoding': {
-                        0: '負面',
-                        1: '中性', 
-                        2: '正面'
-                    }
+                    'sentiment_encoding': dict(processed_data['sentiment_numeric'].value_counts().sort_index()) if 'sentiment_numeric' in processed_data.columns else {},
+                    'text_statistics': {
+                        'avg_length': processed_data['processed_text'].str.split().str.len().mean() if 'processed_text' in processed_data.columns else 0,
+                        'max_length': processed_data['processed_text'].str.split().str.len().max() if 'processed_text' in processed_data.columns else 0,
+                        'min_length': processed_data['processed_text'].str.split().str.len().min() if 'processed_text' in processed_data.columns else 0
+                    },
+                    'label_mapping': {0: '負面', 1: '中性', 2: '正面'}
                 },
                 'attention_results': {
                     'similarity_features': similarity_features,
@@ -275,6 +279,11 @@ class FusionPipeline:
             # 保存結果
             if save_results and self.output_dir:
                 self._save_pipeline_results(results)
+            
+            # 生成完整分析報告
+            if self.output_dir:
+                report_path = self.report_generator.generate_comprehensive_report(results)
+                print(f"\n📄 完整分析報告已生成: {os.path.basename(report_path)}")
             
             return results
             

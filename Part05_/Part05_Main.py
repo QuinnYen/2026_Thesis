@@ -381,7 +381,12 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
 def _make_serializable(obj):
     """將物件轉換為可序列化的格式"""
     if isinstance(obj, dict):
-        return {key: _make_serializable(value) for key, value in obj.items()}
+        # 確保字典的鍵值也是可序列化的
+        return {
+            str(key) if isinstance(key, (np.integer, np.floating)) else key: 
+            _make_serializable(value) 
+            for key, value in obj.items()
+        }
     elif isinstance(obj, list):
         return [_make_serializable(item) for item in obj]
     elif isinstance(obj, np.ndarray):
