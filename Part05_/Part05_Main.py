@@ -353,6 +353,23 @@ def process_attention_analysis_with_classification(input_file: Optional[str] = N
             print(f"✅ 完整結果已保存至: {results_file}")
             logger.info(f"完整結果已保存至: {results_file}")
         
+        # 生成完整分析報告
+        try:
+            from modules.analysis_report_generator import AnalysisReportGenerator
+            print(f"\n📝 生成完整分析報告...")
+            
+            # 確保保存到run目錄的根目錄
+            report_dir = run_dir if 'run_dir' in locals() else output_dir
+            report_generator = AnalysisReportGenerator(report_dir)
+            
+            report_path = report_generator.generate_comprehensive_report(final_results)
+            print(f"✅ 完整txt報告已生成: {os.path.basename(report_path)}")
+            logger.info(f"完整txt報告已生成: {report_path}")
+            
+        except Exception as report_error:
+            print(f"⚠️ 報告生成失敗: {str(report_error)}")
+            logger.warning(f"報告生成失敗: {str(report_error)}")
+        
         print(f"\n🎉 完整分析評估完成！")
         print(f"📁 所有結果保存在: {output_dir}")
         print("="*80)
@@ -951,6 +968,23 @@ def process_attention_analysis_with_multiple_combinations(input_file: Optional[s
                 json.dump(serializable_results, f, ensure_ascii=False, indent=2)
             print(f"✅ 完整結果已保存至: {results_file}")
             logger.info(f"完整結果已保存至: {results_file}")
+        
+        # 生成完整分析報告
+        try:
+            from modules.analysis_report_generator import AnalysisReportGenerator
+            print(f"\n📝 生成完整分析報告...")
+            
+            # 確保保存到run目錄的根目錄
+            report_dir = run_dir if 'run_dir' in locals() else output_dir
+            report_generator = AnalysisReportGenerator(report_dir)
+            
+            report_path = report_generator.generate_comprehensive_report(final_results)
+            print(f"✅ 完整txt報告已生成: {os.path.basename(report_path)}")
+            logger.info(f"完整txt報告已生成: {report_path}")
+            
+        except Exception as report_error:
+            print(f"⚠️ 報告生成失敗: {str(report_error)}")
+            logger.warning(f"報告生成失敗: {str(report_error)}")
         
         print(f"\n🎉 多重組合分析完成！")
         print(f"📁 所有結果保存在: {output_dir}")
@@ -1555,6 +1589,114 @@ def process_simple_cross_validation(input_file: Optional[str] = None,
         logger.error(f"簡單交叉驗證分析失敗: {str(e)}")
         raise
 
+def generate_txt_report_from_results(output_dir: Optional[str] = None) -> str:
+    """
+    從現有的分析結果生成txt報告
+    
+    Args:
+        output_dir: 指定的run目錄路徑，如果為None則自動尋找最新的run目錄
+        
+    Returns:
+        生成的報告檔案路徑
+    """
+    try:
+        print("\n" + "="*80)
+        print("📝 生成txt分析報告")
+        print("="*80)
+        
+        # 如果沒有指定output_dir，尋找最新的run目錄
+        if output_dir is None:
+            base_output_dir = get_base_output_dir()
+            print(f"🔍 在 {base_output_dir} 中尋找最新的run目錄...")
+            
+            import glob
+            run_dirs = glob.glob(os.path.join(base_output_dir, "run_*"))
+            if not run_dirs:
+                raise FileNotFoundError(f"在 {base_output_dir} 中找不到任何run目錄")
+            
+            # 選擇最新的run目錄
+            output_dir = max(run_dirs, key=os.path.getmtime)
+            print(f"✅ 使用最新的run目錄: {os.path.basename(output_dir)}")
+        
+        # 檢查目錄是否存在
+        if not os.path.exists(output_dir):
+            raise FileNotFoundError(f"指定的目錄不存在: {output_dir}")
+        
+        print(f"📁 分析目錄: {output_dir}")
+        
+        # 尋找分析結果檔案
+        possible_files = [
+            "multiple_combinations_analysis_results.json",
+            "complete_analysis_results.json", 
+            "analysis_results.json",
+            "pipeline_results.json"
+        ]
+        
+        results_file = None
+        for filename in possible_files:
+            test_file = os.path.join(output_dir, filename)
+            if os.path.exists(test_file):
+                results_file = test_file
+                break
+        
+        if not results_file:
+            raise FileNotFoundError(f"在 {output_dir} 中找不到分析結果檔案。尋找的檔案: {', '.join(possible_files)}")
+        
+        print(f"📄 使用分析結果檔案: {os.path.basename(results_file)}")
+        
+        # 讀取分析結果
+        import json
+        with open(results_file, 'r', encoding='utf-8') as f:
+            analysis_results = json.load(f)
+        
+        print(f"✅ 成功讀取分析結果 ({os.path.getsize(results_file):,} 字節)")
+        
+        # 初始化報告生成器
+        from modules.analysis_report_generator import AnalysisReportGenerator
+        report_generator = AnalysisReportGenerator(output_dir)
+        
+        # 生成報告
+        print(f"\n📝 正在生成完整txt報告...")
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"情感分析_完整報告_{timestamp}.txt"
+        
+        report_path = report_generator.generate_comprehensive_report(
+            analysis_results, 
+            output_filename=report_filename
+        )
+        
+        # 檢查報告文件
+        if os.path.exists(report_path):
+            file_size = os.path.getsize(report_path)
+            print(f"✅ txt報告生成成功！")
+            print(f"📊 報告檔案大小: {file_size:,} 字節")
+            print(f"📝 報告路徑: {report_path}")
+            
+            # 讀取報告的前幾行來預覽
+            with open(report_path, 'r', encoding='utf-8') as f:
+                preview_lines = [f.readline().strip() for _ in range(5)]
+            
+            print(f"\n📄 報告內容預覽:")
+            for i, line in enumerate(preview_lines, 1):
+                if line:
+                    print(f"   {i}. {line}")
+            
+            logger.info(f"txt報告生成成功: {report_path}")
+            return report_path
+        else:
+            raise RuntimeError("報告檔案生成失敗")
+        
+    except Exception as e:
+        import traceback
+        error_details = traceback.format_exc()
+        
+        print(f"❌ 報告生成失敗: {str(e)}")
+        logger.error(f"報告生成失敗: {str(e)}")
+        logger.error(f"詳細錯誤追蹤:\n{error_details}")
+        
+        raise RuntimeError(f"txt報告生成失敗: {str(e)}") from e
+
 def main():
     """
     主程式入口點
@@ -1614,6 +1756,10 @@ def main():
                 input_file = sys.argv[2] if len(sys.argv) > 2 else None
                 n_folds = int(sys.argv[3]) if len(sys.argv) > 3 else 5
                 process_simple_cross_validation(input_file=input_file, n_folds=n_folds)
+            elif sys.argv[1] == '--generate-report':
+                # 生成txt報告（從現有的分析結果）
+                output_dir = sys.argv[2] if len(sys.argv) > 2 else None
+                generate_txt_report_from_results(output_dir=output_dir)
         else:
             # 嘗試啟動GUI，失敗時顯示幫助信息
             try:
@@ -1630,6 +1776,7 @@ def main():
                     print("  --classify data.csv    # 執行完整分類評估")
                     print("  --cv data.csv 5        # 執行5折交叉驗證")
                     print("  --show-options         # 顯示所有可用選項")
+                    print("  --generate-report      # 從現有結果生成txt報告")
                 else:
                     raise gui_error
             
@@ -1670,6 +1817,9 @@ BERT情感分析系統 - 使用說明
     --cv [input_file] [n_folds]            # 執行注意力機制 K 折交叉驗證
     --simple-cv [input_file] [n_folds]     # 執行簡單模型 K 折交叉驗證
 
+報告生成選項:
+    --generate-report [run_dir]            # 從現有分析結果生成txt報告
+
 功能說明:
     --attention: 執行注意力機制分析，計算面向向量的內聚度和分離度
     --classify:  執行完整流程，包括注意力分析和情感分類評估
@@ -1707,6 +1857,10 @@ BERT情感分析系統 - 使用說明
     python Part05_Main.py --cv data.csv 5                        # 5折注意力機制交叉驗證
     python Part05_Main.py --cv data.csv 10                       # 10折注意力機制交叉驗證
     python Part05_Main.py --simple-cv data.csv 5                 # 5折簡單模型交叉驗證
+
+報告生成範例:
+    python Part05_Main.py --generate-report                      # 自動找最新run目錄生成報告
+    python Part05_Main.py --generate-report output/run_20240101_120000  # 指定run目錄生成報告
 
 測試進度功能:
     python test_progress.py                           # 測試進度顯示功能
